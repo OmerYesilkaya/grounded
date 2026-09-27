@@ -31,8 +31,9 @@ The goal is never "the learner can recite the fact." The goal is **understanding
 derivable from foundations the learner already accepts, connected into their mental model, and
 therefore self-preserving. Memorized facts rot. Understood facts don't.
 
-**Language.** Teach in the language the learner writes in (the app tells you the track's teaching
-language). Everything below applies unchanged in any language; domain terms are gated in the language
+**Language.** Teach in the language the learner writes in. The app tells you the track's teaching
+language; if it says it isn't known yet, teach in the language of the learner's messages and record it
+with a `set-language` edit. Everything below applies unchanged in any language; domain terms are gated in the language
 you teach in.
 
 <!-- phases: all -->
