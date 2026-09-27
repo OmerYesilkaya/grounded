@@ -1,8 +1,9 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
+import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { api } from "@/lib/api";
@@ -15,7 +16,7 @@ const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
   recap: "Recap",
 };
 
-function Message({ message }: { message: ChatMessage }) {
+function Message({ message, onGrow }: { message: ChatMessage; onGrow: () => void }) {
   if (message.role === "learner") {
     return (
       <div className="max-w-[85%] self-end rounded-xl bg-muted px-3.5 py-2 text-[15px] leading-relaxed whitespace-pre-wrap">
@@ -23,6 +24,21 @@ function Message({ message }: { message: ChatMessage }) {
       </div>
     );
   }
+  return <TutorMessage message={message} onGrow={onGrow} />;
+}
+
+function TutorMessage({ message, onGrow }: { message: ChatMessage; onGrow: () => void }) {
+  const revealed = useRevealedText(message.text ?? "", message.streaming === true);
+  // The blocks wait for the reveal to finish, so the text doesn't jump ahead as it turns into them.
+  const blocks = revealed.done ? message.blocks : null;
+
+  const [live] = useState(message.streaming === true);
+  const shownLength = revealed.text.length;
+  const showsBlocks = blocks !== null;
+  useEffect(() => {
+    if (live) onGrow();
+  }, [live, onGrow, shownLength, showsBlocks]);
+
   const label = KIND_LABEL[message.kind];
   return (
     <div
@@ -35,11 +51,7 @@ function Message({ message }: { message: ChatMessage }) {
         <div className="mb-2 text-[11px] tracking-widest text-primary uppercase">{label}</div>
       )}
       <div className="font-serif text-[17px] leading-[1.6] [&_p:last-child]:mb-0">
-        {message.streaming || !message.blocks ? (
-          <p className="whitespace-pre-wrap">{message.text}</p>
-        ) : (
-          <Blocks blocks={message.blocks} />
-        )}
+        {blocks ? <Blocks blocks={blocks} /> : <StreamedText revealed={revealed} />}
       </div>
     </div>
   );
@@ -84,10 +96,10 @@ export function ChatView({
   const barRef = useRef<HTMLDivElement>(null);
   const barHeight = useBarHeight(barRef, phase === "probe" || phase === "plan");
 
-  const lastLength = model.messages.at(-1)?.text?.length ?? 0;
-  useEffect(() => {
+  const scrollToEnd = useCallback(() => {
     endRef.current?.scrollIntoView({ block: "end" });
-  }, [model.messages.length, lastLength]);
+  }, []);
+  useEffect(scrollToEnd, [scrollToEnd, model.messages.length]);
 
   const canWrite =
     (phase === "probe" || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
@@ -105,7 +117,7 @@ export function ChatView({
     >
       <div className="flex flex-col gap-5">
         {model.messages.map((m) => (
-          <Message key={m.id} message={m} />
+          <Message key={m.id} message={m} onGrow={scrollToEnd} />
         ))}
         <ActivityLine
           activities={model.activities}

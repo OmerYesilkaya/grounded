@@ -88,6 +88,16 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* Newly revealed streamed text fades in; lasts no longer than FADE_MS in streamed-text.tsx. */
+@theme {
+  --animate-reveal: reveal 240ms ease-out;
+  @keyframes reveal {
+    from {
+      opacity: 0;
+    }
+  }
+}
+
 @layer base {
   * {
     @apply border-border;

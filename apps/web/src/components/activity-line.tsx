@@ -1,6 +1,7 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { Activity } from "@/lib/session";
+import { StreamedText, useRevealedText } from "./streamed-text";
 import { cn } from "@/lib/utils";
 
 /**
@@ -49,11 +50,18 @@ export function ActivityLine({
           </button>
         )}
       </div>
-      {open && current?.reasoning && (
-        <p className="mt-2 max-h-48 overflow-y-auto border-l-2 pl-3 text-xs leading-relaxed whitespace-pre-wrap">
-          {current.reasoning}
-        </p>
-      )}
+      {open && current?.reasoning && <Reasoning key={current.id} text={current.reasoning} />}
     </div>
+  );
+}
+
+/** The reasoning streams while its activity runs; the activity is gone once it is done. */
+function Reasoning({ text }: { text: string }) {
+  const revealed = useRevealedText(text, true);
+  return (
+    <StreamedText
+      revealed={revealed}
+      className="mt-2 max-h-48 overflow-y-auto border-l-2 pl-3 text-xs leading-relaxed"
+    />
   );
 }

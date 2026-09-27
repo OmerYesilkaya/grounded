@@ -382,6 +382,10 @@ A refined "typographic index":
 - Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Inter).
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
 - Colour tokens defined once; Mermaid's theme generated from them.
+- Streamed text appears as if written: the page reveals it at a reading pace (~90 characters a
+  second, faster when far behind, always caught up within 1.5 s), fading in the newest words; a
+  message turns into its rendered blocks once all of it is shown. The server's batching stays as it
+  is. Text already there when the page loads, and everything under reduced motion, shows at once.
 
 ### 9.4 Phones (requirements; not prototyped)
 
