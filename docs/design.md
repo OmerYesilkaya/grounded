@@ -163,6 +163,12 @@ about, test and debug.
   terms) and whenever a fact is uncertain, the model runs with the provider's search tool on and
   returns notes with sources, stored on the track.
 - Errors surface plainly: invalid key, out of credit, rate limited, refusal — each with what to do.
+- **Time limits** on every model call, per purpose (`CALL_LIMITS` in `apps/api/src/engine/call-limits.ts`),
+  applied in the middleware every model is wrapped in: a total for non-streamed calls; for streams a
+  total, a limit on silence before the first part and between outputs (the model may be reasoning or
+  searching unseen), and a shorter one mid-output. A call that runs out fails as "taking too long"
+  and is logged and recorded. Retries of retryable failures happen in the middleware too, only
+  within the time the call has left, so a learner never waits past the limit.
 - **Usage** (input/output/cached tokens, model, purpose) is recorded for every call from day one and
   shown simply per session and per month.
 

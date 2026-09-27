@@ -8,18 +8,22 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = {
 
 /** The failures a learner can act on (design §4.4); everything else is "unknown". */
 export type ProviderErrorKind =
-  "invalid-key" | "no-credit" | "rate-limited" | "unreachable" | "refused" | "unknown";
+  "invalid-key" | "no-credit" | "rate-limited" | "unreachable" | "timeout" | "refused" | "unknown";
 
 export interface ProviderError {
   kind: ProviderErrorKind;
   message: string;
 }
 
-/** What we know about a failed call: an HTTP status and body, or a thrown cause (network). */
+/**
+ * What we know about a failed call: an HTTP status and body, a thrown cause (network), or that it
+ * ran out of time.
+ */
 export interface ProviderFailure {
   status?: number;
   body?: string;
   cause?: unknown;
+  timedOut?: boolean;
 }
 
 const messages: Record<ProviderErrorKind, (name: string) => string> = {
@@ -29,13 +33,15 @@ const messages: Record<ProviderErrorKind, (name: string) => string> = {
     `Your ${n} account is out of credit. Add credit or raise your spending limit on ${n}'s site.`,
   "rate-limited": (n) => `${n} is limiting requests right now. Wait a minute, then try again.`,
   unreachable: (n) => `${n} couldn't be reached. Try again in a moment.`,
+  timeout: (n) => `${n} is taking too long. Try again in a moment.`,
   refused: (n) => `${n} declined to answer this request.`,
   unknown: (n) => `Something went wrong talking to ${n}. Try again in a moment.`,
 };
 
 /**
- * Maps a failed provider call onto a plain message. Accepts our own failure shape or the AI SDK's
- * APICallError (statusCode, responseBody). Based on each provider's documented error format.
+ * Maps a failed provider call onto a plain message. Accepts our own failure shape, the AI SDK's
+ * APICallError (statusCode, responseBody), or a "TimeoutError" (what an abort signal's timeout and
+ * the SDK's own timeouts throw). Based on each provider's documented error format.
  */
 export function classifyProviderError(provider: ProviderId, error: unknown): ProviderError {
   const kind = classify(toFailure(error));
@@ -45,6 +51,7 @@ export function classifyProviderError(provider: ProviderId, error: unknown): Pro
 function toFailure(error: unknown): ProviderFailure {
   if (typeof error !== "object" || error === null) return { cause: error };
   const e = error as Record<string, unknown>;
+  if (e.timedOut === true || e.name === "TimeoutError") return { timedOut: true };
   const status =
     typeof e.status === "number"
       ? e.status
@@ -61,7 +68,8 @@ function toFailure(error: unknown): ProviderFailure {
   return { status, ...(body === undefined ? {} : { body }) };
 }
 
-function classify({ status, body = "" }: ProviderFailure): ProviderErrorKind {
+function classify({ status, body = "", timedOut }: ProviderFailure): ProviderErrorKind {
+  if (timedOut) return "timeout";
   if (status === undefined) return "unreachable";
   const text = body.toLowerCase();
   if (text.includes("insufficient_quota") || text.includes("credit balance")) return "no-credit";

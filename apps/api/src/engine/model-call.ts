@@ -13,6 +13,13 @@ import {
   type ProviderId,
 } from "@grounded/providers";
 import { APICallError, RetryError, wrapLanguageModel, type Tool } from "ai";
+import {
+  CALL_RETRIES,
+  callLimitsFor,
+  Deadline,
+  silenceAfter,
+  type CallLimits,
+} from "./call-limits.js";
 
 /** A provider failure with the plain message the learner is shown (design §4.4). */
 export class ProviderCallError extends Error {
@@ -44,6 +51,10 @@ export interface ModelCallerDependencies {
   db: Db;
   vault: KeyVault;
   createLanguageModel: (provider: ProviderId, modelId: string, apiKey: string) => LanguageModelV4;
+  /** The time limits for a purpose (default: CALL_LIMITS); tests pass small ones. */
+  limitsFor?: (purpose: string) => CallLimits;
+  /** The wait before the first retry, doubled for each one after (default 1 s). */
+  retryDelayMs?: number;
 }
 
 /** What session jobs need from model access; tests substitute scripted models. */
@@ -63,11 +74,11 @@ export interface ModelRequest {
 
 /**
  * Hands out language models built with the learner's key, decrypted for this call only. Every call
- * made through them records its usage, failed calls included, because the recording lives in
- * middleware around the model rather than in each caller.
+ * made through them records its usage, failed calls included, and runs within its purpose's time
+ * limits, because both live in middleware around the model rather than in each caller.
  */
 export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
-  const { db, vault } = deps;
+  const { db, vault, limitsFor = callLimitsFor, retryDelayMs = 1000 } = deps;
 
   return {
     async searchTool(userId) {
@@ -90,6 +101,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           ? (cheapModelFor(provider)?.id ?? credential.model)
           : credential.model;
       const apiKey = vault.open(credential.sealedKey, request.userId);
+      const limits = limitsFor(request.purpose);
 
       const record = async (
         usage: LanguageModelV4Usage | null,
@@ -107,57 +119,125 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           errorKind,
         });
       };
-      // Retryable failures go back to the SDK unchanged so it can retry; each attempt is recorded.
-      const fail = async (error: unknown): Promise<never> => {
+      /** Logs and records a failed attempt; returns the error with the learner's plain message. */
+      const failed = async (error: unknown, deadline: Deadline): Promise<ProviderCallError> => {
         const converted = providerErrorFrom(provider, error);
         // The learner sees a plain message; the operator needs the cause (never the learner's text).
         console.error(
-          `model call failed: ${provider}/${modelId} (${request.purpose}) → ${converted.kind}: ${describeFailure(error)}`,
+          `model call failed: ${provider}/${modelId} (${request.purpose}) after ${(deadline.elapsedMs / 1000).toFixed(1)} s → ${converted.kind}: ${describeFailure(error)}`,
         );
         await record(null, converted.kind);
-        if (APICallError.isInstance(error) && error.isRetryable) throw error;
-        throw converted;
+        return converted;
+      };
+      /**
+       * Runs the call, retrying retryable failures here rather than in the SDK: a retry gets only the
+       * time the call has left, and whatever fails reaches the job as a ProviderCallError (the SDK
+       * would wrap it in a RetryError). A timeout is final, and the caller's own abort passes
+       * through unchanged, unrecorded: it is not a provider failure.
+       */
+      const attempt = async <T>(deadline: Deadline, run: () => PromiseLike<T>): Promise<T> => {
+        for (let retry = 0; ; retry++) {
+          try {
+            return await deadline.race(run());
+          } catch (error) {
+            deadline.unwatch();
+            if (deadline.callerAborted()) throw error;
+            const converted = await failed(error, deadline);
+            const delay = retryDelayMs * 2 ** retry;
+            const retryable = APICallError.isInstance(error) && error.isRetryable;
+            if (!retryable || retry >= CALL_RETRIES || deadline.remainingMs <= delay)
+              throw converted;
+            try {
+              await deadline.sleep(delay);
+            } catch (aborted) {
+              if (deadline.callerAborted()) throw aborted;
+              throw converted;
+            }
+          }
+        }
       };
 
       return wrapLanguageModel({
         model: deps.createLanguageModel(provider, modelId, apiKey),
         middleware: {
           specificationVersion: "v4",
-          wrapGenerate: async ({ doGenerate }) => {
+          wrapGenerate: async ({ model, params }) => {
+            const deadline = new Deadline(params.abortSignal, limits.generateMs);
             try {
-              const result = await doGenerate();
+              const result = await attempt(deadline, () =>
+                model.doGenerate({ ...params, abortSignal: deadline.signal }),
+              );
               await record(result.usage, null);
               return result;
-            } catch (error) {
-              return fail(error);
+            } finally {
+              deadline.dispose();
             }
           },
-          wrapStream: async ({ doStream }) => {
+          wrapStream: async ({ model, params }) => {
+            const deadline = new Deadline(params.abortSignal, limits.streamMs);
             let result;
             try {
-              result = await doStream();
+              result = await attempt(deadline, () => {
+                deadline.watch(limits.thinkMs);
+                return model.doStream({ ...params, abortSignal: deadline.signal });
+              });
             } catch (error) {
-              return fail(error);
+              deadline.dispose();
+              throw error;
             }
+            const reader = result.stream.getReader();
+            // The connection's watch carries on until the first part: it has thinkMs in all.
+            let silence: number | undefined;
             let recorded = false;
-            const recordOnce = async (usage: LanguageModelV4Usage | null, error: unknown) => {
+            const finish = async (usage: LanguageModelV4Usage) => {
               if (recorded) return;
               recorded = true;
-              await record(
-                usage,
-                error === undefined ? null : providerErrorFrom(provider, error).kind,
-              );
+              await record(usage, null);
             };
-            const watch = new TransformStream<LanguageModelV4StreamPart, LanguageModelV4StreamPart>(
-              {
-                async transform(part, controller) {
-                  if (part.type === "finish") await recordOnce(part.usage, undefined);
-                  if (part.type === "error") await recordOnce(null, part.error);
-                  controller.enqueue(part);
-                },
+            const fail = async (error: unknown) => {
+              if (recorded) return providerErrorFrom(provider, error);
+              recorded = true;
+              return failed(error, deadline);
+            };
+            // Pulled, so the watch covers only the wait for the model, never a slow reader.
+            const stream = new ReadableStream<LanguageModelV4StreamPart>({
+              async pull(controller) {
+                let next;
+                try {
+                  if (silence !== undefined) deadline.watch(silence);
+                  next = await deadline.race(reader.read());
+                  deadline.unwatch();
+                } catch (error) {
+                  deadline.dispose();
+                  reader.cancel(error).catch(() => undefined);
+                  if (deadline.callerAborted()) {
+                    controller.error(error);
+                    return;
+                  }
+                  controller.enqueue({ type: "error", error: await fail(error) });
+                  controller.close();
+                  return;
+                }
+                if (next.done) {
+                  deadline.dispose();
+                  controller.close();
+                  return;
+                }
+                const part = next.value;
+                silence = silenceAfter(part, limits);
+                if (part.type === "finish") await finish(part.usage);
+                if (part.type === "error") {
+                  controller.enqueue({ type: "error", error: await fail(part.error) });
+                  return;
+                }
+                controller.enqueue(part);
               },
-            );
-            return { ...result, stream: result.stream.pipeThrough(watch) };
+              async cancel(reason) {
+                deadline.dispose();
+                await reader.cancel(reason);
+              },
+            });
+            return { ...result, stream };
           },
         },
       });

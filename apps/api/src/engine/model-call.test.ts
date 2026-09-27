@@ -3,8 +3,10 @@ import { generateText, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { APICallError } from "@ai-sdk/provider";
-import { describe, expect, it } from "vitest";
+import { setTimeout as sleep } from "node:timers/promises";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestHarness } from "../test/harness.js";
+import type { CallLimits } from "./call-limits.js";
 import { createModelCaller, ProviderCallError } from "./model-call.js";
 
 const t = createTestHarness();
@@ -37,7 +39,7 @@ async function userWithKey(provider: "openai" | "anthropic", model: string) {
   return user.id;
 }
 
-function callerWith(model: MockLanguageModelV4) {
+function callerWith(model: MockLanguageModelV4, limits?: CallLimits) {
   const built: { provider: string; modelId: string; apiKey: string }[] = [];
   const caller = createModelCaller({
     db: t.db,
@@ -46,6 +48,7 @@ function callerWith(model: MockLanguageModelV4) {
       built.push({ provider, modelId, apiKey });
       return model;
     },
+    ...(limits ? { limitsFor: () => limits, retryDelayMs: 5 } : {}),
   });
   return { caller, built };
 }
@@ -158,5 +161,226 @@ describe("callModel", () => {
     await expect(
       caller.model({ userId: user.id, purpose: "probe", role: "strong" }),
     ).rejects.toThrow("Add your AI key in Settings first.");
+  });
+});
+
+/** Small limits, so a hung call fails in milliseconds. */
+const tight: CallLimits = { generateMs: 150, streamMs: 3000, thinkMs: 500, idleMs: 60 };
+/** A model call that never answers and ignores its abort signal, as a hung connection can. */
+const never = () => new Promise<never>(() => undefined);
+const networkError = () =>
+  new APICallError({
+    message: "Cannot connect to API: fetch failed",
+    url: "https://api.openai.com/v1/responses",
+    requestBodyValues: {},
+    isRetryable: true,
+  });
+
+/** A stream that sends the given parts, pausing where a number stands, then closes or stays open. */
+function paced(script: (LanguageModelV4StreamPart | number)[], end: "close" | "hang") {
+  return new ReadableStream<LanguageModelV4StreamPart>({
+    async start(controller) {
+      for (const step of script) {
+        if (typeof step === "number") await sleep(step);
+        else controller.enqueue(step);
+      }
+      if (end === "close") controller.close();
+    },
+  });
+}
+
+async function streamParts(result: ReturnType<typeof streamText>) {
+  const parts: { type: string; error?: unknown }[] = [];
+  for await (const part of result.stream) parts.push(part);
+  return parts;
+}
+
+describe("model call time limits", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("fails a hung call with the plain message, records it and logs it", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const hung = new MockLanguageModelV4({ doGenerate: never });
+    const { caller } = callerWith(hung, tight);
+    const model = await caller.model({ userId, purpose: "probe", role: "strong" });
+
+    const started = Date.now();
+    const error = await generateText({ model, prompt: "decide" }).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(ProviderCallError);
+    expect(error).toMatchObject({
+      kind: "timeout",
+      message: "OpenAI is taking too long. Try again in a moment.",
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+    // Nothing waits again: a timeout is not retried.
+    expect(hung.doGenerateCalls).toHaveLength(1);
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => [e.purpose, e.status, e.errorKind])).toEqual([
+      ["probe", "error", "timeout"],
+    ]);
+    expect(log).toHaveBeenCalledWith(
+      expect.stringMatching(
+        /^model call failed: openai\/gpt-6-luna \(probe\) after \d+\.\d s → timeout: /,
+      ),
+    );
+  });
+
+  it("gives a retry after a network error only the time left, then fails plainly", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    let calls = 0;
+    const flaky = new MockLanguageModelV4({
+      doGenerate: () => (++calls === 1 ? Promise.reject(networkError()) : never()),
+    });
+    const { caller } = callerWith(flaky, tight);
+    const model = await caller.model({ userId, purpose: "probe", role: "strong" });
+
+    const started = Date.now();
+    const error = await generateText({ model, prompt: "decide" }).catch((e: unknown) => e);
+
+    // A ProviderCallError rather than the SDK's RetryError, so the jobs show its message.
+    expect(error).toBeInstanceOf(ProviderCallError);
+    expect(error).toMatchObject({ kind: "timeout" });
+    expect(Date.now() - started).toBeLessThan(tight.generateMs + 500);
+    expect(calls).toBe(2);
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => e.errorKind)).toEqual(["unreachable", "timeout"]);
+  });
+
+  it("still retries a network error that the next attempt recovers from", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    let calls = 0;
+    const flaky = new MockLanguageModelV4({
+      doGenerate: () =>
+        ++calls === 1 ? Promise.reject(networkError()) : Promise.resolve(reply("Recovered.")),
+    });
+    const { caller } = callerWith(flaky, tight);
+    const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+    const result = await generateText({ model, prompt: "grade" });
+
+    expect(result.text).toBe("Recovered.");
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => e.status)).toEqual(["error", "ok"]);
+  });
+
+  it("leaves a call that answers in time alone, and stops its timers", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const quick = new MockLanguageModelV4({ doGenerate: reply("Done.") });
+    const { caller } = callerWith(quick, tight);
+    const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+    const result = await generateText({ model, prompt: "grade" });
+    await sleep(tight.generateMs * 2);
+
+    expect(result.text).toBe("Done.");
+    expect(quick.doGenerateCalls[0]?.abortSignal?.aborted).toBe(false);
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => e.status)).toEqual(["ok"]);
+  });
+
+  it("lets the caller's own abort through, unchanged and at once", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const hung = new MockLanguageModelV4({ doGenerate: never });
+    const { caller } = callerWith(hung, { ...tight, generateMs: 60_000 });
+    const model = await caller.model({ userId, purpose: "aside", role: "cheap" });
+    const abort = new AbortController();
+
+    const started = Date.now();
+    setTimeout(() => {
+      abort.abort();
+    }, 20);
+    const error = await generateText({ model, prompt: "hi", abortSignal: abort.signal }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).not.toBeInstanceOf(ProviderCallError);
+    expect(error).toMatchObject({ name: "AbortError" });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(hung.doGenerateCalls[0]?.abortSignal?.aborted).toBe(true);
+    expect(await t.db.select().from(usageEvents)).toEqual([]);
+  });
+
+  it("fails a stream that stalls between chunks", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("anthropic", "claude-opus-5-5");
+    const stalling = new MockLanguageModelV4({
+      doStream: {
+        stream: paced(
+          [
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "The first half" },
+          ],
+          "hang",
+        ),
+      },
+    });
+    const { caller } = callerWith(stalling, tight);
+    const model = await caller.model({ userId, purpose: "lesson", role: "strong" });
+
+    const started = Date.now();
+    const parts = await streamParts(streamText({ model, prompt: "write" }));
+
+    const failure = parts.find((p) => p.type === "error");
+    expect(failure?.error).toBeInstanceOf(ProviderCallError);
+    expect(failure?.error).toMatchObject({
+      kind: "timeout",
+      message: "Anthropic is taking too long. Try again in a moment.",
+    });
+    // The idle limit fired, not the longer thinking limit.
+    expect(Date.now() - started).toBeLessThan(tight.thinkMs);
+    expect(stalling.doStreamCalls[0]?.abortSignal?.aborted).toBe(true);
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => [e.purpose, e.status, e.errorKind])).toEqual([
+      ["lesson", "error", "timeout"],
+    ]);
+  });
+
+  it("fails a stream that never starts", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const silent = new MockLanguageModelV4({ doStream: never });
+    const { caller } = callerWith(silent, tight);
+    const model = await caller.model({ userId, purpose: "aside", role: "cheap" });
+
+    const parts = await streamParts(streamText({ model, prompt: "hi" }));
+
+    expect(parts.find((p) => p.type === "error")?.error).toMatchObject({ kind: "timeout" });
+    expect(silent.doStreamCalls).toHaveLength(1);
+  });
+
+  it("allows longer silence between outputs, where the model reasons or searches unseen", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const thinking = new MockLanguageModelV4({
+      doStream: {
+        stream: paced(
+          [
+            { type: "stream-start", warnings: [] },
+            { type: "reasoning-start", id: "r" },
+            // Longer than the idle limit, within the thinking limit.
+            tight.idleMs + 40,
+            { type: "reasoning-end", id: "r" },
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "Thought it through." },
+            { type: "text-end", id: "t" },
+            { type: "finish", finishReason: finish, usage },
+          ],
+          "close",
+        ),
+      },
+    });
+    const { caller } = callerWith(thinking, tight);
+    const model = await caller.model({ userId, purpose: "probe", role: "strong" });
+
+    const result = streamText({ model, prompt: "hi" });
+
+    expect(await result.text).toBe("Thought it through.");
+    const events = await t.db.select().from(usageEvents);
+    expect(events.map((e) => e.status)).toEqual(["ok"]);
   });
 });

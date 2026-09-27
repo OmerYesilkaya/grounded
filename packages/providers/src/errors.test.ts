@@ -85,6 +85,8 @@ describe("classifyProviderError", () => {
     ],
     ["openai", http(503, "upstream down"), "unreachable"],
     ["openai", { cause: new TypeError("fetch failed") }, "unreachable"],
+    ["openai", { timedOut: true }, "timeout"],
+    ["anthropic", new DOMException("The operation timed out.", "TimeoutError"), "timeout"],
   ] as const)("%s %j → %s", (provider, failure, kind) => {
     expect(classifyProviderError(provider, failure).kind).toBe(kind);
   });
@@ -103,6 +105,9 @@ describe("classifyProviderError", () => {
     );
     expect(classifyProviderError("openai", { cause: new Error("ECONNRESET") }).message).toBe(
       "OpenAI couldn't be reached. Try again in a moment.",
+    );
+    expect(classifyProviderError("openai", { timedOut: true }).message).toBe(
+      "OpenAI is taking too long. Try again in a moment.",
     );
   });
 
