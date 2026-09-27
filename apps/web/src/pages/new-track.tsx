@@ -8,14 +8,13 @@ import { api } from "@/lib/api";
 
 export function NewTrackPage() {
   const [title, setTitle] = useState("");
-  const [language, setLanguage] = useState("English");
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const create = useMutation({
     mutationFn: () =>
       api<{ id: string }>("/api/tracks", {
         method: "POST",
-        body: JSON.stringify({ title, language }),
+        body: JSON.stringify({ title }),
       }),
     onSuccess: async ({ id }) => {
       await queryClient.invalidateQueries({ queryKey: ["tracks"] });
@@ -27,7 +26,8 @@ export function NewTrackPage() {
     <main className="mx-auto w-full max-w-md px-6 pt-24">
       <h1 className="font-serif text-2xl font-semibold tracking-tight">A new subject</h1>
       <p className="mt-2 text-sm text-muted-foreground">
-        Each subject is its own track, with its own words and its own plan.
+        Each subject is its own track, with its own words and its own plan. Write in whichever
+        language you want to learn in.
       </p>
       <form
         className="mt-8 space-y-4"
@@ -44,16 +44,6 @@ export function NewTrackPage() {
             value={title}
             onChange={(event) => {
               setTitle(event.target.value);
-            }}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="language">Teach me in</Label>
-          <Input
-            id="language"
-            value={language}
-            onChange={(event) => {
-              setLanguage(event.target.value);
             }}
           />
         </div>

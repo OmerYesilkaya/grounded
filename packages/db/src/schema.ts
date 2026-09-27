@@ -156,8 +156,8 @@ export const tracks = pgTable("tracks", {
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  /** The language lessons are taught in. */
-  language: text("language").notNull(),
+  /** The language lessons are taught in; null until the tutor infers it from the learner. */
+  language: text("language"),
   plan: jsonb("plan").$type<TrackPlan>().notNull().default({ arcs: [], notes: "" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),

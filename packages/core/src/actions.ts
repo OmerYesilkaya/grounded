@@ -20,6 +20,7 @@ export const trackActionSchema = z.union([
   }),
   z.object({ type: z.literal("add-fix-item"), text: z.string().min(1) }),
   z.object({ type: z.literal("close-fix-item"), text: z.string().min(1) }),
+  z.object({ type: z.literal("set-language"), language: z.string() }),
   z.object({
     type: z.literal("set-plan"),
     arcs: z.array(z.object({ title: z.string().min(1), terms: z.array(z.string()) })),

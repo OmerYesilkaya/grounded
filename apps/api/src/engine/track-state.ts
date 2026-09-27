@@ -92,6 +92,9 @@ export async function applyActions(
       case "add-fix-item":
         openFixItems.add(action.text);
         break;
+      case "set-language":
+        if (!action.language.trim()) errors.push("set-language needs the name of a language.");
+        break;
       case "set-plan":
         break;
     }
@@ -165,6 +168,12 @@ export async function applyActions(
                 eq(fixListItems.status, "open"),
               ),
             );
+          break;
+        case "set-language":
+          await tx
+            .update(tracks)
+            .set({ language: action.language.trim() })
+            .where(eq(tracks.id, trackId));
           break;
         case "set-plan":
           await tx

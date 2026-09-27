@@ -157,3 +157,30 @@ describe("applyActions", () => {
     expect(context.track).toEqual({ title: "How software works", language: "English" });
   });
 });
+
+describe("applyActions: teaching language", () => {
+  it("records the language the tutor inferred", async () => {
+    const trackId = await newTrack();
+    expect(
+      await applyActions(t.db, trackId, [{ type: "set-language", language: "Turkish" }], {
+        source: "probe",
+      }),
+    ).toEqual({ ok: true });
+    expect((await loadTrackContext(t.db, trackId)).track).toEqual({
+      title: "How software works",
+      language: "Turkish",
+    });
+  });
+
+  it("rejects an empty language", async () => {
+    const trackId = await newTrack();
+    expect(
+      await applyActions(t.db, trackId, [{ type: "set-language", language: "  " }], {
+        source: "probe",
+      }),
+    ).toEqual({
+      ok: false,
+      errors: ["set-language needs the name of a language."],
+    });
+  });
+});

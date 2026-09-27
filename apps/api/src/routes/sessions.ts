@@ -23,10 +23,8 @@ interface Env {
   Variables: { user: { id: string; email: string; name: string } };
 }
 
-const trackInput = z.object({
-  title: z.string().trim().min(1).max(120),
-  language: z.string().trim().min(1).max(40).default("English"),
-});
+// No language: the tutor infers it from the learner's messages and records it (set-language).
+const trackInput = z.object({ title: z.string().trim().min(1).max(120) });
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
 
 /** Tracks and sessions (design §7): the session HTTP API. Jobs do the model work. */

@@ -24,7 +24,7 @@ export function TrackPage({ trackId }: { trackId: string }) {
   return (
     <main className="mx-auto w-full max-w-xl px-6 pt-24">
       <p className="text-xs tracking-widest text-subtle-foreground uppercase">
-        Track · taught in {track.language}
+        Track{track.language ? ` · taught in ${track.language}` : ""}
       </p>
       <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">{track.title}</h1>
       <div className="mt-8">

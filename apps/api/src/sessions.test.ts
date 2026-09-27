@@ -1,3 +1,4 @@
+import { invite } from "./allowlist.js";
 import { eq, sessionMessages, terms, users } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestHarness } from "./test/harness.js";
@@ -183,5 +184,19 @@ describe("probe and plan", () => {
     expect(message?.blocks?.map((b) => b.type)).toEqual(["paragraph"]);
     const [user] = await t.db.select().from(users);
     expect(user).toBeDefined();
+  });
+});
+
+describe("creating a track", () => {
+  it("doesn't ask for a language: the tutor infers it", async () => {
+    await invite(t.db, "bo@example.com");
+    const cookie = await t.signIn("bo@example.com");
+    const created = await t.request("/api/tracks", {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ title: "Geometry" }),
+    });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ title: "Geometry", language: null });
   });
 });

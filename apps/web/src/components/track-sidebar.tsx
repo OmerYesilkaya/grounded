@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 export interface TrackSummary {
   id: string;
   title: string;
-  language: string;
+  language: string | null;
   openSession: { id: string; phase: string } | null;
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "tracks" ALTER COLUMN "language" DROP NOT NULL;

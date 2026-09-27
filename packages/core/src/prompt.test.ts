@@ -109,3 +109,15 @@ describe("the real method.md", () => {
     expect(assemblePrompt(method, "lesson", {})).not.toContain("## Refreshing the teaching notes");
   });
 });
+
+describe("assemblePrompt: teaching language", () => {
+  it("says when the track's language isn't known yet", () => {
+    const method = parseMethod(FIXTURE);
+    const prompt = assemblePrompt(method, "probe", {
+      track: { title: "Geometry", language: null },
+    });
+    expect(prompt).toContain(
+      "Teaching language: not known yet. Teach in the language the learner writes in, and record it with set-language.",
+    );
+  });
+});

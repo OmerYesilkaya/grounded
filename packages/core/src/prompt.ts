@@ -46,7 +46,8 @@ export type TermStatus = "planned" | "taught" | "confirmed" | "assumed";
 
 /** Everything the app knows that a call may need (method.md, "What the app gives you"). */
 export interface PromptContext {
-  track?: { title: string; language: string };
+  /** language is null until the tutor has inferred it from the learner's messages. */
+  track?: { title: string; language: string | null };
   terms?: readonly { term: string; status: TermStatus; restsOn: readonly string[] }[];
   borrowed?: readonly { term: string; fromTrack: string }[];
   plan?: { arcs: readonly { title: string; terms: readonly string[] }[]; notes?: string };
@@ -68,8 +69,12 @@ export function assemblePrompt(method: Method, phase: Phase, context: PromptCont
 function renderContext(context: PromptContext): string {
   const parts: string[] = [];
   const { track, terms, borrowed, plan, fixList, teachingNotes, extra } = context;
-  if (track)
-    parts.push(`## Track\n\nSubject: ${track.title}\nTeaching language: ${track.language}`);
+  if (track) {
+    const language =
+      track.language ??
+      "not known yet. Teach in the language the learner writes in, and record it with set-language.";
+    parts.push(`## Track\n\nSubject: ${track.title}\nTeaching language: ${language}`);
+  }
   if (terms?.length) {
     const rows = terms.map(
       (t) => `| ${t.term} | ${t.status} | ${t.restsOn.length ? t.restsOn.join(", ") : "—"} |`,
