@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { createResendSender } from "./email.js";
+import { createMagicLinkDelivery, createResendSender } from "./email.js";
 
 const LINK = "https://app.example.org/api/auth/magic-link/verify?token=abc&callbackURL=%2F";
 
@@ -49,5 +49,63 @@ describe("magic link email", () => {
       "Resend refused the email (403): You can only send testing emails to your own email address",
     );
     expect(message).not.toContain("re_test_123");
+  });
+});
+
+describe("magic link delivery", () => {
+  const link = "http://localhost:5173/api/auth/magic-link/verify?token=t";
+
+  it("prints the link in development before emailing it, so a failed email never blocks sign-in", async () => {
+    const lines: string[] = [];
+    const order: string[] = [];
+    const deliver = createMagicLinkDelivery({
+      email: (to) => {
+        order.push(`email ${to}`);
+        return Promise.resolve();
+      },
+      printLinks: true,
+      log: (line) => {
+        lines.push(line);
+        order.push("print");
+      },
+    });
+    await deliver("ada@example.com", link);
+    expect(order).toEqual(["print", "email ada@example.com"]);
+    expect(lines.join("\n")).toContain(link);
+  });
+
+  it("only emails in production", async () => {
+    const lines: string[] = [];
+    const email = vi.fn(() => Promise.resolve());
+    const deliver = createMagicLinkDelivery({
+      email,
+      printLinks: false,
+      log: (line) => lines.push(line),
+    });
+    await deliver("ada@example.com", link);
+    expect(email).toHaveBeenCalledWith("ada@example.com", link);
+    expect(lines).toEqual([]);
+  });
+
+  it("logs a failed email with the reason, and still fails the request", async () => {
+    const errors: string[] = [];
+    const deliver = createMagicLinkDelivery({
+      email: () =>
+        Promise.reject(new Error("Resend refused the email (403): only your own address")),
+      printLinks: false,
+      log: () => undefined,
+      logError: (line) => errors.push(line),
+    });
+    await expect(deliver("eve@example.com", link)).rejects.toThrow("Resend refused the email");
+    expect(errors).toEqual([
+      "Magic link email to eve@example.com failed: Resend refused the email (403): only your own address",
+    ]);
+  });
+
+  it("prints only, when there is no email provider", async () => {
+    const lines: string[] = [];
+    const deliver = createMagicLinkDelivery({ printLinks: true, log: (line) => lines.push(line) });
+    await deliver("ada@example.com", link);
+    expect(lines.join("\n")).toContain(link);
   });
 });

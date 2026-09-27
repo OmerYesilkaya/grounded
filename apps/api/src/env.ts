@@ -7,6 +7,7 @@ const schema = z.object({
   BETTER_AUTH_SECRET: z.string().min(32),
   /** Where the web app is served; the API is reached through it at /api. */
   APP_URL: z.url().default("http://localhost:5173"),
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(8787),
   /** Magic links go by email when set; to the console otherwise. */
   RESEND_API_KEY: z.string().min(1).optional(),

@@ -23,6 +23,12 @@ export function SignInPage() {
           If {email.trim()} is invited, a sign-in link is on its way. It works once and expires
           soon.
         </p>
+        {import.meta.env.DEV && (
+          <p className="mt-3 rounded-lg border border-dashed px-3 py-2 text-xs text-subtle-foreground">
+            Development: the link is also printed in the terminal running <code>pnpm dev:api</code>.
+            Only invited emails get one (<code>pnpm invite you@example.com</code>).
+          </p>
+        )}
         <Button
           variant="link"
           className="mt-4 px-0"

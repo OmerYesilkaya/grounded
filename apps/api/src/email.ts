@@ -36,8 +36,29 @@ export function createResendSender(options: {
   };
 }
 
-/** Development without a Resend key: the link goes to the console. */
-export const consoleSender: MagicLinkSender = (email, url) => {
-  console.log(`\nMagic link for ${email}:\n${url}\n`);
-  return Promise.resolve();
-};
+/**
+ * How a magic link reaches the learner. In development the link is printed first, so a refused or
+ * spam-filed email never blocks local sign-in; in production it is only emailed. A failed email is
+ * logged with its reason and still fails the request.
+ */
+export function createMagicLinkDelivery(options: {
+  email?: MagicLinkSender | undefined;
+  printLinks: boolean;
+  log?: (line: string) => void;
+  logError?: (line: string) => void;
+}): MagicLinkSender {
+  const log = options.log ?? console.log;
+  const logError = options.logError ?? console.error;
+  return async (to, url) => {
+    if (options.printLinks) log(`\nMagic link for ${to}:\n${url}\n`);
+    if (!options.email) return;
+    try {
+      await options.email(to, url);
+    } catch (error) {
+      logError(
+        `Magic link email to ${to} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      throw error;
+    }
+  };
+}
