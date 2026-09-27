@@ -618,9 +618,14 @@ it. Use only the blocks the call allows (the app lists them); anything else is r
   by `--- frame`. Use it only when seeing the moments one by one is what makes it clear.
 - A chart is a `chart` block holding a Vega-Lite spec, with a `source:` line when it shows real data.
 - Math is `$…$` inline and `$$…$$` on its own line. Code goes in fenced code blocks with its language.
-- Media comes only from the app's tools, never from a URL you remember: images through `find_image`, a
-  video clip as `:::video{id="…" start="…" end="…"}`, audio through `find_audio`, and any other source as
-  `:::link{url="…" title="…" why="…"}`. The app verifies every one before showing it.
+- Media comes only from the app's tools and your search results, never from a URL you remember. Each
+  is one line on its own:
+  - an image found with `find_image`: `::image{ref="…" caption="…"}`, using the `ref` the tool returned;
+  - audio found with `find_audio`: `::audio{ref="…" caption="…"}`;
+  - a YouTube clip: `::video{id="…" start="…" end="…" caption="…"}`, times in seconds;
+  - any other source: `::link{url="…" title="…" why="…"}`.
+
+  The app verifies every one before showing it.
 
 <!-- phases: lesson aside homework final -->
 
