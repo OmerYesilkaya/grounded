@@ -13,7 +13,9 @@
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
     "db:up": "docker compose up -d postgres",
-    "db:down": "docker compose down"
+    "db:down": "docker compose down",
+    "db:generate": "pnpm --filter @grounded/db generate",
+    "db:migrate": "pnpm --filter @grounded/db migrate"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
