@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { checkVerdictSchema, lessonOutlineSchema, trackActionSchema } from "./index.js";
+import {
+  checkVerdictSchema,
+  lessonOutlineSchema,
+  planActionsSchema,
+  probeDecisionSchema,
+  trackActionSchema,
+} from "./index.js";
 
 /**
  * Every object's properties must all be required, and there must be no `oneOf`: OpenAI's strict
@@ -33,6 +39,8 @@ describe("model output schemas", () => {
     ["track actions", z.object({ actions: z.array(trackActionSchema) })],
     ["check verdict", checkVerdictSchema],
     ["lesson outline", lessonOutlineSchema],
+    ["probe decision", probeDecisionSchema],
+    ["plan actions", planActionsSchema],
   ])("%s are accepted by strict structured outputs", (_, schema) => {
     expect(strictProblems(z.toJSONSchema(schema))).toEqual([]);
   });

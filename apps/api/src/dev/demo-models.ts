@@ -12,26 +12,14 @@ const usage = {
   outputTokens: { total: 0, text: 0, reasoning: 0 },
 };
 
-function model(
-  text: string,
-  calls: { name: string; input: unknown }[] = [],
-  generate: string[] = [],
-) {
+function model(text: string, generate: string[] = []) {
   const parts: LanguageModelV4StreamPart[] = [{ type: "text-start", id: "t" }];
   for (const word of text.split(/(?<=\s)/))
     parts.push({ type: "text-delta", id: "t", delta: word });
   parts.push({ type: "text-end", id: "t" });
-  calls.forEach((c, i) =>
-    parts.push({
-      type: "tool-call",
-      toolCallId: `c${String(i)}`,
-      toolName: c.name,
-      input: JSON.stringify(c.input),
-    }),
-  );
   parts.push({
     type: "finish",
-    finishReason: { unified: calls.length ? "tool-calls" : "stop", raw: "stop" },
+    finishReason: { unified: "stop", raw: "stop" },
     usage,
   });
   const result = (t: string): LanguageModelV4GenerateResult => ({
@@ -102,65 +90,52 @@ export function createDemoModels(): ModelAccess {
     probe: (n) =>
       n % 2 === 1
         ? model("In your own words: what do you think happens when a program adds one to a number?")
-        : model("Thanks, that's clear.", [
-            {
-              name: "record",
-              input: {
-                actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
-              },
-            },
-            {
-              name: "finish_probe",
-              input: { summary: "Floor: variables. Goal: why counters come out wrong." },
-            },
+        : model("Thanks, that's clear. I have what I need to plan.", [
+            JSON.stringify({
+              actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
+              finished: true,
+            }),
           ]),
     plan: () =>
       model(
         "We start from something you already hold: a program changes values in memory. From there we'll see what really happens when a number goes up by one, then what goes wrong when two parts of a program do it at the same moment. That is exactly the counter problem you described.",
         [
-          {
-            name: "propose_plan",
-            input: {
-              actions: [
-                { type: "add-planned-term", term: "working copy", restsOn: [] },
-                { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
-                {
-                  type: "set-plan",
-                  arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
-                  notes: "",
-                },
-              ],
-            },
-          },
+          JSON.stringify({
+            actions: [
+              { type: "add-planned-term", term: "working copy", restsOn: [] },
+              { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
+              {
+                type: "set-plan",
+                arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
+                notes: "",
+              },
+            ],
+          }),
         ],
       ),
-    lesson: () => model(LESSON, [], [JSON.stringify(OUTLINE)]),
+    lesson: () => model(LESSON, [JSON.stringify(OUTLINE)]),
     check: (n) =>
-      model(
-        "",
-        [],
-        [
-          JSON.stringify(
-            n === 2
-              ? {
-                  verdict: "missed",
-                  reply:
-                    "Close, but that says what happened, not why. Worker B copied the value out **before** worker A put its 6 back, so B added one to an old 5.",
-                  freshQuestion:
-                    "Two workers each take one away from a balance of 10 at the same time. What is the worst final value, and why?",
-                  note: "The second worker copied the value out before the first put its result back, so it worked from an old copy.",
-                  actions: [],
-                }
-              : {
-                  verdict: "landed",
-                  reply: "That's it.",
-                  freshQuestion: null,
-                  note: null,
-                  actions: [],
-                },
-          ),
-        ],
-      ),
+      model("", [
+        JSON.stringify(
+          n === 2
+            ? {
+                verdict: "missed",
+                reply:
+                  "Close, but that says what happened, not why. Worker B copied the value out **before** worker A put its 6 back, so B added one to an old 5.",
+                freshQuestion:
+                  "Two workers each take one away from a balance of 10 at the same time. What is the worst final value, and why?",
+                note: "The second worker copied the value out before the first put its result back, so it worked from an old copy.",
+                actions: [],
+              }
+            : {
+                verdict: "landed",
+                reply: "That's it.",
+                freshQuestion: null,
+                note: null,
+                actions: [],
+              },
+        ),
+      ]),
     homework: () =>
       model(
         "**Predict, then check.** Two workers each add one to a counter that starts at 0, a thousand times each. Write down what you expect the counter to show, then run it and explain any difference.\n\nA good answer shows why the three moves can interleave.",
@@ -170,22 +145,18 @@ export function createDemoModels(): ModelAccess {
         ? model(
             "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
           )
-        : model(
-            "",
-            [],
-            [
-              JSON.stringify({
-                actions: [
-                  {
-                    type: "set-term-status",
-                    term: "working copy",
-                    status: "confirmed",
-                    evidence: "memory still holds the old value",
-                  },
-                ],
-              }),
-            ],
-          ),
+        : model("", [
+            JSON.stringify({
+              actions: [
+                {
+                  type: "set-term-status",
+                  term: "working copy",
+                  status: "confirmed",
+                  evidence: "memory still holds the old value",
+                },
+              ],
+            }),
+          ]),
   };
   return {
     model: ({ purpose }) => {

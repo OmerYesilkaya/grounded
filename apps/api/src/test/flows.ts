@@ -38,6 +38,18 @@ export const PLAN_ACTIONS = [
   },
 ];
 
+/** A probe turn: the message, then the structured record of what it showed and whether it's done. */
+export const probeTurn = (text: string, decision: { actions?: object[]; finished: boolean }) => ({
+  text,
+  thenGenerate: [JSON.stringify({ actions: [], ...decision })],
+});
+
+/** A plan attempt: the plan's message, then the structured record of its actions. */
+export const planAttempt = (text: string, actions: object[] = PLAN_ACTIONS) => ({
+  text,
+  thenGenerate: [JSON.stringify({ actions })],
+});
+
 /** Common journeys through a session, on the real API with scripted models. */
 export function createFlows(t: Harness, models: Models) {
   const snapshot = async (cookie: string, sessionId: string) =>
@@ -70,25 +82,14 @@ export function createFlows(t: Harness, models: Models) {
 
   const planned = async () => {
     const session = await startedSession();
-    models.script("probe", {
-      text: "Thanks, that's clear.",
-      calls: [
-        {
-          name: "record",
-          input: {
-            actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
-          },
-        },
-        {
-          name: "finish_probe",
-          input: { summary: "Floor: variables. Goal: counters under load." },
-        },
-      ],
-    });
-    models.script("plan", {
-      text: PLAN_TEXT,
-      calls: [{ name: "propose_plan", input: { actions: PLAN_ACTIONS } }],
-    });
+    models.script(
+      "probe",
+      probeTurn("Thanks, that's clear.", {
+        actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
+        finished: true,
+      }),
+    );
+    models.script("plan", planAttempt(PLAN_TEXT));
     await t.request(`/api/sessions/${session.sessionId}/messages`, {
       method: "POST",
       cookie: session.cookie,

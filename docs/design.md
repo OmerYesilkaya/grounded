@@ -251,6 +251,12 @@ plan"); the server checks preconditions (a plan before a lesson; every check res
 the learner approves at the gates (the plan). The learner can nudge at any time ("skip ahead to the
 plan"). Sessions stay open indefinitely and resume where they stopped; **one open session per track**.
 
+**Prose first, then structure.** A tutor message is streamed from a call with no tools, so a tool call
+can never take the message's place; its actions and the phase decision ("probing done", the plan's
+terms and arcs) come from a separate structured call on the finished message. A reply without text is
+asked for again and never stored. Before the first plan, research runs as its own call with the
+provider's search tool, and its notes go into the plan's prompt.
+
 ### 7.2 Lesson generation pipeline
 
 1. **Research + outline** (search on): steps, the motivation for each, the terms each introduces, the

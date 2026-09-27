@@ -1,17 +1,19 @@
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
   assemblePrompt,
   checkVerdictSchema,
   generateLesson,
+  planActionsSchema,
+  probeDecisionSchema,
   stepInfoFor,
   trackActionSchema,
   type Method,
   type Phase,
   type SessionState,
-  type TrackAction,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import { asc, checkMessages, eq, lessons, sessionMessages, sql, type Db } from "@grounded/db";
-import { generateText, Output, tool, type ModelMessage, type ToolSet } from "ai";
+import { generateText, Output, stepCountIs, streamText, type ModelMessage, type Tool } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
 import { writeChatMessage } from "./chat.js";
@@ -36,38 +38,14 @@ interface SessionJob {
 const PLAN_ATTEMPTS = 3;
 const SWEEP_ATTEMPTS = 3;
 
-const recordTool = tool({
-  description:
-    "Record changes to the track: term statuses (with the learner's words as evidence), planned terms and what they rest on, fix-list items, the plan's arcs.",
-  inputSchema: z.object({ actions: z.array(trackActionSchema) }),
-});
+const RESEARCH_STEPS = 6;
 
-const finishProbeTool = tool({
-  description: "Call when the learner's level and goal are both clear enough to plan against.",
-  inputSchema: z.object({
-    summary: z.string().describe("Where the learner's knowledge ends, and their goal."),
-  }),
-});
-
-const proposePlanTool = tool({
-  description:
-    "Record the plan you just presented: every planned term with what it rests on, the arcs in order, and any misconceptions found in the probe as fix-list items.",
-  inputSchema: z.object({ actions: z.array(trackActionSchema) }),
-});
-
-/**
- * The SDK's ToolSet type rejects tool() results under exactOptionalPropertyTypes (its optional
- * callbacks are typed without `undefined`); the tools themselves are fine.
- */
-const toolSet = (tools: Record<string, unknown>) => tools as ToolSet;
-
-const actionsFrom = (
-  calls: readonly { toolName: string; input: unknown }[],
-  name: string,
-): TrackAction[] =>
-  calls
-    .filter((c) => c.toolName === name)
-    .flatMap((c) => (c.input as { actions: TrackAction[] }).actions);
+const PROBE_DECISION_PROMPT =
+  "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: it is only finished if your last message closed the probe instead of asking another question.";
+const PLAN_RECORD_PROMPT =
+  "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, the arcs in order, and any misconceptions found in the probe as fix-list items.";
+const RESEARCH_PROMPT =
+  "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
 /** The session's jobs. A failure the learner can act on is published as an error event. */
 export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
@@ -90,7 +68,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // A conversation starts with the learner; the app opens it on their behalf.
     if (messages[0]?.role !== "user")
       messages.unshift({ role: "user", content: "(The learner has started a session.)" });
-    return { session, track, terms, messages, system: assemblePrompt(method, phase, track) };
+    const learnerHasSpoken = history.some((m) => m.role === "learner");
+    return {
+      session,
+      track,
+      terms,
+      messages,
+      learnerHasSpoken,
+      system: assemblePrompt(method, phase, track),
+    };
   };
 
   const lessonRow = async (sessionId: string) => {
@@ -183,7 +169,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
   return {
     "probe-turn": guarded(async ({ sessionId }) => {
-      const { session, terms, messages, system } = await contextFor(sessionId, "probe");
+      const { session, terms, messages, learnerHasSpoken, system } = await contextFor(
+        sessionId,
+        "probe",
+      );
       const model = await models.model({
         userId: session.userId,
         purpose: "probe",
@@ -197,11 +186,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         messages,
         terms,
         kind: "message",
-        tools: toolSet({ record: recordTool, finish_probe: finishProbeTool }),
       });
-      const recorded = actionsFrom(reply.toolCalls, "record");
-      if (recorded.length) await applyActions(db, session.trackId, recorded, { source: "probe" });
-      if (reply.toolCalls.some((c) => c.toolName === "finish_probe")) {
+      // The opening question follows nothing the learner said: nothing to record, nothing decided.
+      if (!learnerHasSpoken) return;
+      const { output } = await generateText({
+        model,
+        system,
+        output: Output.object({ schema: probeDecisionSchema }),
+        messages: [
+          ...messages,
+          { role: "assistant", content: reply.text },
+          { role: "user", content: PROBE_DECISION_PROMPT },
+        ],
+      });
+      if (output.actions.length)
+        await applyActions(db, session.trackId, output.actions, { source: "probe" });
+      if (output.finished) {
         await applyEvent(db, sessionId, { type: "probe-done" });
         await queue.enqueue("plan", { sessionId });
       }
@@ -413,38 +413,56 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }),
 
     plan: guarded(async ({ sessionId }) => {
-      const { session, terms, messages, system } = await contextFor(sessionId, "plan");
-      const search = await models.searchTool(session.userId);
-      const tools = toolSet({
-        propose_plan: proposePlanTool,
-        ...(search ? { web_search: search } : {}),
+      const { session, track, terms, messages } = await contextFor(sessionId, "plan");
+      const modelFor = () =>
+        models.model({ userId: session.userId, purpose: "plan", role: "strong" });
+
+      // Research runs before the first plan only, as its own call: a search can't take the plan's place.
+      const search =
+        session.state.plan === "none" ? await models.searchTool(session.userId) : undefined;
+      const notes = search
+        ? await research(await modelFor(), assemblePrompt(method, "plan", track), messages, search)
+        : "";
+      const system = assemblePrompt(method, "plan", {
+        ...track,
+        ...(notes
+          ? {
+              extra: [
+                { heading: "Your research notes (the learner hasn't seen them)", body: notes },
+              ],
+            }
+          : {}),
       });
 
       let feedback: ModelMessage[] = [];
       for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
         // Each attempt is its own call, with the key decrypted for it.
-        const model = await models.model({
-          userId: session.userId,
-          purpose: "plan",
-          role: "strong",
-        });
+        const model = await modelFor();
+        const conversation = [...messages, ...feedback];
         const reply = await writeChatMessage({
           db,
           sessionId,
           model,
           system,
-          messages: [...messages, ...feedback],
+          messages: conversation,
           terms,
           kind: "plan",
-          tools,
-          maxSteps: search ? 6 : 1,
         });
-        const actions = actionsFrom(reply.toolCalls, "propose_plan");
-        const applied = actions.length
-          ? await applyActions(db, session.trackId, actions, { source: "plan" })
+        const { output } = await generateText({
+          model,
+          system,
+          output: Output.object({ schema: planActionsSchema }),
+          messages: [
+            ...conversation,
+            { role: "assistant", content: reply.text },
+            { role: "user", content: PLAN_RECORD_PROMPT },
+          ],
+        });
+        const applied = output.actions.length
+          ? await applyActions(db, session.trackId, output.actions, { source: "plan" })
           : {
               ok: false as const,
-              errors: ["Call propose_plan with the plan's planned terms and arcs."],
+              errors: ["Record the plan's planned terms and arcs."],
             };
         if (applied.ok) {
           await applyEvent(db, sessionId, { type: "plan-proposed" });
@@ -457,7 +475,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           { role: "assistant", content: reply.text },
           {
             role: "user",
-            content: `The plan couldn't be recorded:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nPresent the corrected plan and call propose_plan again.`,
+            content: `The plan couldn't be recorded:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nPresent the corrected plan.`,
           },
         ];
       }
@@ -466,4 +484,21 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
     }),
   };
+}
+
+/** The planning research: the provider's web search, returned as notes for the plan's calls. */
+async function research(
+  model: LanguageModelV4,
+  system: string,
+  messages: ModelMessage[],
+  search: Tool,
+): Promise<string> {
+  const stream = streamText({
+    model,
+    system,
+    messages: [...messages, { role: "user", content: RESEARCH_PROMPT }],
+    tools: { web_search: search },
+    stopWhen: stepCountIs(RESEARCH_STEPS),
+  });
+  return stream.text;
 }

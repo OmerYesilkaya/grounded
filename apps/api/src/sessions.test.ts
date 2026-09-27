@@ -11,6 +11,7 @@ import {
   FIRST_QUESTION,
   PLAN_ACTIONS,
   PLAN_TEXT,
+  planAttempt,
   type Snapshot,
 } from "./test/flows.js";
 
@@ -114,10 +115,7 @@ describe("probe and plan", () => {
 
   it("lets the learner skip ahead to the plan", async () => {
     const { cookie, sessionId } = await startedSession();
-    models.script("plan", {
-      text: PLAN_TEXT,
-      calls: [{ name: "propose_plan", input: { actions: PLAN_ACTIONS } }],
-    });
+    models.script("plan", planAttempt(PLAN_TEXT));
     expect(
       (await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie }))
         .status,
@@ -130,11 +128,8 @@ describe("probe and plan", () => {
     const bad = [{ type: "add-planned-term", term: "lost update", restsOn: ["working copy"] }];
     models.script(
       "plan",
-      {
-        text: "A plan resting on something missing.",
-        calls: [{ name: "propose_plan", input: { actions: bad } }],
-      },
-      { text: PLAN_TEXT, calls: [{ name: "propose_plan", input: { actions: PLAN_ACTIONS } }] },
+      planAttempt("A plan resting on something missing.", bad),
+      planAttempt(PLAN_TEXT),
     );
     await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
     await until(cookie, sessionId, (s) => s.state.plan === "proposed");
@@ -149,23 +144,16 @@ describe("probe and plan", () => {
 
   it("revises the plan when the learner replies to it, then approves it into the lesson", async () => {
     const { cookie, sessionId } = await planned();
-    models.script("plan", {
-      text: "Revised: backend first.",
-      calls: [
+    models.script(
+      "plan",
+      planAttempt("Revised: backend first.", [
         {
-          name: "propose_plan",
-          input: {
-            actions: [
-              {
-                type: "set-plan",
-                arcs: [{ title: "Backend", terms: ["lost update"] }],
-                notes: "Reordered at the learner's request.",
-              },
-            ],
-          },
+          type: "set-plan",
+          arcs: [{ title: "Backend", terms: ["lost update"] }],
+          notes: "Reordered at the learner's request.",
         },
-      ],
-    });
+      ]),
+    );
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
       cookie,
@@ -184,6 +172,29 @@ describe("probe and plan", () => {
     });
     expect(approved.status).toBe(200);
     expect(((await approved.json()) as Snapshot).state.phase).toBe("lesson");
+  });
+
+  it("researches with web search before the first plan, in its own call", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.enableSearch();
+    models.script(
+      "plan",
+      {
+        searches: ["lost update"],
+        text: "NOTES: a lost update is when one write overwrites another.",
+      },
+      planAttempt(PLAN_TEXT),
+    );
+    await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    const [researcher, planner] = models.used.filter((u) => u.purpose === "plan");
+    expect(researcher?.model.doStreamCalls[0]?.tools?.map((tool) => tool.name)).toEqual([
+      "web_search",
+    ]);
+    const planCall = planner?.model.doStreamCalls[0];
+    expect(planCall?.tools).toBeUndefined();
+    expect(JSON.stringify(planCall?.prompt)).toContain("NOTES: a lost update");
   });
 
   it("answers an out-of-order action with the state machine's reason", async () => {
@@ -231,5 +242,73 @@ describe("creating a track", () => {
     });
     expect(created.status).toBe(201);
     expect(await created.json()).toMatchObject({ title: "Geometry", language: null });
+  });
+});
+
+describe("empty replies", () => {
+  const storedTutorTexts = async (sessionId: string) =>
+    (await t.db.select().from(sessionMessages).where(eq(sessionMessages.sessionId, sessionId)))
+      .filter((m) => m.role === "tutor")
+      .map((m) => m.text);
+
+  it("asks again when a probe reply is only a tool call, and never stores it empty", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script("probe", {
+      calls: [{ name: "finish_probe", input: { summary: "Floor: variables." } }],
+      thenStream: [{ text: "Got it. What does memory hold while that happens?" }],
+      thenGenerate: [JSON.stringify({ actions: [], finished: false })],
+    });
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "it just adds one" }),
+    });
+    await until(cookie, sessionId, (s) => s.messages.length === 3);
+
+    expect(await storedTutorTexts(sessionId)).toEqual([
+      FIRST_QUESTION,
+      "Got it. What does memory hold while that happens?",
+    ]);
+    const probe = models.used.filter((u) => u.purpose === "probe")[1]?.model;
+    expect(probe?.doStreamCalls.map((call) => call.tools)).toEqual([undefined, undefined]);
+    expect(JSON.stringify(probe?.doStreamCalls[1]?.prompt)).toContain("had no text");
+    expect((await snapshot(cookie, sessionId)).state.phase).toBe("probe");
+  });
+
+  it("asks again when the plan's prose comes back empty, then records the plan", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script("plan", {
+      reasoning: "The plan should start from memory.",
+      thenStream: [{ text: PLAN_TEXT }],
+      thenGenerate: [JSON.stringify({ actions: PLAN_ACTIONS })],
+    });
+    await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    expect(await storedTutorTexts(sessionId)).toEqual([FIRST_QUESTION, PLAN_TEXT]);
+    const stored = await t.db.select().from(terms);
+    expect(stored.map((row) => row.term)).toEqual(["working copy", "lost update"]);
+  });
+
+  it("retracts the message and says so when every attempt is empty", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script("probe", { text: " ", thenStream: [{ text: "\n" }, {}] });
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "it just adds one" }),
+    });
+    const events = async () =>
+      t.db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId));
+    await t.waitFor(async () => (await events()).some((e) => e.type === "error"));
+
+    const log = await events();
+    const started = log.filter((e) => e.type === "message-start").at(-1)?.data as { id: string };
+    expect(log.map((e) => e.type)).toContain("message-retracted");
+    expect(log.find((e) => e.type === "message-retracted")?.data).toEqual({ id: started.id });
+    expect(log.find((e) => e.type === "error")?.data).toEqual({
+      message: "The tutor's reply came back empty. Try again.",
+    });
+    expect(await storedTutorTexts(sessionId)).toEqual([FIRST_QUESTION]);
   });
 });
