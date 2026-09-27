@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  bigserial,
   boolean,
   index,
   integer,
@@ -11,6 +12,8 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { Block, LessonStep } from "@grounded/content";
+import type { LessonOutline, SessionState } from "@grounded/core";
 import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
 
@@ -214,3 +217,94 @@ export const fixListItems = pgTable("fix_list_items", {
   createdAt: createdAt(),
   closedAt: timestamp("closed_at", { withTimezone: true }),
 });
+
+// ---------------------------------------------------------------------------------------------
+// Learning sessions (design §7). "sessions" is Better Auth's table.
+// ---------------------------------------------------------------------------------------------
+
+export const learningSessions = pgTable(
+  "learning_sessions",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<"normal" | "final">().notNull().default("normal"),
+    /** The session state machine's state (@grounded/core). */
+    state: jsonb("state").$type<SessionState>().notNull(),
+    closedAt: timestamp("closed_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  // One open session per track: two would edit the same term list.
+  (table) => [
+    uniqueIndex("learning_sessions_one_open")
+      .on(table.trackId)
+      .where(sql`${table.closedAt} is null`),
+  ],
+);
+
+/** The session chat: probe, plan, homework and recap. */
+export const sessionMessages = pgTable("session_messages", {
+  id: id(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => learningSessions.id, { onDelete: "cascade" }),
+  role: text("role").$type<"learner" | "tutor">().notNull(),
+  /** The learner's words as typed; tutor messages are stored as validated blocks. */
+  text: text("text"),
+  blocks: jsonb("blocks").$type<Block[]>(),
+  kind: text("kind")
+    .$type<"message" | "plan" | "homework" | "recap">()
+    .notNull()
+    .default("message"),
+  createdAt: createdAt(),
+});
+
+export const lessons = pgTable("lessons", {
+  sessionId: uuid("session_id")
+    .primaryKey()
+    .references(() => learningSessions.id, { onDelete: "cascade" }),
+  outline: jsonb("outline").$type<LessonOutline>(),
+  steps: jsonb("steps").$type<LessonStep[]>().notNull().default([]),
+  failedSteps: jsonb("failed_steps")
+    .$type<{ stepId: string; heading: string }[]>()
+    .notNull()
+    .default([]),
+  /** "After the check" notes, by step id. */
+  notes: jsonb("notes").$type<Record<string, string>>().notNull().default({}),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/** Each step's check thread: answers, verdicts, repairs and fresh questions. */
+export const checkMessages = pgTable("check_messages", {
+  id: id(),
+  sessionId: uuid("session_id")
+    .notNull()
+    .references(() => learningSessions.id, { onDelete: "cascade" }),
+  stepId: text("step_id").notNull(),
+  role: text("role").$type<"learner" | "tutor">().notNull(),
+  text: text("text"),
+  blocks: jsonb("blocks").$type<Block[]>(),
+  verdict: text("verdict").$type<"landed" | "missed">(),
+  createdAt: createdAt(),
+});
+
+/** An ordered log of everything that happened in a session; SSE replays it from any point. */
+export const sessionEvents = pgTable(
+  "session_events",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => learningSessions.id, { onDelete: "cascade" }),
+    type: text("type").notNull(),
+    data: jsonb("data").$type<unknown>().notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("session_events_session").on(table.sessionId, table.id)],
+);

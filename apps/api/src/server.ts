@@ -4,10 +4,12 @@ import { createDb } from "@grounded/db";
 import { validateKey } from "@grounded/providers";
 import { createApp } from "./app.js";
 import { createAuth } from "./auth.js";
+import { createEventHub } from "./engine/events.js";
+import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
 
 const env = readEnv();
-const { db } = createDb(env.DATABASE_URL);
+const { db, client } = createDb(env.DATABASE_URL);
 
 const auth = createAuth({
   db,
@@ -23,6 +25,8 @@ const auth = createAuth({
 const app = createApp({
   db,
   auth,
+  events: createEventHub(client),
+  queue: createJobQueue(env.DATABASE_URL),
   vault: createKeyVault({
     masterKeys: parseMasterKeys(env.KEY_VAULT_MASTER_KEYS),
     activeKid: env.KEY_VAULT_ACTIVE_KID,

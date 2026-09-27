@@ -118,11 +118,15 @@ about, test and debug.
 
 ### 4.2 Runtime
 
-- **Generations are jobs, not requests.** A Postgres-backed queue (pg-boss or graphile-worker) runs
-  model calls in the worker; chunks are written to the database as they stream and broadcast with
-  Postgres `LISTEN/NOTIFY`. The browser subscribes over SSE and resumes from its last event id after a
-  reconnect or a closed tab. API servers hold no state in memory, so API and workers scale
-  independently; Redis replaces `NOTIFY` only if Postgres becomes the bottleneck.
+- **Generations are jobs, not requests.** **graphile-worker** runs model calls in the worker process
+  (`pnpm dev:worker`). It was chosen over pg-boss because it wakes workers through `LISTEN/NOTIFY`, so a
+  chat reply starts at once instead of waiting for a poll. Jobs are attempted once: the SDK already
+  retries provider calls, and a blind job retry could spend the learner's credit twice.
+- **Every session has an ordered event log** (`session_events`). Jobs append to it as they stream and
+  send a Postgres notification; one listener per API process wakes that session's SSE streams. The
+  browser replays from its last event id after a reconnect or a closed tab. API servers hold no state
+  in memory, so API and workers scale independently; Redis replaces `NOTIFY` only if Postgres becomes
+  the bottleneck.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite.
 - **Every row is owned by a user; ids are UUIDv7.**

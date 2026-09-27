@@ -20,7 +20,8 @@
     "invite": "pnpm --filter @grounded/api cli invite",
     "revoke": "pnpm --filter @grounded/api cli revoke",
     "dev:api": "pnpm --filter @grounded/api dev",
-    "dev:web": "pnpm --filter @grounded/web dev"
+    "dev:web": "pnpm --filter @grounded/web dev",
+    "dev:worker": "pnpm --filter @grounded/api worker"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

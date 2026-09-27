@@ -1,14 +1,19 @@
 import type { KeyVault } from "@grounded/crypto";
-import { credentials, eq, type Db } from "@grounded/db";
+import { and, credentials, eq, learningSessions, type Db } from "@grounded/db";
 import { offeredModels, type KeyCheck, type ProviderId } from "@grounded/providers";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { Auth } from "./auth.js";
+import { eventsAfter, type EventHub } from "./engine/events.js";
+import type { JobQueue } from "./engine/queue.js";
 
 export interface AppDependencies {
   db: Db;
   auth: Auth;
   vault: KeyVault;
+  events: EventHub;
+  queue: JobQueue;
   /** Offer models the eval harness hasn't passed (development only). */
   includeUngatedModels: boolean;
   validateKey: (provider: ProviderId, apiKey: string) => Promise<KeyCheck>;
@@ -90,6 +95,63 @@ export function createApp(deps: AppDependencies) {
       .returning();
     if (!row) throw new Error("credential upsert returned nothing");
     return c.json(publicCredential(row));
+  });
+
+  /** The session's event log over SSE: replayed after Last-Event-ID, then live. */
+  app.get("/api/sessions/:id/stream", async (c) => {
+    const sessionId = c.req.param("id");
+    if (!z.uuid().safeParse(sessionId).success) return c.json({ error: "Not found." }, 404);
+    const [session] = await db
+      .select({ id: learningSessions.id })
+      .from(learningSessions)
+      .where(
+        and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, c.get("user").id)),
+      );
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const lastId = Number(c.req.header("last-event-id") ?? c.req.query("after") ?? 0) || 0;
+
+    return streamSSE(c, async (stream) => {
+      let cursor = lastId;
+      let dirty = true;
+      let wake: (() => void) | null = null;
+      const signal = () => {
+        dirty = true;
+        wake?.();
+      };
+      // Subscribe before replaying, so nothing published in between is missed.
+      const unsubscribe = await deps.events.subscribe(sessionId, signal);
+      stream.onAbort(() => {
+        unsubscribe();
+        wake?.();
+      });
+      // Read through a function: an abort can flip this while we wait.
+      const aborted = () => stream.aborted;
+      while (!aborted()) {
+        if (dirty) {
+          dirty = false;
+          for (const event of await eventsAfter(db, sessionId, cursor)) {
+            await stream.writeSSE({
+              id: String(event.id),
+              event: event.type,
+              data: JSON.stringify(event.data),
+            });
+            cursor = event.id;
+          }
+          continue;
+        }
+        const heartbeat = await new Promise<boolean>((resolve) => {
+          const timer = setTimeout(() => {
+            resolve(true);
+          }, 15_000);
+          wake = () => {
+            clearTimeout(timer);
+            resolve(false);
+          };
+        });
+        wake = null;
+        if (heartbeat && !aborted()) await stream.write(": keep-alive\n\n");
+      }
+    });
   });
 
   app.delete("/api/credentials", async (c) => {

@@ -2,16 +2,22 @@ import { randomBytes } from "node:crypto";
 import { createKeyVault } from "@grounded/crypto";
 import { createDb } from "@grounded/db";
 import type { KeyCheck } from "@grounded/providers";
-import { afterAll, beforeEach } from "vitest";
+import type { Runner, TaskList } from "graphile-worker";
+import { afterAll, beforeAll, beforeEach } from "vitest";
 import { createApp } from "../app.js";
 import { createAuth } from "../auth.js";
+import { createEventHub } from "../engine/events.js";
+import { createJobQueue, startWorker } from "../engine/queue.js";
 import { TEST_DATABASE_URL } from "./global-setup.js";
 
 export const BASE_URL = "http://localhost:3000";
 
 /** The real app on the test database, with magic links captured and key validation faked. */
-export function createTestHarness() {
-  const { db, close } = createDb(TEST_DATABASE_URL);
+export function createTestHarness(options: { tasks?: TaskList } = {}) {
+  const { db, client, close } = createDb(TEST_DATABASE_URL);
+  const events = createEventHub(client);
+  const queue = createJobQueue(TEST_DATABASE_URL);
+  let runner: Runner | undefined;
   const vault = createKeyVault({ masterKeys: { t1: randomBytes(32) }, activeKid: "t1" });
   const sent: { email: string; url: string }[] = [];
   let keyCheck: KeyCheck = { ok: true };
@@ -29,6 +35,8 @@ export function createTestHarness() {
     db,
     auth,
     vault,
+    events,
+    queue,
     includeUngatedModels: true,
     validateKey: () => Promise.resolve(keyCheck),
   });
@@ -37,12 +45,28 @@ export function createTestHarness() {
     sent.length = 0;
     keyCheck = { ok: true };
     await db.execute(
-      "truncate users, sessions, accounts, verifications, allowlist, credentials, usage_events cascade",
+      "truncate users, sessions, accounts, verifications, allowlist, credentials, usage_events, session_events cascade",
     );
   });
+  beforeAll(async () => {
+    if (options.tasks)
+      runner = await startWorker(TEST_DATABASE_URL, options.tasks, { concurrency: 2 });
+  });
   afterAll(async () => {
+    await runner?.stop();
+    await queue.close();
+    await events.close();
     await close();
   });
+
+  /** Polls until the condition holds (for work done by the worker). */
+  const waitFor = async (condition: () => Promise<boolean>, timeoutMs = 5000) => {
+    const deadline = Date.now() + timeoutMs;
+    while (!(await condition())) {
+      if (Date.now() > deadline) throw new Error("timed out waiting for a condition");
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
 
   const request = (path: string, init: RequestInit & { cookie?: string } = {}) => {
     const headers = new Headers(init.headers);
@@ -70,6 +94,8 @@ export function createTestHarness() {
   return {
     db,
     vault,
+    queue,
+    waitFor,
     sent,
     request,
     signIn,
