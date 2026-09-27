@@ -12,6 +12,7 @@
     "migrate": "tsx --env-file-if-exists=../../.env src/migrate.ts"
   },
   "dependencies": {
+    "@grounded/crypto": "workspace:^",
     "drizzle-orm": "^0.45.3",
     "postgres": "^3.4.9",
     "uuid": "^14.0.2"

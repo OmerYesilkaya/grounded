@@ -8,6 +8,7 @@ import {
   timestamp,
   uuid,
 } from "drizzle-orm/pg-core";
+import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
 
 const id = () =>
@@ -89,17 +90,6 @@ export type ProviderId = "anthropic" | "openai" | "google";
 /** own_key: the learner's key. sponsored: someone else pays for this learner (design §4.3). */
 export type CredentialSource = "own_key" | "sponsored";
 
-/** An API key sealed by @grounded/crypto; the plaintext key is never stored. */
-export interface SealedSecret {
-  v: 1;
-  /** Which master key wrapped the data key. */
-  kid: string;
-  wrappedKey: string;
-  iv: string;
-  tag: string;
-  ciphertext: string;
-}
-
 /** One credential per learner in v1. */
 export const credentials = pgTable("credentials", {
   id: id(),
@@ -109,6 +99,7 @@ export const credentials = pgTable("credentials", {
     .references(() => users.id, { onDelete: "cascade" }),
   source: text("source").$type<CredentialSource>().notNull().default("own_key"),
   provider: text("provider").$type<ProviderId>().notNull(),
+  /** Sealed by @grounded/crypto, bound to user_id; the plaintext key is never stored. */
   sealedKey: jsonb("sealed_key").$type<SealedSecret>().notNull(),
   /** The key's last four characters, for "sk-…a1b2" in settings. */
   keyHint: text("key_hint").notNull(),
