@@ -1,3 +1,4 @@
+import { terms } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -210,5 +211,53 @@ describe("checks", () => {
     const early = await answer(cookie, sessionId, "s2", { text: "jumping ahead" });
     expect(early.status).toBe(409);
     expect(await early.json()).toEqual({ error: "That step isn't the one being checked." });
+  });
+});
+
+describe("closing the session", () => {
+  it("assigns homework, recaps, sweeps the terms and closes", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script(
+      "check",
+      verdict({ verdict: "landed", reply: "Yes." }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+    );
+    models.script("homework", {
+      text: "Predict what a counter shows after two workers add one 1000 times each, then run it.",
+    });
+    const sweep = (actions: object[]) => ({ thenGenerate: [JSON.stringify({ actions })] });
+    const confirmLostUpdate = {
+      type: "set-term-status",
+      term: "lost update",
+      status: "confirmed",
+      evidence: "one addition vanishes",
+    };
+    models.script(
+      "close",
+      {
+        text: "We built why a counter can lose an update: adding one is three moves, and two workers can interleave.",
+      },
+      // The first sweep touches a term that doesn't exist and is rejected whole; the second is right.
+      sweep([
+        confirmLostUpdate,
+        { type: "set-term-status", term: "nonsense", status: "confirmed", evidence: "x" },
+      ]),
+      sweep([confirmLostUpdate]),
+    );
+    for (const id of ["s1", "s2", "s3"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+    await until(cookie, sessionId, (s) => s.state.phase === "closed");
+
+    const s = await snapshot(cookie, sessionId);
+    expect(s.messages.map((m) => m.kind).slice(-2)).toEqual(["homework", "recap"]);
+    const tracks = (await (await t.request("/api/tracks", { cookie })).json()) as {
+      openSession: unknown;
+    }[];
+    expect(tracks[0]?.openSession).toBeNull();
+    const stored = await t.db.select().from(terms);
+    expect(stored.find((row) => row.term === "lost update")?.status).toBe("confirmed");
   });
 });

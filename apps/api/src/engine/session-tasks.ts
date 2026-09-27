@@ -34,6 +34,7 @@ interface SessionJob {
 }
 
 const PLAN_ATTEMPTS = 3;
+const SWEEP_ATTEMPTS = 3;
 
 const recordTool = tool({
   description:
@@ -339,6 +340,60 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           "The learner paused on this step last time and is back. Ask one fresh check question on the same idea, answerable in one or two lines. Reply with the question only.",
       });
       await recordCheckMessage(sessionId, stepId, text, null);
+    }),
+
+    homework: guarded(async ({ sessionId }) => {
+      const { session, terms, messages, system } = await contextFor(sessionId, "homework");
+      const model = await models.model({
+        userId: session.userId,
+        purpose: "homework",
+        role: "strong",
+      });
+      await writeChatMessage({
+        db,
+        sessionId,
+        model,
+        system,
+        messages: [
+          ...messages,
+          { role: "user", content: "(The lesson's checks are done. Assign the homework.)" },
+        ],
+        terms,
+        kind: "homework",
+        surface: "homework",
+      });
+      await applyEvent(db, sessionId, { type: "homework-assigned" });
+      await queue.enqueue("recap", { sessionId });
+    }),
+
+    recap: guarded(async ({ sessionId }) => {
+      const { session, terms, messages, system } = await contextFor(sessionId, "close");
+      const recap = await writeChatMessage({
+        db,
+        sessionId,
+        model: await models.model({ userId: session.userId, purpose: "close", role: "strong" }),
+        system,
+        messages: [...messages, { role: "user", content: "(Close the session: the recap.)" }],
+        terms,
+        kind: "recap",
+      });
+
+      // The term sweep is its own call, so a rejected edit never means rewriting the recap.
+      let feedback = "";
+      for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt++) {
+        const { output } = await generateText({
+          model: await models.model({ userId: session.userId, purpose: "close", role: "strong" }),
+          system,
+          output: Output.object({ schema: z.object({ actions: z.array(trackActionSchema) }) }),
+          prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list.${feedback}`,
+        });
+        const applied = output.actions.length
+          ? await applyActions(db, session.trackId, output.actions, { source: "close" })
+          : { ok: true as const };
+        if (applied.ok) break;
+        feedback = `\n\nThose edits were rejected:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nFix them.`;
+      }
+      await applyEvent(db, sessionId, { type: "recap-done" });
     }),
 
     plan: guarded(async ({ sessionId }) => {
