@@ -34,10 +34,15 @@ export function parseBlocks(markdown: string, options: ParseOptions = {}): Parse
  * Ids follow the node's position in the source ("b3", "b3.1" for its first child), so a node that is
  * rejected still uses up its number and the ids of its neighbours don't depend on it.
  */
-export function convertNodes(nodes: RootContent[], idPrefix: string, issues: Issue[]): Block[] {
+export function convertNodes(
+  nodes: RootContent[],
+  idPrefix: string,
+  issues: Issue[],
+  firstIndex = 1,
+): Block[] {
   const blocks: Block[] = [];
   nodes.forEach((node, index) => {
-    const block = convertNode(node, `${idPrefix}${String(index + 1)}`, issues);
+    const block = convertNode(node, `${idPrefix}${String(firstIndex + index)}`, issues);
     if (block) blocks.push(block);
   });
   return blocks;
