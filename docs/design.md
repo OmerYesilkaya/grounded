@@ -81,6 +81,11 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   not yet confirmed (exact match against the track's term list and a per-track glossary; a cheap model
   reviews only what is left), structural rules (every step has a heading and a check), per-surface
   block allowlists (§6.3). A failure regenerates only the offending unit, with the error fed back.
+- **Two severities.** Most of the banned words are also everyday English ("I assumed…", "a map").
+  Unambiguous machinery ("ledger", "hangs off", "forced by", "Phase 2", "node 3") is an **error** and
+  regenerates; the ambiguous words are sent to **review**, where the cheap model judges them in context.
+  A word that is a usable domain term of the track (a graph-theory track's "graph") is never flagged.
+  Code, inline code and maths are not checked; diagram captions and labels are.
 - **The same validators are the eval harness's scorers** (§11), so "which models are allowed" is
   measured by the checks that protect learners every day.
 
@@ -206,12 +211,15 @@ generated sound (the model writes notes, the browser plays them), function plots
 
 ### 6.3 Per-surface allowlists
 
-| Surface                   | Allowed                                              |
-| ------------------------- | ---------------------------------------------------- |
-| Probe and plan chat       | text only, plus the plan picture (from the database) |
-| Lesson                    | everything                                           |
-| Repair thread, aside card | text, math, code, diagram, stepper                   |
-| Homework prompt           | text, math, code, diagram, media                     |
+| Surface                                | Allowed                                                                                               |
+| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Probe and plan chat                    | text-like only: paragraphs, lists, quotes, code, maths, tables (the plan picture is drawn by the app) |
+| Lesson                                 | everything, and the only surface with checks                                                          |
+| Repair thread, aside card, review card | text-like blocks plus diagram and stepper                                                             |
+| Homework prompt                        | text-like blocks plus headings, diagram and media                                                     |
+
+Code stays allowed in the chat because a probe question may need to show code in full ("what does
+this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
 
 "The probe teaches nothing" is then enforced by the renderer and validator, not just requested.
 

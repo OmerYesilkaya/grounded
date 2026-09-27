@@ -62,6 +62,8 @@ export interface Issue {
   code: string;
   /** Written to be fed back to the model on a retry. */
   message: string;
+  /** "review": needs a judgement in context (a cheap model decides). Absent: an error to regenerate. */
+  severity?: "review";
   blockId?: string;
   /** Set for issues inside a lesson step, so only that step is regenerated. */
   stepId?: string;
