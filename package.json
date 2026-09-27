@@ -15,7 +15,12 @@
     "db:up": "docker compose up -d postgres",
     "db:down": "docker compose down",
     "db:generate": "pnpm --filter @grounded/db generate",
-    "db:migrate": "pnpm --filter @grounded/db migrate"
+    "db:migrate": "pnpm --filter @grounded/db migrate",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
+    "invite": "pnpm --filter @grounded/api cli invite",
+    "revoke": "pnpm --filter @grounded/api cli revoke",
+    "dev:api": "pnpm --filter @grounded/api dev",
+    "dev:web": "pnpm --filter @grounded/web dev"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
