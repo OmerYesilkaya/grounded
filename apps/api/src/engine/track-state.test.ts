@@ -1,7 +1,7 @@
 import { termEvents, tracks, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { createTestHarness } from "../test/harness.js";
-import { applyActions, loadTrackContext } from "./track-state.js";
+import { applyActions, emptyTrackShape, loadTrackContext, validateActions } from "./track-state.js";
 
 const t = createTestHarness();
 
@@ -182,5 +182,22 @@ describe("applyActions: teaching language", () => {
       ok: false,
       errors: ["set-language needs the name of a language."],
     });
+  });
+});
+
+describe("validateActions", () => {
+  it("checks a batch against a track that doesn't exist yet, as it would be after each edit", () => {
+    expect(
+      validateActions(emptyTrackShape(), [
+        { type: "set-term-status", term: "packet", status: "assumed", evidence: "probe floor" },
+        { type: "add-planned-term", term: "TCP", restsOn: ["packet"] },
+        { type: "set-term-status", term: "TCP", status: "confirmed", evidence: "S5 check 2" },
+        { type: "set-term-status", term: "TLS", status: "taught", evidence: "S5 lesson" },
+        { type: "add-planned-term", term: "QUIC", restsOn: ["UDP"] },
+      ]),
+    ).toEqual([
+      `"TLS" isn't in the term list; add it as a planned term first (or as assumed, if the learner already knew it).`,
+      `"QUIC" rests on "UDP", which isn't in the term list.`,
+    ]);
   });
 });

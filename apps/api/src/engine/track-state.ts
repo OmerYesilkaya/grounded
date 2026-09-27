@@ -15,7 +15,7 @@ import {
 
 export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
 
-interface KnownTerm {
+export interface KnownTerm {
   id: string | null;
   term: string;
   status: TermStatus;
@@ -23,30 +23,23 @@ interface KnownTerm {
 
 const key = (term: string) => term.trim().toLowerCase();
 
-/**
- * Applies the model's structured edits to a track. The whole batch is validated against the track
- * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
- * on, and nothing is written.
- */
-export async function applyActions(
-  db: Db,
-  trackId: string,
-  actions: readonly TrackAction[],
-  options: { source: string },
-): Promise<ApplyResult> {
-  const existing = await db.select().from(terms).where(eq(terms.trackId, trackId));
-  const known = new Map<string, KnownTerm>(
-    existing.map((t) => [key(t.term), { id: t.id, term: t.term, status: t.status }]),
-  );
-  const openFixItems = new Set(
-    (
-      await db
-        .select()
-        .from(fixListItems)
-        .where(and(eq(fixListItems.trackId, trackId), eq(fixListItems.status, "open")))
-    ).map((f) => f.text),
-  );
+/** What the track looks like to the validator: its terms by lowercased name, and its open fix-list items. */
+export interface TrackShape {
+  terms: Map<string, KnownTerm>;
+  openFixItems: Set<string>;
+}
 
+/** An empty track: the shape a batch is validated against before the track exists (an import). */
+export function emptyTrackShape(): TrackShape {
+  return { terms: new Map(), openFixItems: new Set() };
+}
+
+/**
+ * Checks a batch against the track as it would be after each edit, without writing anything. Returns
+ * the reasons the model can act on; empty when the whole batch is valid. The shape is updated in place.
+ */
+export function validateActions(shape: TrackShape, actions: readonly TrackAction[]): string[] {
+  const { terms: known, openFixItems } = shape;
   const errors: string[] = [];
   for (const action of actions) {
     switch (action.type) {
@@ -99,6 +92,34 @@ export async function applyActions(
         break;
     }
   }
+  return errors;
+}
+
+/**
+ * Applies the model's structured edits to a track. The whole batch is validated against the track
+ * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
+ * on, and nothing is written.
+ */
+export async function applyActions(
+  db: Db,
+  trackId: string,
+  actions: readonly TrackAction[],
+  options: { source: string },
+): Promise<ApplyResult> {
+  const existing = await db.select().from(terms).where(eq(terms.trackId, trackId));
+  const openFixItems = await db
+    .select()
+    .from(fixListItems)
+    .where(and(eq(fixListItems.trackId, trackId), eq(fixListItems.status, "open")));
+  const errors = validateActions(
+    {
+      terms: new Map(
+        existing.map((t) => [key(t.term), { id: t.id, term: t.term, status: t.status }]),
+      ),
+      openFixItems: new Set(openFixItems.map((f) => f.text)),
+    },
+    actions,
+  );
   if (errors.length > 0) return { ok: false, errors };
 
   await db.transaction(async (tx) => {
