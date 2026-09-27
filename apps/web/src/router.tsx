@@ -11,6 +11,7 @@ import { AppShell } from "@/components/app-shell";
 import type { TrackSummary } from "@/components/track-sidebar";
 import { api, type Credential } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
+import { ImportedLessonPage } from "./pages/imported-lesson";
 import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
 import { SignInPage } from "./pages/sign-in";
@@ -78,6 +79,15 @@ const trackRoute = createRoute({
   },
 });
 
+const importedLessonRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/tracks/$trackId/last-lesson",
+  component: function ImportedLesson() {
+    const { trackId } = importedLessonRoute.useParams();
+    return <ImportedLessonPage trackId={trackId} />;
+  },
+});
+
 // The session page carries the lesson renderer; it loads on first visit. It reads its own params.
 const sessionRoute = createRoute({
   getParentRoute: () => appRoute,
@@ -104,7 +114,7 @@ const keySettingsRoute = createRoute({
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    appRoute.addChildren([homeRoute, newTrackRoute, trackRoute, sessionRoute]),
+    appRoute.addChildren([homeRoute, newTrackRoute, trackRoute, importedLessonRoute, sessionRoute]),
     signInRoute,
     keySettingsRoute,
   ]),

@@ -8,6 +8,8 @@ export interface TrackSummary {
   title: string;
   language: string | null;
   openSession: { id: string; phase: string } | null;
+  /** The last lesson imported from the learner's earlier setup, if any. */
+  importedLesson: { title: string } | null;
 }
 
 const PHASE_LABEL: Record<string, string> = {

@@ -5,6 +5,7 @@ import {
   checkMessages,
   desc,
   eq,
+  importedLessons,
   inArray,
   isNull,
   learningSessions,
@@ -125,17 +126,47 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .select()
       .from(learningSessions)
       .where(and(eq(learningSessions.userId, userId), isNull(learningSessions.closedAt)));
+    const imported = rows.length
+      ? await db
+          .select({ trackId: importedLessons.trackId, title: importedLessons.title })
+          .from(importedLessons)
+          .where(
+            inArray(
+              importedLessons.trackId,
+              rows.map((t) => t.id),
+            ),
+          )
+      : [];
     return c.json(
       rows.map((t) => {
         const session = open.find((s) => s.trackId === t.id);
+        const lesson = imported.find((l) => l.trackId === t.id);
         return {
           id: t.id,
           title: t.title,
           language: t.language,
           openSession: session ? { id: session.id, phase: session.state.phase } : null,
+          importedLesson: lesson ? { title: lesson.title } : null,
         };
       }),
     );
+  });
+
+  /** The last lesson imported from the learner's earlier setup (design §10), for its owner only. */
+  app.get("/api/tracks/:id/imported-lesson", async (c) => {
+    const trackId = c.req.param("id");
+    if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    const [lesson] = await db
+      .select({
+        title: importedLessons.title,
+        source: importedLessons.source,
+        html: importedLessons.html,
+      })
+      .from(importedLessons)
+      .innerJoin(tracks, eq(tracks.id, importedLessons.trackId))
+      .where(and(eq(importedLessons.trackId, trackId), eq(tracks.userId, c.get("user").id)));
+    if (!lesson) return c.json({ error: "Not found." }, 404);
+    return c.json(lesson);
   });
 
   app.post("/api/tracks/:id/sessions", async (c) => {

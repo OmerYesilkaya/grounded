@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import type { TrackSummary } from "@/components/track-sidebar";
 import { api, ApiError } from "@/lib/api";
@@ -55,6 +55,16 @@ export function TrackPage({ trackId }: { trackId: string }) {
           </p>
         )}
       </div>
+      {track.importedLesson && (
+        <Link
+          to="/tracks/$trackId/last-lesson"
+          params={{ trackId }}
+          className="mt-10 block rounded-md border px-4 py-3 hover:bg-muted"
+        >
+          <span className="block text-sm font-medium">Last lesson (from your earlier setup)</span>
+          <span className="block text-sm text-subtle-foreground">{track.importedLesson.title}</span>
+        </Link>
+      )}
     </main>
   );
 }
