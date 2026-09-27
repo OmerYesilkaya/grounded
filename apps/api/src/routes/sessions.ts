@@ -117,6 +117,15 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
   app.get("/api/sessions/:id", async (c) => {
     const session = await ownSession(c.get("user").id, c.req.param("id"));
     if (!session) return c.json({ error: "Not found." }, 404);
+    // Read the event cursor first: anything published while the rest is read is then replayed by the
+    // stream (the browser ignores duplicates by id) instead of being skipped.
+    const [last] = await db
+      .select({ id: sessionEvents.id })
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, session.id))
+      .orderBy(desc(sessionEvents.id))
+      .limit(1);
+
     const messages = await db
       .select()
       .from(sessionMessages)
@@ -128,13 +137,6 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .from(checkMessages)
       .where(eq(checkMessages.sessionId, session.id))
       .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
-    const [last] = await db
-      .select({ id: sessionEvents.id })
-      .from(sessionEvents)
-      .where(eq(sessionEvents.sessionId, session.id))
-      .orderBy(desc(sessionEvents.id))
-      .limit(1);
-
     return c.json({
       id: session.id,
       trackId: session.trackId,
