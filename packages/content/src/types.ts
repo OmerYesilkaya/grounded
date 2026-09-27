@@ -63,10 +63,28 @@ export interface Issue {
   /** Written to be fed back to the model on a retry. */
   message: string;
   blockId?: string;
+  /** Set for issues inside a lesson step, so only that step is regenerated. */
+  stepId?: string;
   line?: number;
 }
 
 export interface ParseResult {
   blocks: Block[];
+  issues: Issue[];
+}
+
+export type CheckBlock = Extract<Block, { type: "check" }>;
+
+/** One step of a lesson: revealed on its own, ending in the check that unlocks the next. */
+export interface LessonStep {
+  id: string;
+  heading: Inline[];
+  body: Block[];
+  check: CheckBlock;
+}
+
+export interface LessonParseResult {
+  /** Only structurally sound steps; a step with any issue is left out and named in `issues`. */
+  steps: LessonStep[];
   issues: Issue[];
 }
