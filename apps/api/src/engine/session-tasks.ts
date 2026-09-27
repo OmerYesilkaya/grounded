@@ -65,9 +65,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         ? { role: "user", content: m.text ?? "" }
         : { role: "assistant", content: m.text ?? "" },
     );
-    // A conversation starts with the learner; the app opens it on their behalf.
+    // A conversation starts with the learner; the app opens it on their behalf, with what they said
+    // they want to learn (the track's title), so the first question builds on it.
     if (messages[0]?.role !== "user")
-      messages.unshift({ role: "user", content: "(The learner has started a session.)" });
+      messages.unshift({
+        role: "user",
+        content: `(The learner started a session. They said they want to learn: ${track.track.title})`,
+      });
     const learnerHasSpoken = history.some((m) => m.role === "learner");
     return {
       session,

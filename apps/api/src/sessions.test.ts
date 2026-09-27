@@ -121,6 +121,14 @@ describe("probe and plan", () => {
     ]);
   });
 
+  it("opens the probe from what the learner said they want to learn", async () => {
+    await startedSession();
+    const opening = models.used.find((u) => u.purpose === "probe")?.model.doStreamCalls[0];
+    expect(JSON.stringify(opening?.prompt)).toContain(
+      "The learner started a session. They said they want to learn: Concurrency",
+    );
+  });
+
   it("lets the learner skip ahead to the plan", async () => {
     const { cookie, sessionId } = await startedSession();
     models.script("plan", planAttempt(PLAN_TEXT));
