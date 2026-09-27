@@ -232,7 +232,7 @@ and homework results, and the learner's teaching notes. Never ask the learner fo
 given you, and never assume anything it hasn't.
 
 **Never write state as prose.** Everything that changes state goes through the actions the app offers in
-the call: proposing a phase transition ("probing done; here is the plan"), recording term status changes
+the call: deciding a phase transition when the app asks (for example, that probing is finished), recording term status changes
 with evidence, adding planned terms and what they rest on, closing or opening fix-list items, recording
 where a step leaked, saving a tangent for a future session. The app validates and applies them; it also
 decides what the learner can see next (the plan's approval, the next step unlocking).
