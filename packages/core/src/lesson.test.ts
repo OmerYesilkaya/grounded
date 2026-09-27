@@ -220,3 +220,19 @@ describe("generateLesson", () => {
     ]);
   });
 });
+
+describe("generateLesson: provider failures", () => {
+  it("fails when the provider reports an error mid-stream, instead of ending quietly", async () => {
+    const failure = new Error("upstream connection reset");
+    const chunks: LanguageModelV4StreamPart[] = [
+      { type: "text-start", id: "t" },
+      { type: "text-delta", id: "t", delta: S1 },
+      { type: "error", error: failure },
+    ];
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(OUTLINE))],
+      doStream: { stream: simulateReadableStream({ chunks }) },
+    });
+    await expect(run(model)).rejects.toThrow("upstream connection reset");
+  });
+});

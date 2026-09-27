@@ -102,8 +102,12 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   let buffer = "";
   let checked = 0;
   let started = 0;
-  for await (const delta of stream.textStream) {
-    buffer += delta;
+  // The full stream, not textStream: textStream drops error parts, so a provider failure mid-lesson
+  // would end the lesson quietly instead of failing it.
+  for await (const part of stream.stream) {
+    if (part.type === "error") throw part.error;
+    if (part.type !== "text-delta") continue;
+    buffer += part.text;
     const pieces = splitLessonSteps(buffer);
     for (; started < pieces.length; started++) await options.onStepStart?.(started, 0);
     for (; checked < pieces.length - 1; checked++) {
