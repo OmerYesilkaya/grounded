@@ -39,7 +39,7 @@ export interface GenerateLessonOptions {
   terms: readonly TrackTerm[];
   glossary?: readonly string[];
   /** Called for each sound step, in order, as soon as it and every step before it are settled. */
-  onStep: (step: LessonStep) => void | Promise<void>;
+  onStep: (step: LessonStep, markdown: string) => void | Promise<void>;
   onOutline?: (outline: LessonOutline) => void | Promise<void>;
   /** Retries per outline and per broken step (default 2). */
   maxRetries?: number;
@@ -61,8 +61,8 @@ const DEGRADABLE = /^(diagram|stepper|chart|video|image|audio|link)\//;
 const norm = (term: string) => term.trim().toLowerCase();
 
 type Settled =
-  | { kind: "ok"; step: LessonStep }
-  | { kind: "degraded"; step: LessonStep; issues: Issue[] }
+  | { kind: "ok"; step: LessonStep; markdown: string }
+  | { kind: "degraded"; step: LessonStep; markdown: string; issues: Issue[] }
   | { kind: "failed"; issues: Issue[] }
   | { kind: "retry"; markdown: string; issues: Issue[] };
 
@@ -84,7 +84,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
       entry && entry.kind !== "retry";
       entry = settled[released]
     ) {
-      if (entry.kind !== "failed") await options.onStep(entry.step);
+      if (entry.kind !== "failed") await options.onStep(entry.step, entry.markdown);
       released += 1;
     }
   };
@@ -191,7 +191,9 @@ function check(
   if (step) issues.push(...stepErrors(step, index, outline, options));
   if (!step && issues.length === 0)
     issues.push({ code: "lesson/empty", message: "The step is empty." });
-  return step && issues.length === 0 ? { kind: "ok", step } : { kind: "retry", markdown, issues };
+  return step && issues.length === 0
+    ? { kind: "ok", step, markdown }
+    : { kind: "retry", markdown, issues };
 }
 
 function stepErrors(
@@ -221,7 +223,7 @@ function finalize(
     });
     const [step] = parsed.steps;
     if (step && stepErrors(step, index, outline, options).length === 0)
-      return { kind: "degraded", step, issues: entry.issues };
+      return { kind: "degraded", step, markdown: entry.markdown, issues: entry.issues };
   }
   return { kind: "failed", issues: entry.issues };
 }
@@ -260,7 +262,8 @@ function writePrompt(request: string, outline: LessonOutline): string {
   return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}`;
 }
 
-function stepInfoFor(outline: LessonOutline): LessonStepInfo[] {
+/** Every step of the outline, with whether it builds on the one before (the gate uses this). */
+export function stepInfoFor(outline: LessonOutline): LessonStepInfo[] {
   return outline.steps.map((step, i) => {
     const previous = outline.steps[i - 1];
     const restsOnPrevious =

@@ -1,9 +1,15 @@
 import { eq, sessionMessages, terms, users } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 import { readSse } from "./test/sse.js";
+import {
+  createFlows,
+  FIRST_QUESTION,
+  PLAN_ACTIONS,
+  PLAN_TEXT,
+  type Snapshot,
+} from "./test/flows.js";
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access });
@@ -12,84 +18,7 @@ beforeEach(() => {
   models.reset();
 });
 
-interface Snapshot {
-  state: { phase: string; plan: string };
-  messages: {
-    role: string;
-    kind: string;
-    text: string | null;
-    blocks: { type: string }[] | null;
-  }[];
-}
-
-async function learner() {
-  await invite(t.db, "ada@example.com");
-  const cookie = await t.signIn("ada@example.com");
-  const track = (await (
-    await t.request("/api/tracks", {
-      method: "POST",
-      cookie,
-      body: JSON.stringify({ title: "Concurrency" }),
-    })
-  ).json()) as {
-    id: string;
-  };
-  return { cookie, trackId: track.id };
-}
-
-const snapshot = async (cookie: string, sessionId: string) =>
-  (await (await t.request(`/api/sessions/${sessionId}`, { cookie })).json()) as Snapshot;
-
-const until = (cookie: string, sessionId: string, ok: (s: Snapshot) => boolean) =>
-  t.waitFor(async () => ok(await snapshot(cookie, sessionId)));
-
-const FIRST_QUESTION = "In your own words: what happens when a program adds one to a number?";
-const PLAN_TEXT =
-  "We start from what you already hold and build towards why a counter can lose updates.";
-const PLAN_ACTIONS = [
-  { type: "add-planned-term", term: "working copy", restsOn: [] },
-  { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
-  {
-    type: "set-plan",
-    arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
-    notes: "",
-  },
-];
-
-async function startedSession() {
-  const { cookie, trackId } = await learner();
-  models.script("probe", { text: FIRST_QUESTION });
-  const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
-  expect(started.status).toBe(201);
-  const { id } = (await started.json()) as { id: string };
-  await until(cookie, id, (s) => s.messages.length === 1);
-  return { cookie, trackId, sessionId: id };
-}
-
-async function planned() {
-  const session = await startedSession();
-  models.script("probe", {
-    text: "Thanks, that's clear.",
-    calls: [
-      {
-        name: "record",
-        input: { actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }] },
-      },
-      { name: "finish_probe", input: { summary: "Floor: variables. Goal: counters under load." } },
-    ],
-  });
-  models.script("plan", {
-    text: PLAN_TEXT,
-    calls: [{ name: "propose_plan", input: { actions: PLAN_ACTIONS } }],
-  });
-  await t.request(`/api/sessions/${session.sessionId}/messages`, {
-    method: "POST",
-    cookie: session.cookie,
-    body: JSON.stringify({ text: "it just adds one" }),
-  });
-  await until(session.cookie, session.sessionId, (s) => s.state.plan === "proposed");
-  return session;
-}
+const { snapshot, until, learner, startedSession, planned } = createFlows(t, models);
 
 describe("starting a session", () => {
   it("opens with the tutor's first probe question, streamed", async () => {

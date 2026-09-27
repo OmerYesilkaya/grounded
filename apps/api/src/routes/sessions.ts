@@ -17,7 +17,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { publish } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
-import { applyEvent, RejectedEvent } from "../engine/session-store.js";
+import { applyEvent, completeIfDone, RejectedEvent } from "../engine/session-store.js";
 
 interface Env {
   Variables: { user: { id: string; email: string; name: string } };
@@ -206,6 +206,84 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
     const applied = await apply(session.id, { type: "plan-approved" });
     if (!applied.ok) return c.json({ error: applied.reason }, 409);
     await queue.enqueue("lesson", { sessionId: session.id });
+    return c.json({ state: applied.state });
+  });
+
+  const answerInput = z.union([
+    z.object({ text: z.string().trim().min(1).max(2000) }),
+    z.object({ dontKnow: z.literal(true) }),
+  ]);
+
+  app.post("/api/sessions/:id/steps/:stepId/answer", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const stepId = c.req.param("stepId");
+    const parsed = answerInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Write an answer, or say you don't know." }, 400);
+
+    const { state } = session;
+    const step = state.steps[stepId];
+    if (state.phase !== "lesson" || !step)
+      return c.json({ error: "That step isn't in this lesson." }, 409);
+    if (step.status === "paused")
+      return c.json({ error: "This step is paused; resume it first." }, 409);
+    if (state.currentStep !== stepId)
+      return c.json({ error: "That step isn't the one being checked." }, 409);
+    if (step.offerGate) return c.json({ error: "Choose to pause or continue first." }, 409);
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, session.id));
+    if (!lesson?.steps.some((s) => s.id === stepId))
+      return c.json({ error: "This step is still being written." }, 409);
+    const [last] = await db
+      .select()
+      .from(checkMessages)
+      .where(and(eq(checkMessages.sessionId, session.id), eq(checkMessages.stepId, stepId)))
+      .orderBy(desc(checkMessages.createdAt), desc(checkMessages.id))
+      .limit(1);
+    if (last?.role === "learner") return c.json({ error: "Your answer is being checked." }, 409);
+
+    const text = "text" in parsed.data ? parsed.data.text : "I don't know";
+    const [message] = await db
+      .insert(checkMessages)
+      .values({ sessionId: session.id, stepId, role: "learner", text })
+      .returning();
+    if (!message) throw new Error("check message insert returned nothing");
+    await publish(db, session.id, "check-message", {
+      id: message.id,
+      stepId,
+      role: "learner",
+      text,
+      verdict: null,
+    });
+    await queue.enqueue("check", { sessionId: session.id, stepId });
+    return c.json({ id: message.id }, 202);
+  });
+
+  app.post("/api/sessions/:id/steps/:stepId/pause", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const applied = await apply(session.id, { type: "pause", stepId: c.req.param("stepId") });
+    if (!applied.ok) return c.json({ error: applied.reason }, 409);
+    return c.json({ state: applied.state });
+  });
+
+  app.post("/api/sessions/:id/steps/:stepId/continue", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const applied = await apply(session.id, { type: "continue", stepId: c.req.param("stepId") });
+    if (!applied.ok) return c.json({ error: applied.reason }, 409);
+    await completeIfDone(db, queue, session.id, applied.state);
+    return c.json({ state: applied.state });
+  });
+
+  app.post("/api/sessions/:id/resume", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const applied = await apply(session.id, { type: "resume" });
+    if (!applied.ok) return c.json({ error: applied.reason }, 409);
+    await queue.enqueue("fresh-question", {
+      sessionId: session.id,
+      stepId: applied.state.currentStep,
+    });
     return c.json({ state: applied.state });
   });
 }

@@ -274,6 +274,8 @@ export const lessons = pgTable("lessons", {
     .$type<{ stepId: string; heading: string }[]>()
     .notNull()
     .default([]),
+  /** Each step's markdown as written, for prompts that need the step's text (checks, asides). */
+  stepSources: jsonb("step_sources").$type<Record<string, string>>().notNull().default({}),
   /** "After the check" notes, by step id. */
   notes: jsonb("notes").$type<Record<string, string>>().notNull().default({}),
   createdAt: createdAt(),

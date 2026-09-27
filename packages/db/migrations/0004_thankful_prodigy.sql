@@ -1,0 +1,1 @@
+ALTER TABLE "lessons" ADD COLUMN "step_sources" jsonb DEFAULT '{}'::jsonb NOT NULL;

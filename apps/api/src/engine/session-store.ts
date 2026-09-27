@@ -1,6 +1,7 @@
 import { transition, type SessionEvent, type SessionState } from "@grounded/core";
 import { eq, learningSessions, sql, type Db } from "@grounded/db";
 import { publish } from "./events.js";
+import type { JobQueue } from "./queue.js";
 
 export class RejectedEvent extends Error {
   constructor(reason: string) {
@@ -47,4 +48,24 @@ export async function applyEvent(
   });
   await publish(db, sessionId, "state", state);
   return state;
+}
+
+/** Once every check is resolved, the lesson is over: on to the homework. */
+export async function completeIfDone(
+  db: Db,
+  queue: JobQueue,
+  sessionId: string,
+  state: SessionState,
+): Promise<void> {
+  const done =
+    state.phase === "lesson" &&
+    state.lesson.status === "ready" &&
+    state.lesson.steps.length > 0 &&
+    state.lesson.steps.every((s) => {
+      const status = state.steps[s.id]?.status;
+      return status === "passed" || status === "settling";
+    });
+  if (!done) return;
+  await applyEvent(db, sessionId, { type: "checks-complete" });
+  await queue.enqueue("homework", { sessionId });
 }
