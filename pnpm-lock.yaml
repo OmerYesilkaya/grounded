@@ -44,6 +44,12 @@ importers:
 
   apps/api:
     dependencies:
+      '@grounded/content':
+        specifier: workspace:^
+        version: link:../../packages/content
+      '@grounded/core':
+        specifier: workspace:^
+        version: link:../../packages/core
       '@grounded/crypto':
         specifier: workspace:^
         version: link:../../packages/crypto

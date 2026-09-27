@@ -10,3 +10,4 @@ export type {
   StepStatus,
   TransitionResult,
 } from "./session.js";
+export { trackActionSchema, type TrackAction } from "./actions.js";

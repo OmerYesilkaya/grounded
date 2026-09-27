@@ -9,6 +9,8 @@
     "cli": "tsx --env-file-if-exists=../../.env src/cli.ts"
   },
   "dependencies": {
+    "@grounded/content": "workspace:^",
+    "@grounded/core": "workspace:^",
     "@grounded/crypto": "workspace:^",
     "@grounded/db": "workspace:^",
     "@grounded/providers": "workspace:^",

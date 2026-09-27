@@ -1,11 +1,14 @@
+import { sql } from "drizzle-orm";
 import {
   boolean,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 import type { SealedSecret } from "@grounded/crypto";
@@ -128,3 +131,83 @@ export const usageEvents = pgTable(
   },
   (table) => [index("usage_events_user_time").on(table.userId, table.createdAt)],
 );
+
+// ---------------------------------------------------------------------------------------------
+// Tracks: one subject each, with its own term list, map, plan and fix-list (design §5)
+// ---------------------------------------------------------------------------------------------
+
+export type TermStatus = "planned" | "taught" | "confirmed" | "assumed";
+
+export interface TrackPlan {
+  arcs: { title: string; terms: string[] }[];
+  /** Reorders and detours, in plain words. */
+  notes: string;
+}
+
+export const tracks = pgTable("tracks", {
+  id: id(),
+  userId: uuid("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  /** The language lessons are taught in. */
+  language: text("language").notNull(),
+  plan: jsonb("plan").$type<TrackPlan>().notNull().default({ arcs: [], notes: "" }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+export const terms = pgTable(
+  "terms",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    term: text("term").notNull(),
+    status: text("status").$type<TermStatus>().notNull(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [uniqueIndex("terms_track_term").on(table.trackId, sql`lower(${table.term})`)],
+);
+
+/** Why a term has its status: every change, with the learner's words as evidence. */
+export const termEvents = pgTable("term_events", {
+  id: id(),
+  termId: uuid("term_id")
+    .notNull()
+    .references(() => terms.id, { onDelete: "cascade" }),
+  fromStatus: text("from_status").$type<TermStatus>(),
+  toStatus: text("to_status").$type<TermStatus>().notNull(),
+  evidence: text("evidence").notNull(),
+  /** Where the evidence came from, e.g. "probe", "check s2", "homework". */
+  source: text("source").notNull(),
+  createdAt: createdAt(),
+});
+
+/** "rests on" edges: the map every structure picture is drawn from. */
+export const termDependencies = pgTable(
+  "term_dependencies",
+  {
+    termId: uuid("term_id")
+      .notNull()
+      .references(() => terms.id, { onDelete: "cascade" }),
+    restsOnTermId: uuid("rests_on_term_id")
+      .notNull()
+      .references(() => terms.id, { onDelete: "cascade" }),
+  },
+  (table) => [primaryKey({ columns: [table.termId, table.restsOnTermId] })],
+);
+
+/** The audit's misconceptions; arc exams and the final re-test them. */
+export const fixListItems = pgTable("fix_list_items", {
+  id: id(),
+  trackId: uuid("track_id")
+    .notNull()
+    .references(() => tracks.id, { onDelete: "cascade" }),
+  text: text("text").notNull(),
+  status: text("status").$type<"open" | "closed">().notNull().default("open"),
+  createdAt: createdAt(),
+  closedAt: timestamp("closed_at", { withTimezone: true }),
+});
