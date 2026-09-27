@@ -161,14 +161,17 @@ async function convert(
       messages.push({ role: "user", content: retryPrompt(errors) });
       continue;
     }
-    errors = importProblems(output.actions);
+    // An arc is a grouping for the plan: an entry that names no term is left out and reported, not
+    // worth rejecting a whole track's edits over (a real import failed three times on one such phrase).
+    const tidied = dropUnknownArcTerms(output.actions);
+    errors = importProblems(tidied.actions);
     if (errors.length === 0) {
-      const plan = output.actions.find((a) => a.type === "set-plan");
+      const plan = tidied.actions.find((a) => a.type === "set-plan");
       return {
         ok: true,
-        actions: output.actions,
+        actions: tidied.actions,
         planNotes: plan?.type === "set-plan" ? plan.notes : "",
-        unplaced: output.unplaced,
+        unplaced: [...output.unplaced, ...tidied.dropped],
         attempts: attempt,
       };
     }
@@ -192,12 +195,31 @@ export function importProblems(actions: readonly TrackAction[]): string[] {
   const plans = actions.filter((a) => a.type === "set-plan");
   if (plans.length !== 1)
     errors.push(`Give exactly one set-plan with the arcs (there were ${String(plans.length)}).`);
-  for (const plan of plans)
-    for (const arc of plan.arcs)
-      for (const term of arc.terms)
-        if (!shape.terms.has(term.trim().toLowerCase()))
-          errors.push(`Arc "${arc.title}" lists "${term}", which isn't in the term list.`);
   return errors;
+}
+
+/** Removes arc entries that name no term in the batch, and says which. */
+export function dropUnknownArcTerms(actions: readonly TrackAction[]): {
+  actions: TrackAction[];
+  dropped: string[];
+} {
+  const shape = emptyTrackShape();
+  validateActions(shape, actions);
+  const dropped: string[] = [];
+  const tidied = actions.map((action): TrackAction => {
+    if (action.type !== "set-plan") return action;
+    const arcs = action.arcs.map((arc) => ({
+      ...arc,
+      terms: arc.terms.filter((term) => {
+        const known = shape.terms.has(term.trim().toLowerCase());
+        if (!known)
+          dropped.push(`Arc "${arc.title}" listed "${term}", which isn't a term; left out.`);
+        return known;
+      }),
+    }));
+    return { ...action, arcs };
+  });
+  return { actions: tidied, dropped };
 }
 
 /** Track, latest lesson and edits; a failure part-way removes the track again, with everything on it. */

@@ -217,7 +217,7 @@ describe("importTrack: rejected edits", () => {
     expect(await t.db.select().from(tracks)).toHaveLength(1);
   });
 
-  it("asks for a language and exactly one plan whose arcs name known terms", async () => {
+  it("asks for a language and exactly one plan", async () => {
     await learner();
     const actions = fixtureConversion().actions.filter((a) => a.type !== "set-language");
     const broken: ImportActions = {
@@ -233,13 +233,42 @@ describe("importTrack: rejected edits", () => {
     expect(outcome).toEqual({
       status: "rejected",
       attempts: IMPORT_ATTEMPTS,
-      errors: [
-        "Set the teaching language (set-language).",
-        `Arc "C — bread" lists "yeast", which isn't in the term list.`,
-      ],
+      errors: ["Set the teaching language (set-language)."],
     });
     expect(models.used).toHaveLength(IMPORT_ATTEMPTS);
     expect(await t.db.select().from(tracks)).toEqual([]);
+  });
+});
+
+describe("importTrack: arcs", () => {
+  it("drops an arc entry that names no term and reports it, instead of rejecting the batch", async () => {
+    await learner();
+    const conversion = fixtureConversion();
+    const loose: ImportActions = {
+      ...conversion,
+      actions: conversion.actions.map((a) =>
+        a.type === "set-plan"
+          ? {
+              ...a,
+              arcs: a.arcs.map((arc, i) =>
+                i === 0 ? { ...arc, terms: [...arc.terms, "why pans warp"] } : arc,
+              ),
+            }
+          : a,
+      ),
+    };
+    models.script("import", reply(loose));
+
+    const report = reportOf(await run({ write: false }));
+
+    expect(report.attempts).toBe(1);
+    expect(report.arcs).toEqual([
+      { title: "A — heat (closed)", terms: 2 },
+      { title: "B — sauces", terms: 2 },
+    ]);
+    expect(report.unplaced).toContain(
+      `Arc "A — heat (closed)" listed "why pans warp", which isn't a term; left out.`,
+    );
   });
 });
 
