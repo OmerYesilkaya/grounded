@@ -9,12 +9,14 @@
     "cli": "tsx --env-file-if-exists=../../.env src/cli.ts"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^4.0.18",
     "@grounded/content": "workspace:^",
     "@grounded/core": "workspace:^",
     "@grounded/crypto": "workspace:^",
     "@grounded/db": "workspace:^",
     "@grounded/providers": "workspace:^",
     "@hono/node-server": "^2.1.1",
+    "ai": "^7.0.118",
     "better-auth": "^1.7.6",
     "hono": "^4.13.9",
     "postgres": "^3.4.9",

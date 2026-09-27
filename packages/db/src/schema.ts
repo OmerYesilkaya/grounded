@@ -127,6 +127,9 @@ export const usageEvents = pgTable(
     inputTokens: integer("input_tokens").notNull(),
     cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull(),
+    /** Failed calls are recorded too, with the kind of failure the learner was shown. */
+    status: text("status").$type<"ok" | "error">().notNull().default("ok"),
+    errorKind: text("error_kind"),
     createdAt: createdAt(),
   },
   (table) => [index("usage_events_user_time").on(table.userId, table.createdAt)],

@@ -44,6 +44,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@ai-sdk/provider':
+        specifier: ^4.0.18
+        version: 4.0.18
       '@grounded/content':
         specifier: workspace:^
         version: link:../../packages/content
@@ -62,6 +65,9 @@ importers:
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.9)
+      ai:
+        specifier: ^7.0.118
+        version: 7.0.118(zod@4.6.5)
       better-auth:
         specifier: ^1.7.6
         version: 1.7.6(drizzle-kit@0.31.11)(drizzle-orm@0.45.3(kysely@0.29.6)(postgres@3.4.9))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(vitest@5.0.2(@types/node@26.6.3)(jsdom@30.1.1(@noble/hashes@2.4.0))(vite@8.3.1(@types/node@26.6.3)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)))
@@ -241,6 +247,9 @@ importers:
       '@ai-sdk/openai':
         specifier: ^4.0.78
         version: 4.0.78(zod@4.6.5)
+      '@ai-sdk/provider':
+        specifier: ^4.0.18
+        version: 4.0.18
       ai:
         specifier: ^7.0.118
         version: 7.0.118(zod@4.6.5)
