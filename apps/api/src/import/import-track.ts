@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { importActionsSchema, type ImportActions, type TrackAction } from "@grounded/core";
 import {
   and,
@@ -53,6 +54,22 @@ export interface ImportOptions {
   write: boolean;
   /** Overrides the title taken from the track's folder name. */
   title?: string;
+  /** For a write: the dry run's conversion, applied as it was reviewed (no model call). */
+  reviewed?: ReviewedConversion;
+}
+
+/**
+ * A dry run's result, kept so that a write applies exactly what was reviewed. `sourceHash` pins it to
+ * the files it was made from; a write refuses if they changed.
+ */
+export interface ReviewedConversion {
+  version: 1;
+  slug: string;
+  sourceHash: string;
+  actions: TrackAction[];
+  planNotes: string;
+  unplaced: string[];
+  attempts: number;
 }
 
 export interface ImportReport {
@@ -80,7 +97,7 @@ export interface ImportReport {
 export type ImportOutcome =
   | { status: "refused"; reason: string }
   | { status: "rejected"; attempts: number; errors: string[] }
-  | { status: "ok"; report: ImportReport };
+  | { status: "ok"; report: ImportReport; conversion: ReviewedConversion };
 
 /**
  * The one-time import of a track kept in the learner's earlier setup (design §10). The model turns
@@ -104,17 +121,42 @@ export async function importTrack(options: ImportOptions): Promise<ImportOutcome
     .where(and(eq(tracks.userId, user.id), sql`lower(${tracks.title}) = lower(${title})`));
   if (duplicate) return refused(`${email} already has a track called "${title}".`);
 
-  const converted = await convert(models, user.id, track);
+  const sourceHash = hashSource(track);
+  let converted: Conversion;
+  if (options.write) {
+    // What was reviewed is what gets written: no second model call, which could condense differently.
+    const { reviewed } = options;
+    if (!reviewed) {
+      return refused(
+        "There is no reviewed dry run. Run it without --write first; --write applies exactly what it showed.",
+      );
+    }
+    if (reviewed.sourceHash !== sourceHash || reviewed.slug !== track.slug) {
+      return refused("The earlier setup's files changed since the dry run. Run the dry run again.");
+    }
+    converted = { ok: true, ...reviewed };
+  } else {
+    converted = await convert(models, user.id, track);
+  }
   if (!converted.ok)
     return { status: "rejected", attempts: converted.attempts, errors: converted.errors };
+  const conversion: ReviewedConversion = {
+    version: 1,
+    slug: track.slug,
+    sourceHash,
+    actions: converted.actions,
+    planNotes: converted.planNotes,
+    unplaced: converted.unplaced,
+    attempts: converted.attempts,
+  };
 
   const notes = composePlanNotes(converted.planNotes, track);
   const actions = converted.actions.map((a) => (a.type === "set-plan" ? { ...a, notes } : a));
   const report = reportOf(options, track, title, actions, notes, converted);
-  if (!options.write) return { status: "ok", report };
+  if (!options.write) return { status: "ok", report, conversion };
 
   const trackId = await write(db, user.id, title, track, actions);
-  return { status: "ok", report: { ...report, written: true, trackId } };
+  return { status: "ok", report: { ...report, written: true, trackId }, conversion };
 }
 
 const refused = (reason: string): ImportOutcome => ({ status: "refused", reason });
@@ -333,4 +375,20 @@ function reportOf(
     missing,
     attempts: conversion.attempts,
   };
+}
+
+/** A fingerprint of everything the conversion is made from. */
+function hashSource(track: LearningTrack): string {
+  const hash = createHash("sha256");
+  for (const part of [
+    track.state,
+    track.handoff,
+    track.readmeRow,
+    track.latestLesson?.html,
+    track.owedHomework?.text,
+  ]) {
+    hash.update(part ?? "\u0000");
+    hash.update("\u0001");
+  }
+  return hash.digest("hex");
 }

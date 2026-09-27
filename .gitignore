@@ -31,3 +31,6 @@ pnpm-debug.log*
 
 # Agent worktrees
 .claude/worktrees/
+
+# Import dry runs (learner data)
+.imports/

@@ -1,3 +1,5 @@
+import { appendFile } from "node:fs/promises";
+import { join } from "node:path";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type { ImportActions } from "@grounded/core";
 import {
@@ -52,14 +54,17 @@ async function learner(options: { key?: boolean } = {}) {
 
 const reply = (conversion: ImportActions) => ({ text: JSON.stringify(conversion) });
 
+/** A dry run; with `write`, then the write of what that dry run showed (as the CLI does). */
 async function run(options: { write: boolean; email?: string }) {
-  return importTrack({
+  const base = {
     db: t.db,
     models: models.access,
     folder: await writeLearningFixture(),
     email: options.email ?? EMAIL,
-    write: options.write,
-  });
+  };
+  const dry = await importTrack({ ...base, write: false });
+  if (!options.write || dry.status !== "ok") return dry;
+  return importTrack({ ...base, write: true, reviewed: dry.conversion });
 }
 
 function reportOf(outcome: ImportOutcome) {
@@ -73,7 +78,8 @@ describe("importTrack: dry run", () => {
     await learner();
     models.script("import", reply(fixtureConversion()));
 
-    const report = reportOf(await run({ write: false }));
+    const outcome = await run({ write: false });
+    const report = reportOf(outcome);
 
     expect(report).toMatchObject({
       written: false,
@@ -103,7 +109,7 @@ describe("importTrack: dry run", () => {
     expect(await t.db.select().from(tracks)).toEqual([]);
     expect(await t.db.select().from(importedLessons)).toEqual([]);
 
-    const printed = formatOutcome({ status: "ok", report });
+    const printed = formatOutcome(outcome);
     expect(printed).toContain("Dry run");
     expect(printed).toContain("7: 3 assumed · 1 confirmed · 1 taught · 2 planned");
     expect(printed).toContain("2026-01-03-heat/homework.md");
@@ -236,6 +242,50 @@ describe("importTrack: rejected edits", () => {
       errors: ["Set the teaching language (set-language)."],
     });
     expect(models.used).toHaveLength(IMPORT_ATTEMPTS);
+    expect(await t.db.select().from(tracks)).toEqual([]);
+  });
+});
+
+describe("importTrack: the write applies what was reviewed", () => {
+  it("writes the dry run's result without calling the model again", async () => {
+    await learner();
+    models.script("import", reply(fixtureConversion()));
+    const report = reportOf(await run({ write: true }));
+    expect(report.written).toBe(true);
+    expect(models.used).toHaveLength(1);
+  });
+
+  it("refuses a write without a reviewed dry run, before any model call", async () => {
+    await learner();
+    const outcome = await importTrack({
+      db: t.db,
+      models: models.access,
+      folder: await writeLearningFixture(),
+      email: EMAIL,
+      write: true,
+    });
+    expect(outcome).toEqual({
+      status: "refused",
+      reason:
+        "There is no reviewed dry run. Run it without --write first; --write applies exactly what it showed.",
+    });
+    expect(models.used).toEqual([]);
+  });
+
+  it("refuses when the earlier setup changed since the dry run", async () => {
+    await learner();
+    models.script("import", reply(fixtureConversion()));
+    const folder = await writeLearningFixture();
+    const base = { db: t.db, models: models.access, folder, email: EMAIL };
+    const dry = await importTrack({ ...base, write: false });
+    if (dry.status !== "ok") throw new Error("dry run failed");
+    await appendFile(join(folder, "state.md"), "\n- one more line\n");
+
+    const outcome = await importTrack({ ...base, write: true, reviewed: dry.conversion });
+    expect(outcome).toEqual({
+      status: "refused",
+      reason: "The earlier setup's files changed since the dry run. Run the dry run again.",
+    });
     expect(await t.db.select().from(tracks)).toEqual([]);
   });
 });
