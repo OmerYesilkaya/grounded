@@ -24,6 +24,7 @@
   },
   "dependencies": {
     "@grounded/content": "workspace:^",
+    "@grounded/core": "workspace:^",
     "@tanstack/react-query": "^5.104.0",
     "@tanstack/react-router": "^1.170.39",
     "better-auth": "^1.7.6",
