@@ -1,4 +1,4 @@
-import { learningSessions, sessionEvents, tracks, users, eq } from "@grounded/db";
+import { learningSessions, sessionEvents, sessionMessages, tracks, users, eq } from "@grounded/db";
 import { initialSession } from "@grounded/core";
 import { describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
@@ -87,6 +87,34 @@ describe("session stream", () => {
     });
     expect((await readSse(resumed).next(2)).map((e) => e.data)).toEqual([{ n: 2 }, { n: 3 }]);
     second.abort();
+  });
+
+  it("snapshots a message still being written, so the stream can finish it", async () => {
+    const { cookie, sessionId } = await signedInSession();
+    const tutor = { role: "tutor", kind: "message" };
+    // Stored earlier: in the snapshot as a stored message, not again as one being written.
+    const [stored] = await t.db
+      .insert(sessionMessages)
+      .values({ sessionId, role: "tutor", text: "Hello.", blocks: [], kind: "message" })
+      .returning();
+    if (!stored) throw new Error("no message");
+    await publish(t.db, sessionId, "message-start", { id: stored.id, ...tutor });
+    await publish(t.db, sessionId, "message-done", { id: stored.id, ...tutor, blocks: [] });
+    // Abandoned: retracted, so not shown.
+    await publish(t.db, sessionId, "message-start", { id: "gone", ...tutor });
+    await publish(t.db, sessionId, "message-retracted", { id: "gone" });
+    // Being written as the page opens.
+    await publish(t.db, sessionId, "message-start", { id: "live", ...tutor });
+    await publish(t.db, sessionId, "message-delta", { id: "live", text: "In your own " });
+    const cursor = await publish(t.db, sessionId, "message-delta", { id: "live", text: "words" });
+
+    const response = await t.request(`/api/sessions/${sessionId}`, { cookie });
+    const snapshot = (await response.json()) as { messages: unknown[]; lastEventId: number };
+    expect(snapshot.lastEventId).toBe(cursor);
+    expect(snapshot.messages).toEqual([
+      { id: stored.id, ...tutor, text: null, blocks: [] },
+      { id: "live", ...tutor, text: "In your own words", blocks: null, streaming: true },
+    ]);
   });
 
   it("refuses someone else's session", async () => {

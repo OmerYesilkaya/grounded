@@ -5,11 +5,14 @@ import {
   checkMessages,
   desc,
   eq,
+  inArray,
   isNull,
   learningSessions,
   lessons,
+  lte,
   sessionEvents,
   sessionMessages,
+  sql,
   tracks,
   type Db,
 } from "@grounded/db";
@@ -17,7 +20,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { publish } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
-import { applyEvent, completeIfDone, RejectedEvent } from "../engine/session-store.js";
+import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
 
 interface Env {
   Variables: { user: { id: string; email: string; name: string } };
@@ -26,6 +29,56 @@ interface Env {
 // No language: the tutor infers it from the learner's messages and records it (set-language).
 const trackInput = z.object({ title: z.string().trim().min(1).max(120) });
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
+
+interface MessageMark {
+  id: string;
+  role: "learner" | "tutor";
+  kind: "message" | "plan" | "homework" | "recap";
+}
+
+/**
+ * Tutor messages being written at the cursor: started, but neither stored nor retracted. The stream
+ * resumes after the cursor, so their start and the text so far must come with the snapshot.
+ */
+async function messagesBeingWritten(
+  db: Db,
+  sessionId: string,
+  cursor: number,
+  stored: ReadonlySet<string>,
+) {
+  const upToCursor = and(eq(sessionEvents.sessionId, sessionId), lte(sessionEvents.id, cursor));
+  const marks = await db
+    .select({ type: sessionEvents.type, data: sessionEvents.data })
+    .from(sessionEvents)
+    .where(and(upToCursor, inArray(sessionEvents.type, ["message-start", "message-retracted"])))
+    .orderBy(asc(sessionEvents.id));
+  const open = new Map<string, MessageMark & { text: string }>();
+  for (const { type, data } of marks) {
+    const mark = data as MessageMark;
+    if (type === "message-retracted") open.delete(mark.id);
+    else if (!stored.has(mark.id))
+      open.set(mark.id, { id: mark.id, role: mark.role, kind: mark.kind, text: "" });
+  }
+  if (open.size === 0) return [];
+
+  const deltas = await db
+    .select({ data: sessionEvents.data })
+    .from(sessionEvents)
+    .where(
+      and(
+        upToCursor,
+        eq(sessionEvents.type, "message-delta"),
+        inArray(sql<string>`${sessionEvents.data}->>'id'`, [...open.keys()]),
+      ),
+    )
+    .orderBy(asc(sessionEvents.id));
+  for (const { data } of deltas) {
+    const delta = data as { id: string; text: string };
+    const message = open.get(delta.id);
+    if (message) message.text += delta.text;
+  }
+  return [...open.values()].map((m) => ({ ...m, blocks: null, streaming: true }));
+}
 
 /** Tracks and sessions (design §7): the session HTTP API. Jobs do the model work. */
 export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQueue }) {
@@ -113,16 +166,18 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
 
   /** Everything needed to draw the session; live changes then arrive on the stream. */
   app.get("/api/sessions/:id", async (c) => {
-    const session = await ownSession(c.get("user").id, c.req.param("id"));
-    if (!session) return c.json({ error: "Not found." }, 404);
-    // Read the event cursor first: anything published while the rest is read is then replayed by the
-    // stream (the browser ignores duplicates by id) instead of being skipped.
+    const owned = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!owned) return c.json({ error: "Not found." }, 404);
+    // Read the event cursor before the data, the state included: anything published while the rest
+    // is read is then replayed by the stream (the browser ignores duplicates by id), not skipped.
     const [last] = await db
       .select({ id: sessionEvents.id })
       .from(sessionEvents)
-      .where(eq(sessionEvents.sessionId, session.id))
+      .where(eq(sessionEvents.sessionId, owned.id))
       .orderBy(desc(sessionEvents.id))
       .limit(1);
+    const cursor = last?.id ?? 0;
+    const session = await loadSession(db, owned.id);
 
     const messages = await db
       .select()
@@ -135,17 +190,26 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .from(checkMessages)
       .where(eq(checkMessages.sessionId, session.id))
       .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
+    const inFlight = await messagesBeingWritten(
+      db,
+      session.id,
+      cursor,
+      new Set(messages.map((m) => m.id)),
+    );
     return c.json({
       id: session.id,
       trackId: session.trackId,
       state: session.state,
-      messages: messages.map((m) => ({
-        id: m.id,
-        role: m.role,
-        kind: m.kind,
-        text: m.role === "learner" ? m.text : null,
-        blocks: m.blocks,
-      })),
+      messages: [
+        ...messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          kind: m.kind,
+          text: m.role === "learner" ? m.text : null,
+          blocks: m.blocks,
+        })),
+        ...inFlight,
+      ],
       lesson: lesson
         ? {
             steps: lesson.steps,
@@ -162,7 +226,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
         blocks: m.blocks,
         verdict: m.verdict,
       })),
-      lastEventId: last?.id ?? 0,
+      lastEventId: cursor,
     });
   });
 
