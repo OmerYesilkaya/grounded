@@ -20,7 +20,14 @@ export default tseslint.config(
     files: ["apps/web/**/*.{ts,tsx}"],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { "react-hooks": reactHooks },
-    rules: reactHooks.configs.recommended.rules,
+    rules: {
+      ...reactHooks.configs.recommended.rules,
+      // TanStack Router redirects by throwing redirect(); allow exactly that.
+      "@typescript-eslint/only-throw-error": [
+        "error",
+        { allow: [{ from: "package", package: "@tanstack/router-core", name: "Redirect" }] },
+      ],
+    },
   },
   {
     files: ["**/*.js"],

@@ -1,4 +1,7 @@
+import { QueryClientProvider } from "@tanstack/react-query";
+import { RouterProvider } from "@tanstack/react-router";
 import { lazy, Suspense } from "react";
+import { queryClient, router } from "./router";
 
 // Dev-only; the dynamic import is dropped from production builds with the DEV branch.
 const LessonPreview = import.meta.env.DEV
@@ -13,5 +16,9 @@ export function App() {
       </Suspense>
     );
   }
-  return <main className="p-10 font-serif text-lg">Grounded</main>;
+  return (
+    <QueryClientProvider client={queryClient}>
+      <RouterProvider router={router} />
+    </QueryClientProvider>
+  );
 }
