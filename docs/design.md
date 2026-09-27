@@ -1,4 +1,4 @@
-# first-principles-tutor — design
+# Grounded — design
 
 A web app that teaches any subject with Omer's method: from unconditional truths upward, every
 step motivated, no word used before it has been taught. Friends and family sign in, bring their own
@@ -6,10 +6,9 @@ AI provider key, and learn in tracks.
 
 This document is the source of truth for the build. It records every decision from the two grilling
 sessions (2026-09-25 → 27) and the lesson-page prototype, with the reason where the reason matters.
-`HANDOFF.md` is the earlier, superseded context.
 
-Code name: `first-principles-tutor` (packages `@fpt/*`). Product name: open, deliberately not blocking
-anything; the name lives in one config value.
+Product name: **Grounded** (repo `grounded`, packages `@grounded/*`). The display name lives in one
+config value.
 
 ---
 
@@ -41,7 +40,7 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 - **The app is a home for the method, not a new method.** `method.md` is the single copy; the app
   enforces it with phases, validators and renderer rules instead of trusting the prompt alone.
 - **Bring your own key.** Every model call is paid by the learner's key. The data model also allows a
-  *sponsored* key (Omer pays for a specific person) without touching the core.
+  _sponsored_ key (Omer pays for a specific person) without touching the core.
 - **Nothing runs behind the learner's back.** No background model calls; everything is triggered by the
   learner being present (the v2 quiz generates its question when the link is opened).
 - **Invite-only now, ready to scale later. No irreversible decisions.** Stateless API servers, a durable
@@ -56,25 +55,25 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 
 ### 3.1 `method.md`
 
-- Lives in this repo; extracted from `~/Omer/Learning/.claude/skills/teach/SKILL.md` with Omer's name,
-  quotes and Claude Code specifics generalized. A chat-app version exists at `test/method.md` for
-  Omer's manual ChatGPT test; its transcripts seed the eval personas.
+- Lives at the repo root; extracted from Omer's Claude Code `teach` skill with his name, quotes and
+  Claude Code specifics generalized. A chat-app version at `test/method.md` passed Omer's manual
+  ChatGPT test; its transcripts seed the eval personas.
 - Sections are **tagged by phase**; the server assembles each phase's prompt from the sections it
   needs (plus the learner profile and track state). One document to read and maintain; shorter,
   focused prompts per call — cheaper and much better for weaker models.
 - Teach in the learner's language; terms are gated in the language taught.
-- `~/Omer/Learning` is never modified; Omer keeps learning there until the app reaches parity, then
-  migrates his tracks with an import script and becomes user #1.
+- Omer migrates his existing tracks with an import script once the app reaches parity, and becomes
+  user #1.
 
-### 3.2 Changes the app makes to the method (Omer approves each in `method.md`)
+### 3.2 Changes the app makes to the method (approved 2026-09-27)
 
-| Today | In the app | Why |
-| --- | --- | --- |
-| The page is read in full, then checks in chat | **Each step ends with an inline check; the next step unlocks when it lands** | Restores the safety net the method lost when the terminal couldn't host both ("a bad step was caught by its check before anything was built on top of it") |
-| A lesson opens with a "what rests on what" picture | **No opener.** A "what you just built" picture after the last check; the same picture in the plan and on track stats; all drawn from the term dependencies, never by the model | The opener spoils the discovery path and duplicates the approved plan; at the end it *is* the click |
-| Homework is never skipped | **Homework can be postponed ("Later", with snooze), never skipped silently;** the next homework subsumes an open one | Building homework teaches most; sometimes there is only room to read and think |
-| Hand-drawn SVG | Mermaid (and other typed blocks) | Auto-layout removes label overflow; validation is mechanical |
-| Asides answered by a fresh `claude -p` | Asides answered in the margin by a cheaper model; a question about later material gets a small taste and a promise | Curiosity served in the moment without spoiling the path |
+| Today                                              | In the app                                                                                                                                                                     | Why                                                                                                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The page is read in full, then checks in chat      | **Each step ends with an inline check; the next step unlocks when it lands**                                                                                                   | Restores the safety net the method lost when the terminal couldn't host both ("a bad step was caught by its check before anything was built on top of it") |
+| A lesson opens with a "what rests on what" picture | **No opener.** A "what you just built" picture after the last check; the same picture in the plan and on track stats; all drawn from the term dependencies, never by the model | The opener spoils the discovery path and duplicates the approved plan; at the end it _is_ the click                                                        |
+| Homework is never skipped                          | **Homework can be postponed ("Later", with snooze), never skipped silently;** the next homework subsumes an open one                                                           | Building homework teaches most; sometimes there is only room to read and think                                                                             |
+| Hand-drawn SVG                                     | Mermaid (and other typed blocks)                                                                                                                                               | Auto-layout removes label overflow; validation is mechanical                                                                                               |
+| Asides answered by a fresh `claude -p`             | Asides answered in the margin by a cheaper model; a question about later material gets a small taste and a promise                                                             | Curiosity served in the moment without spoiling the path                                                                                                   |
 
 ### 3.3 Enforcement
 
@@ -104,7 +103,7 @@ packages/
   crypto/       envelope encryption behind a KeyVault interface
 tools/
   eval/         eval harness (personas, runner, reports)
-  cli/          `pnpm invite`, `pnpm revoke`, `pnpm import-learning` (Omer's tracks)
+  cli/          `pnpm invite`, `pnpm revoke`, `pnpm import-tracks` (Omer's existing tracks)
 method.md
 ```
 
@@ -151,26 +150,26 @@ about, test and debug.
 
 ## 5. Data model (sketch)
 
-| Table | Holds |
-| --- | --- |
-| `users`, `allowlist` | account; who may sign in |
-| `credentials` | provider, encrypted key, credential source |
-| `learner_profile_notes` | teaching notes: text, evidence refs, created/revised at; editable by the learner |
-| `tracks` | subject, teaching language, status, research notes |
-| `terms` | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic |
-| `term_events` | evidence history: status change, quoted learner words, source (check, homework, aside, exam) |
-| `term_dependencies` | "rests on" edges — the map; source of every structure picture |
-| `borrowed_terms` | term used in this track, confirmed in another |
-| `arcs`, `fix_list_items` | the plan's arcs and which session closes each; the audit's misconceptions and their status |
-| `sessions` | track, kind (normal / final), phase, open/closed, paused-at |
-| `messages` | chat messages of a session (probe, plan, recap) as block trees |
-| `lessons`, `lesson_steps` | the lesson's block tree per step, outline, validation results |
-| `check_attempts` | per step: answers, verdicts, repair threads, fresh questions, flags |
-| `asides`, `aside_messages` | anchor (block id + quote selector), thread, saved-for-later flag |
-| `assignments` | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until |
-| `submissions` | typed fields (prediction with lock timestamp, reconciliation, steps, text), images |
-| `reviews` | margin comments on a submission, checklist outcome (held / leaked / missing) |
-| `usage_events` | per model call |
+| Table                      | Holds                                                                                                 |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `users`, `allowlist`       | account; who may sign in                                                                              |
+| `credentials`              | provider, encrypted key, credential source                                                            |
+| `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
+| `tracks`                   | subject, teaching language, status, research notes                                                    |
+| `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
+| `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
+| `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
+| `borrowed_terms`           | term used in this track, confirmed in another                                                         |
+| `arcs`, `fix_list_items`   | the plan's arcs and which session closes each; the audit's misconceptions and their status            |
+| `sessions`                 | track, kind (normal / final), phase, open/closed, paused-at                                           |
+| `messages`                 | chat messages of a session (probe, plan, recap) as block trees                                        |
+| `lessons`, `lesson_steps`  | the lesson's block tree per step, outline, validation results                                         |
+| `check_attempts`           | per step: answers, verdicts, repair threads, fresh questions, flags                                   |
+| `asides`, `aside_messages` | anchor (block id + quote selector), thread, saved-for-later flag                                      |
+| `assignments`              | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until |
+| `submissions`              | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    |
+| `reviews`                  | margin comments on a submission, checklist outcome (held / leaked / missing)                          |
+| `usage_events`             | per model call                                                                                        |
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -188,31 +187,31 @@ naturally, and ids are what asides, repair notes and validation hang off. No mod
 
 ### 6.2 Block types
 
-| v1 | Notes |
-| --- | --- |
-| paragraph, heading, list, quote, callout/note | "After the check-back" repair notes are marked notes under a step |
-| code | **Shiki** highlighting; a reserved `runnable` flag for v2 |
-| math | **KaTeX**, inline and display |
-| diagram | `{ syntax: "mermaid", source, caption, highlight }` behind a `DiagramEngine` interface; theme in one file. Swapping to D2 or another engine later adds a `syntax` value; old lessons keep rendering. Mermaid's `classDef` needs hex colours (8-digit hex for alpha), not `rgba()` |
-| stepper | frames of diagram + caption with prev/next and a scrubber — for mechanisms that unfold over time (races, protocols); supported when needed, never the default |
-| chart | **Vega-Lite** spec; charts on real data carry their source |
-| image | **Wikimedia Commons** via a server-side `find_image` tool; licence and credit shown |
-| video | **YouTube** with start/end time, verified to exist |
-| audio | Commons audio (music samples, instruments, pronunciation) — "audio when needed" |
-| link card | anything else from sources: title, site, one-line reason |
-| check | the step's question; answered and graded inline |
+| v1                                            | Notes                                                                                                                                                                                                                                                                             |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| paragraph, heading, list, quote, callout/note | "After the check-back" repair notes are marked notes under a step                                                                                                                                                                                                                 |
+| code                                          | **Shiki** highlighting; a reserved `runnable` flag for v2                                                                                                                                                                                                                         |
+| math                                          | **KaTeX**, inline and display                                                                                                                                                                                                                                                     |
+| diagram                                       | `{ syntax: "mermaid", source, caption, highlight }` behind a `DiagramEngine` interface; theme in one file. Swapping to D2 or another engine later adds a `syntax` value; old lessons keep rendering. Mermaid's `classDef` needs hex colours (8-digit hex for alpha), not `rgba()` |
+| stepper                                       | frames of diagram + caption with prev/next and a scrubber — for mechanisms that unfold over time (races, protocols); supported when needed, never the default                                                                                                                     |
+| chart                                         | **Vega-Lite** spec; charts on real data carry their source                                                                                                                                                                                                                        |
+| image                                         | **Wikimedia Commons** via a server-side `find_image` tool; licence and credit shown                                                                                                                                                                                               |
+| video                                         | **YouTube** with start/end time, verified to exist                                                                                                                                                                                                                                |
+| audio                                         | Commons audio (music samples, instruments, pronunciation) — "audio when needed"                                                                                                                                                                                                   |
+| link card                                     | anything else from sources: title, site, one-line reason                                                                                                                                                                                                                          |
+| check                                         | the step's question; answered and graded inline                                                                                                                                                                                                                                   |
 
 v2: runnable code (JS in a Web Worker, Python via Pyodide — browser only, never on our servers),
 generated sound (the model writes notes, the browser plays them), function plots, other interactives.
 
 ### 6.3 Per-surface allowlists
 
-| Surface | Allowed |
-| --- | --- |
-| Probe and plan chat | text only, plus the plan picture (from the database) |
-| Lesson | everything |
-| Repair thread, aside card | text, math, code, diagram, stepper |
-| Homework prompt | text, math, code, diagram, media |
+| Surface                   | Allowed                                              |
+| ------------------------- | ---------------------------------------------------- |
+| Probe and plan chat       | text only, plus the plan picture (from the database) |
+| Lesson                    | everything                                           |
+| Repair thread, aside card | text, math, code, diagram, stepper                   |
+| Homework prompt           | text, math, code, diagram, media                     |
 
 "The probe teaches nothing" is then enforced by the renderer and validator, not just requested.
 
@@ -232,7 +231,7 @@ generated sound (the model writes notes, the browser plays them), function plots
 ### 7.1 Phases
 
 Server-owned state machine: **review → probe → plan → lesson (steps with inline checks) → homework →
-close.** The model *proposes* transitions through structured actions ("probing done; here is the
+close.** The model _proposes_ transitions through structured actions ("probing done; here is the
 plan"); the server checks preconditions (a plan before a lesson; every check resolved before homework);
 the learner approves at the gates (the plan). The learner can nudge at any time ("skip ahead to the
 plan"). Sessions stay open indefinitely and resume where they stopped; **one open session per track**.
@@ -267,11 +266,11 @@ HTML/SVG). To be measured, then adjusted.
 ### 7.4 Homework, arc exams, the final
 
 - **Typed homework kinds** with their own fields:
-  - *Predict → verify*: prediction (locks with a timestamp on submit) → what actually happened →
+  - _Predict → verify_: prediction (locks with a timestamp on submit) → what actually happened →
     reconcile.
-  - *Derivation*: a list of steps, each with a "because…".
-  - *Build*: brief → what you submit (text, code, photos) → "what surprised you".
-  - *Explain it to a friend*: one text box.
+  - _Derivation_: a list of steps, each with a "because…".
+  - _Build_: brief → what you submit (text, code, photos) → "what surprised you".
+  - _Explain it to a friend_: one text box.
 - Answers use a **Tiptap** editor with markdown shortcuts, code blocks, pasted images (the photo of a
   notebook), and `$…$` math; checks and asides use a one-line version.
 - **Review starts on submit**, as margin comments anchored to parts of the answer (the same card
@@ -389,16 +388,18 @@ and whenever `method.md` changes. Built after the first working session.
   nothing is shared, and that the operator can technically access the database but does not read it.
 - Model output is never rendered as HTML or run as code; every URL is verified before display.
 
-## 13. Open items
+## 13. Settled since the grilling
 
-- Product name.
-- Results of Omer's manual ChatGPT test of `test/method.md`.
-- Omer's approval of the method changes in §3.2, written into `method.md`.
-- Real cost per session on the candidate models (replay a session through token counting, or run one).
+- Product name: **Grounded**.
+- Omer's manual ChatGPT test of `test/method.md`: passed.
+- The method changes in §3.2: approved.
+- Cost: Omer's measurement puts it at minimal with GPT-6 Luna; acceptable to proceed. Per-model cost is
+  still recorded (§4.4) and reviewed as the model list grows.
 
 ## 14. Order of work
 
-1. Omer's ChatGPT test → adjust `method.md`; write the §3.2 changes in and get them approved.
+1. `method.md` at the repo root: the tested chat-app version adapted to the app (phase tags, the §3.2
+   changes, what the app provides in context and what the model returns).
 2. Repo setup: git, pnpm workspaces, lint/format/test tooling, CI, Docker, Postgres locally.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
    components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict.
