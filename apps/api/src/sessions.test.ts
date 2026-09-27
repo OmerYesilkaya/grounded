@@ -3,6 +3,7 @@ import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { asc, eq, sessionEvents, sessionMessages, terms, users } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
+import { startActivity } from "./engine/events.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 import { readSse } from "./test/sse.js";
@@ -22,7 +23,7 @@ beforeEach(() => {
   models.reset();
 });
 
-const { snapshot, until, learner, startedSession, planned } = createFlows(t, models);
+const { snapshot, until, learner, startedSession, planned, activities } = createFlows(t, models);
 
 describe("starting a session", () => {
   it("opens with the tutor's first probe question, streamed", async () => {
@@ -90,7 +91,14 @@ describe("starting a session", () => {
           .orderBy(asc(sessionEvents.id))
       ).map((e) => e.type);
     await t.waitFor(async () => (await types()).includes("error"));
-    expect(await types()).toEqual(["state", "message-start", "message-retracted", "error"]);
+    expect(await types()).toEqual([
+      "state",
+      "message-start",
+      "activity", // Thinking… starts
+      "activity", // and ends as the text starts
+      "message-retracted",
+      "error",
+    ]);
     expect((await snapshot(cookie, sessionId)).messages).toEqual([]);
   });
 });
@@ -310,5 +318,98 @@ describe("empty replies", () => {
       message: "The tutor's reply came back empty. Try again.",
     });
     expect(await storedTutorTexts(sessionId)).toEqual([FIRST_QUESTION]);
+  });
+});
+
+describe("activity", () => {
+  const labels = async (sessionId: string) => (await activities(sessionId)).map((a) => a.label);
+  const allDone = async (sessionId: string) =>
+    (await activities(sessionId)).every((a) => a.state === "done");
+
+  it("says what the tutor is doing through the probe and the plan, and ends every step", async () => {
+    const { cookie, sessionId } = await planned();
+    expect(await labels(sessionId)).toEqual([
+      "Thinking…",
+      "Thinking…",
+      "Noting what your answers showed",
+      "Thinking…",
+      "Recording the plan's terms",
+    ]);
+    expect(await allDone(sessionId)).toBe(true);
+    expect((await snapshot(cookie, sessionId)).activities).toEqual([]);
+  });
+
+  it("says when a plan that didn't fit is being revised", async () => {
+    const { cookie, sessionId } = await startedSession();
+    const bad = [{ type: "add-planned-term", term: "lost update", restsOn: ["working copy"] }];
+    models.script("plan", planAttempt("A plan resting on a gap.", bad), planAttempt(PLAN_TEXT));
+    await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    expect((await labels(sessionId)).slice(1)).toEqual([
+      "Thinking…",
+      "Recording the plan's terms",
+      "Revising the plan (the first draft didn't fit)",
+      "Thinking…",
+      "Recording the plan's terms",
+    ]);
+    expect(await allDone(sessionId)).toBe(true);
+  });
+
+  it("shows the research and each web search", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.enableSearch();
+    models.script(
+      "plan",
+      { searches: ["lost update", "read-modify-write"], text: "NOTES." },
+      planAttempt(PLAN_TEXT),
+    );
+    await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    expect((await labels(sessionId)).slice(1, 4)).toEqual([
+      "Researching the subject",
+      "Searching the web for “lost update”",
+      "Searching the web for “read-modify-write”",
+    ]);
+    expect(await allDone(sessionId)).toBe(true);
+  });
+
+  it("passes the model's reasoning along, and says when it asks again for an empty reply", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script("plan", {
+      reasoning: "The plan should start from memory.",
+      thenStream: [{ text: PLAN_TEXT }],
+      thenGenerate: [JSON.stringify({ actions: PLAN_ACTIONS })],
+    });
+    await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    const log = await activities(sessionId);
+    expect(log.map((a) => a.label).slice(1, 3)).toEqual([
+      "Thinking…",
+      "Thinking again (the reply came back empty)",
+    ]);
+    const reasoning = await t.db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.type, "activity-reasoning"));
+    expect(reasoning.map((e) => e.data)).toEqual([
+      { id: log[1]?.id, text: "The plan should start from memory." },
+    ]);
+  });
+
+  it("lists what is still running in the snapshot, for a page opened mid-job", async () => {
+    const { cookie, sessionId } = await startedSession();
+    const outlining = await startActivity(t.db, sessionId, "Outlining the lesson");
+    const writing = await startActivity(t.db, sessionId, "Writing step 1 of 3");
+    await writing.update({ detail: "Adding one is three moves" });
+    await outlining.done();
+
+    expect((await snapshot(cookie, sessionId)).activities).toMatchObject([
+      { label: "Writing step 1 of 3", detail: "Adding one is three moves", state: "running" },
+    ]);
+    await writing.done();
+    expect((await snapshot(cookie, sessionId)).activities).toEqual([]);
   });
 });

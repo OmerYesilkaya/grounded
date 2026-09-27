@@ -108,6 +108,30 @@ describe("generateLesson", () => {
     expect(promptText(model.doStreamCalls[0])).toContain("Adding one is three moves");
   });
 
+  it("reports each step as its writing starts, and each rewrite", async () => {
+    const brokenS2 = "## Two workers\n\nBoth copy 5; this is a race condition.";
+    const starts: [number, number][] = [];
+    await generateLesson({
+      model: new MockLanguageModelV4({
+        doGenerate: [text(JSON.stringify(OUTLINE)), text(S2)],
+        doStream: streamOf([S1, brokenS2, S3].join("\n\n")),
+      }),
+      system: "SYSTEM",
+      request: "Teach why counters lose updates.",
+      terms: TERMS,
+      onStep: () => undefined,
+      onStepStart: (index, attempt) => {
+        starts.push([index, attempt]);
+      },
+    });
+    expect(starts).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [1, 1],
+    ]);
+  });
+
   it("asks again for an outline that introduces a term outside the plan, saying why", async () => {
     const [first] = OUTLINE.steps;
     if (!first) throw new Error("fixture outline is empty");

@@ -8,7 +8,7 @@ import { scriptedModels } from "./test/scripted-models.js";
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access });
-const { snapshot, until, planned } = createFlows(t, models);
+const { snapshot, until, planned, activities } = createFlows(t, models);
 
 beforeEach(() => {
   models.reset();
@@ -99,6 +99,19 @@ describe("the lesson", () => {
       lesson: { status: "ready" },
     });
   });
+
+  it("says it is outlining, then which step it is writing", async () => {
+    const { sessionId } = await inLesson();
+    const lessonLabels = async () =>
+      (await activities(sessionId)).filter((a) => /Outlining|step/.test(a.label));
+    await t.waitFor(async () => (await lessonLabels()).every((a) => a.state === "done"));
+    expect((await lessonLabels()).map((a) => a.label)).toEqual([
+      "Outlining the lesson",
+      "Writing step 1 of 3",
+      "Writing step 2 of 3",
+      "Writing step 3 of 3",
+    ]);
+  });
 });
 
 describe("checks", () => {
@@ -115,6 +128,10 @@ describe("checks", () => {
       ["s1", "learner", null],
       ["s1", "tutor", "landed"],
     ]);
+    const checking = (await activities(sessionId)).filter(
+      (a) => a.label === "Checking your answer",
+    );
+    expect(checking.map((a) => a.state)).toEqual(["done"]);
   });
 
   it("repairs a miss with a fresh question, and notes where the step leaked", async () => {

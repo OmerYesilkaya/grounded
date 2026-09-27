@@ -1,5 +1,7 @@
+import { asc, eq, sessionEvents } from "@grounded/db";
 import { expect } from "vitest";
 import { invite } from "../allowlist.js";
+import type { ActivityEvent } from "../engine/events.js";
 import type { createTestHarness } from "./harness.js";
 import type { scriptedModels } from "./scripted-models.js";
 
@@ -22,6 +24,7 @@ export interface Snapshot {
   }[];
   lesson: { steps: { id: string }[]; totalSteps: number; notes: Record<string, string> } | null;
   checks: { stepId: string; role: string; text: string | null; verdict: string | null }[];
+  activities: ActivityEvent[];
 }
 
 export const FIRST_QUESTION =
@@ -99,5 +102,21 @@ export function createFlows(t: Harness, models: Models) {
     return session;
   };
 
-  return { snapshot, until, learner, startedSession, planned };
+  /** The session's activities in the order they started, each as its latest event left it. */
+  const activities = async (sessionId: string) => {
+    const rows = await t.db
+      .select()
+      .from(sessionEvents)
+      .where(eq(sessionEvents.sessionId, sessionId))
+      .orderBy(asc(sessionEvents.id));
+    const latest = new Map<string, ActivityEvent>();
+    for (const row of rows) {
+      if (row.type !== "activity") continue;
+      const activity = row.data as ActivityEvent;
+      latest.set(activity.id, activity);
+    }
+    return [...latest.values()];
+  };
+
+  return { snapshot, until, learner, startedSession, planned, activities };
 }

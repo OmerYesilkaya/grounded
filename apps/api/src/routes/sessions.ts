@@ -18,7 +18,7 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
-import { publish } from "../engine/events.js";
+import { publish, runningActivities } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
 
@@ -226,6 +226,8 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
         blocks: m.blocks,
         verdict: m.verdict,
       })),
+      // What jobs are doing at the cursor; later changes arrive on the stream as activity events.
+      activities: await runningActivities(db, session.id, cursor),
       lastEventId: cursor,
     });
   });

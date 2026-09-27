@@ -1,7 +1,29 @@
-import { and, asc, eq, gt, sessionEvents, sql, type Db } from "@grounded/db";
+import { and, asc, eq, gt, lte, sessionEvents, sql, type Db } from "@grounded/db";
 import type { Sql } from "postgres";
+import { v7 as uuidv7 } from "uuid";
 
 const CHANNEL = "session_events";
+
+/*
+ * Activity events tell the learner what a job is doing right now, for a live status line:
+ *
+ *   activity            { id, label, detail: string | null, state: "running" | "done" }
+ *   activity-reasoning  { id, text }
+ *
+ * The latest `activity` event for an id is that activity's current state; a later one may change its
+ * label or detail while it runs. Every activity that starts running ends with "done", whether its work
+ * succeeded or not (a failure is reported by its own `error` event). Several can run at once (a web
+ * search inside the research); the most recently started one still running is the one to show.
+ * `activity-reasoning` appends a piece of the model's reasoning summary to a running activity, for a
+ * collapsed detail; only some providers stream one, so nothing may depend on it. The session snapshot
+ * lists the activities still running at its cursor, so a page opened mid-job can show them.
+ */
+export interface ActivityEvent {
+  id: string;
+  label: string;
+  detail: string | null;
+  state: "running" | "done";
+}
 
 /** Appends an event to the session's log and wakes its open streams. Returns the event id. */
 export async function publish(
@@ -25,6 +47,107 @@ export async function eventsAfter(db: Db, sessionId: string, afterId: number) {
     .from(sessionEvents)
     .where(and(eq(sessionEvents.sessionId, sessionId), gt(sessionEvents.id, afterId)))
     .orderBy(asc(sessionEvents.id));
+}
+
+/** Batches streamed text: one event per ~80 ms or 400 characters, not one per token. */
+export function batcher(flush: (text: string) => Promise<void>) {
+  let pending = "";
+  let last = Date.now();
+  return {
+    async add(delta: string) {
+      pending += delta;
+      if (pending.length >= 400 || Date.now() - last >= 80) {
+        const text = pending;
+        pending = "";
+        last = Date.now();
+        await flush(text);
+      }
+    },
+    async end() {
+      if (pending) await flush(pending);
+      pending = "";
+    },
+  };
+}
+
+export interface Activity {
+  update(change: { label?: string; detail?: string | null }): Promise<void>;
+  /** Appends to the activity's reasoning summary (batched). */
+  reasoning(text: string): Promise<void>;
+  /** Ends the activity; later calls do nothing. */
+  done(): Promise<void>;
+}
+
+/** Publishes a running activity and returns its handle. */
+export async function startActivity(
+  db: Db,
+  sessionId: string,
+  label: string,
+  detail: string | null = null,
+): Promise<Activity> {
+  const id = uuidv7();
+  let current: ActivityEvent = { id, label, detail, state: "running" };
+  const reasoning = batcher((text) =>
+    publish(db, sessionId, "activity-reasoning", { id, text }).then(() => undefined),
+  );
+  await publish(db, sessionId, "activity", current);
+  return {
+    async update(change) {
+      if (current.state === "done") return;
+      current = { ...current, ...change };
+      await publish(db, sessionId, "activity", current);
+    },
+    async reasoning(text) {
+      if (current.state === "running") await reasoning.add(text);
+    },
+    async done() {
+      if (current.state === "done") return;
+      current = { ...current, state: "done" };
+      await reasoning.end();
+      await publish(db, sessionId, "activity", current);
+    },
+  };
+}
+
+/** Runs the work as an activity, ended however the work ends. */
+export async function withActivity<T>(
+  db: Db,
+  sessionId: string,
+  label: string,
+  run: (activity: Activity) => Promise<T>,
+): Promise<T> {
+  const activity = await startActivity(db, sessionId, label);
+  try {
+    return await run(activity);
+  } finally {
+    await activity.done();
+  }
+}
+
+/** The activities still running as of an event id, oldest first. */
+export async function runningActivities(
+  db: Db,
+  sessionId: string,
+  upToId: number,
+): Promise<ActivityEvent[]> {
+  const rows = await db
+    .select({ data: sessionEvents.data })
+    .from(sessionEvents)
+    .where(
+      and(
+        eq(sessionEvents.sessionId, sessionId),
+        eq(sessionEvents.type, "activity"),
+        lte(sessionEvents.id, upToId),
+      ),
+    )
+    .orderBy(asc(sessionEvents.id));
+  const latest = new Map<string, ActivityEvent>();
+  for (const { data } of rows) {
+    const activity = data as ActivityEvent;
+    // An update keeps the activity's place: it is ordered by when it started.
+    latest.set(activity.id, activity);
+  }
+  return [...latest.values()].filter((a) => a.state === "running");
 }
 
 export interface EventHub {

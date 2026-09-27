@@ -127,6 +127,12 @@ about, test and debug.
   browser replays from its last event id after a reconnect or a closed tab. API servers hold no state
   in memory, so API and workers scale independently; Redis replaces `NOTIFY` only if Postgres becomes
   the bottleneck.
+- **Jobs say what they are doing.** Alongside their output, jobs publish `activity` events
+  (`{ id, label, detail, state: "running" | "done" }`, the latest per id wins: "Thinking…", "Searching
+  the web for …", "Writing step 3 of 12") and, where the provider streams one, the model's reasoning
+  summary as `activity-reasoning`. The web shows them as a compact live status line, so a long job
+  never looks stuck; the session snapshot lists the ones still running. The contract is documented
+  in `apps/api/src/engine/events.ts`.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite.
 - **Every row is owned by a user; ids are UUIDv7.**

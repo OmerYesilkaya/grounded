@@ -17,7 +17,7 @@ import { generateText, Output, stepCountIs, streamText, type ModelMessage, type 
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
 import { writeChatMessage } from "./chat.js";
-import { publish } from "./events.js";
+import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import type { JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession } from "./session-store.js";
@@ -189,16 +189,18 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
       if (!learnerHasSpoken) return;
-      const { output } = await generateText({
-        model,
-        system,
-        output: Output.object({ schema: probeDecisionSchema }),
-        messages: [
-          ...messages,
-          { role: "assistant", content: reply.text },
-          { role: "user", content: PROBE_DECISION_PROMPT },
-        ],
-      });
+      const { output } = await withActivity(db, sessionId, "Noting what your answers showed", () =>
+        generateText({
+          model,
+          system,
+          output: Output.object({ schema: probeDecisionSchema }),
+          messages: [
+            ...messages,
+            { role: "assistant", content: reply.text },
+            { role: "user", content: PROBE_DECISION_PROMPT },
+          ],
+        }),
+      );
       if (output.actions.length)
         await applyActions(db, session.trackId, output.actions, { source: "probe" });
       if (output.finished) {
@@ -221,6 +223,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "lesson",
         role: "strong",
       });
+      const outlining = await startActivity(db, sessionId, "Outlining the lesson");
+      let writing: Activity | undefined;
+      let totalSteps = 0;
       try {
         const result = await generateLesson({
           model,
@@ -228,6 +233,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}`,
           terms,
           onOutline: async (outline) => {
+            await outlining.done();
+            totalSteps = outline.steps.length;
             await db.update(lessons).set({ outline }).where(eq(lessons.sessionId, sessionId));
             // The steps are known from the outline, so the learner can start while later ones are written.
             await applyEvent(db, sessionId, { type: "lesson-ready", steps: stepInfoFor(outline) });
@@ -243,6 +250,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               .where(eq(lessons.sessionId, sessionId));
             await publish(db, sessionId, "lesson-step", { step });
           },
+          onStepStart: async (index, attempt) => {
+            await writing?.done();
+            const which = `step ${String(index + 1)} of ${String(Math.max(totalSteps, index + 1))}`;
+            writing = await startActivity(
+              db,
+              sessionId,
+              attempt === 0 ? `Writing ${which}` : `Rewriting ${which} (the draft broke a rule)`,
+            );
+          },
         });
         if (result.failed.length > 0) {
           const failedSteps = result.failed.map(({ stepId, heading }) => ({ stepId, heading }));
@@ -254,6 +270,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         if (error instanceof ProviderCallError) throw error;
         await applyEvent(db, sessionId, { type: "lesson-failed" });
         throw error;
+      } finally {
+        await outlining.done();
+        await writing?.done();
       }
     }),
 
@@ -273,15 +292,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           role: "strong",
         });
 
-        const grade = async (feedback: string) =>
-          (
-            await generateText({
+        const grade = (feedback: string) =>
+          withActivity(db, sessionId, "Checking your answer", async () => {
+            const { output } = await generateText({
               model,
               system,
               output: Output.object({ schema: checkVerdictSchema }),
               prompt: `The learner's answer to this step's check: ${answer}${feedback}`,
-            })
-          ).output;
+            });
+            return output;
+          });
         const problems = (text: string | null) => {
           if (!text) return [];
           const parsed = parseBlocks(text);
@@ -349,12 +369,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "check",
         role: "strong",
       });
-      const { text } = await generateText({
-        model,
-        system,
-        prompt:
-          "The learner paused on this step last time and is back. Ask one fresh check question on the same idea, answerable in one or two lines. Reply with the question only.",
-      });
+      const { text } = await withActivity(db, sessionId, "Writing a fresh question", () =>
+        generateText({
+          model,
+          system,
+          prompt:
+            "The learner paused on this step last time and is back. Ask one fresh check question on the same idea, answerable in one or two lines. Reply with the question only.",
+        }),
+      );
       await recordCheckMessage(sessionId, stepId, text, null);
     }),
 
@@ -397,12 +419,19 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       // The term sweep is its own call, so a rejected edit never means rewriting the recap.
       let feedback = "";
       for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt++) {
-        const { output } = await generateText({
-          model: await models.model({ userId: session.userId, purpose: "close", role: "strong" }),
-          system,
-          output: Output.object({ schema: z.object({ actions: z.array(trackActionSchema) }) }),
-          prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list.${feedback}`,
+        const model = await models.model({
+          userId: session.userId,
+          purpose: "close",
+          role: "strong",
         });
+        const { output } = await withActivity(db, sessionId, "Updating your term list", () =>
+          generateText({
+            model,
+            system,
+            output: Output.object({ schema: z.object({ actions: z.array(trackActionSchema) }) }),
+            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list.${feedback}`,
+          }),
+        );
         const applied = output.actions.length
           ? await applyActions(db, session.trackId, output.actions, { source: "close" })
           : { ok: true as const };
@@ -421,7 +450,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const search =
         session.state.plan === "none" ? await models.searchTool(session.userId) : undefined;
       const notes = search
-        ? await research(await modelFor(), assemblePrompt(method, "plan", track), messages, search)
+        ? await research({
+            db,
+            sessionId,
+            model: await modelFor(),
+            system: assemblePrompt(method, "plan", track),
+            messages,
+            search,
+          })
         : "";
       const system = assemblePrompt(method, "plan", {
         ...track,
@@ -435,49 +471,63 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
 
       let feedback: ModelMessage[] = [];
-      for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
-        // Each attempt is its own call, with the key decrypted for it.
-        const model = await modelFor();
-        const conversation = [...messages, ...feedback];
-        const reply = await writeChatMessage({
-          db,
-          sessionId,
-          model,
-          system,
-          messages: conversation,
-          terms,
-          kind: "plan",
-        });
-        const { output } = await generateText({
-          model,
-          system,
-          output: Output.object({ schema: planActionsSchema }),
-          messages: [
-            ...conversation,
+      let revising: Activity | undefined;
+      try {
+        for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
+          // Each attempt is its own call, with the key decrypted for it.
+          const model = await modelFor();
+          const conversation = [...messages, ...feedback];
+          const reply = await writeChatMessage({
+            db,
+            sessionId,
+            model,
+            system,
+            messages: conversation,
+            terms,
+            kind: "plan",
+          });
+          const { output } = await withActivity(db, sessionId, "Recording the plan's terms", () =>
+            generateText({
+              model,
+              system,
+              output: Output.object({ schema: planActionsSchema }),
+              messages: [
+                ...conversation,
+                { role: "assistant", content: reply.text },
+                { role: "user", content: PLAN_RECORD_PROMPT },
+              ],
+            }),
+          );
+          const applied = output.actions.length
+            ? await applyActions(db, session.trackId, output.actions, { source: "plan" })
+            : {
+                ok: false as const,
+                errors: ["Record the plan's planned terms and arcs."],
+              };
+          if (applied.ok) {
+            await applyEvent(db, sessionId, { type: "plan-proposed" });
+            return;
+          }
+          // The learner shouldn't see a plan that couldn't be recorded next to the corrected one.
+          await db.delete(sessionMessages).where(eq(sessionMessages.id, reply.messageId));
+          await publish(db, sessionId, "message-retracted", { id: reply.messageId });
+          await revising?.done();
+          if (attempt + 1 < PLAN_ATTEMPTS)
+            revising = await startActivity(
+              db,
+              sessionId,
+              "Revising the plan (the first draft didn't fit)",
+            );
+          feedback = [
             { role: "assistant", content: reply.text },
-            { role: "user", content: PLAN_RECORD_PROMPT },
-          ],
-        });
-        const applied = output.actions.length
-          ? await applyActions(db, session.trackId, output.actions, { source: "plan" })
-          : {
-              ok: false as const,
-              errors: ["Record the plan's planned terms and arcs."],
-            };
-        if (applied.ok) {
-          await applyEvent(db, sessionId, { type: "plan-proposed" });
-          return;
+            {
+              role: "user",
+              content: `The plan couldn't be recorded:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nPresent the corrected plan.`,
+            },
+          ];
         }
-        // The learner shouldn't see a plan that couldn't be recorded next to the corrected one.
-        await db.delete(sessionMessages).where(eq(sessionMessages.id, reply.messageId));
-        await publish(db, sessionId, "message-retracted", { id: reply.messageId });
-        feedback = [
-          { role: "assistant", content: reply.text },
-          {
-            role: "user",
-            content: `The plan couldn't be recorded:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nPresent the corrected plan.`,
-          },
-        ];
+      } finally {
+        await revising?.done();
       }
       await publish(db, sessionId, "error", {
         message: "The plan couldn't be put together. Try asking for it again.",
@@ -487,18 +537,53 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 }
 
 /** The planning research: the provider's web search, returned as notes for the plan's calls. */
-async function research(
-  model: LanguageModelV4,
-  system: string,
-  messages: ModelMessage[],
-  search: Tool,
-): Promise<string> {
-  const stream = streamText({
-    model,
-    system,
-    messages: [...messages, { role: "user", content: RESEARCH_PROMPT }],
-    tools: { web_search: search },
-    stopWhen: stepCountIs(RESEARCH_STEPS),
+async function research(options: {
+  db: Db;
+  sessionId: string;
+  model: LanguageModelV4;
+  system: string;
+  messages: ModelMessage[];
+  search: Tool;
+}): Promise<string> {
+  const { db, sessionId } = options;
+  return withActivity(db, sessionId, "Researching the subject", async (researching) => {
+    const searches = new Map<string, Activity>();
+    try {
+      const reply = streamText({
+        model: options.model,
+        system: options.system,
+        messages: [...options.messages, { role: "user", content: RESEARCH_PROMPT }],
+        tools: { web_search: options.search },
+        stopWhen: stepCountIs(RESEARCH_STEPS),
+      });
+      for await (const part of reply.stream) {
+        if (part.type === "error") throw part.error;
+        if (part.type === "reasoning-delta") await researching.reasoning(part.text);
+        if (part.type === "tool-call" && part.toolName === "web_search") {
+          const label = searchLabel(searchQuery(part.input));
+          searches.set(part.toolCallId, await startActivity(db, sessionId, label));
+        }
+        if (part.type === "tool-result" && part.toolName === "web_search") {
+          const searching = searches.get(part.toolCallId);
+          const query = searchQuery(part.output);
+          if (query) await searching?.update({ label: searchLabel(query) });
+          await searching?.done();
+        }
+      }
+      return await reply.text;
+    } finally {
+      for (const searching of searches.values()) await searching.done();
+    }
   });
-  return stream.text;
+}
+
+const searchLabel = (query: string | undefined) =>
+  query ? `Searching the web for “${query}”` : "Searching the web";
+
+/** A search's query, where the provider reports it: in the call's input or the result's action. */
+function searchQuery(value: unknown): string | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  if ("query" in value && typeof value.query === "string") return value.query;
+  if ("action" in value) return searchQuery(value.action);
+  return undefined;
 }

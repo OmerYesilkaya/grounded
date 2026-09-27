@@ -10,7 +10,7 @@ import {
 import { sessionMessages, type Db } from "@grounded/db";
 import { generateText, streamText, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
-import { publish } from "./events.js";
+import { batcher, publish, startActivity, withActivity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
 /** Attempts at getting a reply with any text in it (the message, or its rewrite). */
@@ -31,27 +31,6 @@ export interface ChatMessageResult {
   messageId: string;
   text: string;
   blocks: Block[];
-}
-
-/** Batches streamed text: one event per ~80 ms or 400 characters, not one per token. */
-function batcher(flush: (text: string) => Promise<void>) {
-  let pending = "";
-  let last = Date.now();
-  return {
-    async add(delta: string) {
-      pending += delta;
-      if (pending.length >= 400 || Date.now() - last >= 80) {
-        const text = pending;
-        pending = "";
-        last = Date.now();
-        await flush(text);
-      }
-    },
-    async end() {
-      if (pending) await flush(pending);
-      pending = "";
-    },
-  };
 }
 
 function chatIssues(
@@ -121,14 +100,31 @@ async function composeMessage(
   );
   let text = "";
   for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(text); attempt++) {
-    const stream = streamText({
-      model: options.model,
-      system: options.system,
-      messages: attempt === 0 ? options.messages : [...options.messages, emptyReplyNudge],
-    });
-    for await (const delta of stream.textStream) await deltas.add(delta);
-    await deltas.end();
-    text = await stream.text;
+    // Thinking lasts until the text starts: from then on the learner watches it being written.
+    const thinking = await startActivity(
+      db,
+      sessionId,
+      attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
+    );
+    try {
+      const reply = streamText({
+        model: options.model,
+        system: options.system,
+        messages: attempt === 0 ? options.messages : [...options.messages, emptyReplyNudge],
+      });
+      for await (const part of reply.stream) {
+        if (part.type === "error") throw part.error;
+        if (part.type === "reasoning-delta") await thinking.reasoning(part.text);
+        if (part.type === "text-delta") {
+          if (!isBlank(part.text)) await thinking.done();
+          await deltas.add(part.text);
+        }
+      }
+      await deltas.end();
+      text = await reply.text;
+    } finally {
+      await thinking.done();
+    }
   }
   if (isBlank(text))
     throw new ProviderCallError("unknown", "The tutor's reply came back empty. Try again.");
@@ -136,7 +132,12 @@ async function composeMessage(
   const first = chatIssues(text, surface, options.terms);
   let { blocks } = first;
   if (first.errors.length > 0) {
-    const rewrite = await rewritten(options, text, first.errors);
+    const rewrite = await withActivity(
+      db,
+      sessionId,
+      "Rewriting the message (it broke a chat rule)",
+      () => rewritten(options, text, first.errors),
+    );
     // An empty rewrite is worse than the message the learner has already read.
     if (!isBlank(rewrite)) {
       text = rewrite;
