@@ -1,8 +1,32 @@
 import type { Inline } from "@grounded/content";
+import type { ReactNode } from "react";
 import { Tex } from "./tex";
 
 export function Inlines({ inlines }: { inlines: readonly Inline[] }) {
-  return inlines.map((inline, i) => <InlineView key={i} inline={inline} />);
+  const out: ReactNode[] = [];
+  for (let i = 0; i < inlines.length; i++) {
+    const inline = inlines[i];
+    const next = inlines[i + 1];
+    if (!inline) continue;
+    // A line may break between a formula and the punctuation after it; keep them together.
+    const punctuation =
+      inline.type === "inlineMath" && next?.type === "text"
+        ? /^[.,;:!?)\]]+/.exec(next.value)?.[0]
+        : undefined;
+    if (inline.type === "inlineMath" && next?.type === "text" && punctuation) {
+      out.push(
+        <span key={i} className="whitespace-nowrap">
+          <Tex tex={inline.value} display={false} />
+          {punctuation}
+        </span>,
+      );
+      out.push(next.value.slice(punctuation.length));
+      i++;
+      continue;
+    }
+    out.push(<InlineView key={i} inline={inline} />);
+  }
+  return out;
 }
 
 function InlineView({ inline }: { inline: Inline }) {

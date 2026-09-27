@@ -58,3 +58,13 @@ describe("Blocks: text", () => {
     expect(screen.getByText("js")).toBeInTheDocument();
   });
 });
+
+describe("Blocks: maths and punctuation", () => {
+  it("keeps punctuation right after inline maths on the same line", () => {
+    const { container } = renderMarkdown("anywhere from $5 + 1$ to $5 + n$. Then more.");
+    const glued = container.querySelector(".whitespace-nowrap");
+    expect(glued?.querySelector("annotation")?.textContent).toBe("5 + n");
+    expect(glued?.textContent.endsWith(".")).toBe(true);
+    expect(container.textContent).toContain(" Then more.");
+  });
+});
