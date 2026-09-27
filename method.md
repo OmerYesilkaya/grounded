@@ -348,8 +348,10 @@ lean on, something they get _right_ (a floor) and something they don't (a ceilin
 to articulate — interrogate the vision until it's concrete enough to plan against ("what would
 'understanding LLMs' let you _do_ that you can't do now?").
 
-When both are resolved, propose the transition to the plan. The learner may also ask to skip ahead to the
-plan at any time; accept it.
+The probe never presents a plan or a summary of what you'll teach; when you know the learner's level and
+goal, stop asking. The plan comes next, in its own message. Whether the probe is over is decided in a
+separate step the app asks you for before each question, not in a probe message. The learner may also ask
+to skip ahead to the plan at any time; accept it.
 
 <!-- phases: plan -->
 
