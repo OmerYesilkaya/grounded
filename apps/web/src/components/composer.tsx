@@ -1,5 +1,12 @@
 import { ArrowUp } from "lucide-react";
-import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode, type RefObject } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -23,6 +30,13 @@ export interface ComposerProps {
   actions?: ReactNode;
   /** Below the small breakpoint, stack the buttons full width (design §9.4). */
   stackActions?: boolean;
+  /**
+   * Take focus when the composer opens, whenever it is enabled again, and whenever `focusKey`
+   * changes, unless the learner is busy in another field or selecting text.
+   */
+  autoFocus?: boolean;
+  /** A new value (e.g. a fresh question arriving) is another moment to take focus. */
+  focusKey?: string | number;
   className?: string;
 }
 
@@ -44,12 +58,21 @@ export function Composer({
   submitDisabled = false,
   actions,
   stackActions = false,
+  autoFocus = false,
+  focusKey,
   className,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const canSubmit = !disabled && !submitDisabled && value.trim() !== "";
 
   useAutoHeight(textareaRef, value);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!autoFocus || disabled || !textarea || busyElsewhere(textarea)) return;
+    // The page scrolls on its own terms (the lesson glides to a new step); focus must not jump it.
+    textarea.focus({ preventScroll: true });
+  }, [autoFocus, disabled, focusKey]);
 
   const submit = () => {
     if (canSubmit) onSubmit(value.trim());
@@ -75,6 +98,8 @@ export function Composer({
       onSubmit={(event) => {
         event.preventDefault();
         submit();
+        // Clicking send moved focus to the button; the next message starts in the box again.
+        textareaRef.current?.focus();
       }}
     >
       <textarea
@@ -115,6 +140,22 @@ export function Composer({
       </div>
     </form>
   );
+}
+
+/** The learner is typing in another field, or selecting text (to ask about it, say). */
+function busyElsewhere(textarea: HTMLTextAreaElement): boolean {
+  const active = document.activeElement;
+  if (
+    active !== textarea &&
+    (active instanceof HTMLInputElement ||
+      active instanceof HTMLTextAreaElement ||
+      active instanceof HTMLSelectElement ||
+      (active instanceof HTMLElement && active.isContentEditable))
+  ) {
+    return true;
+  }
+  const selection = document.getSelection();
+  return selection !== null && !selection.isCollapsed;
 }
 
 /**

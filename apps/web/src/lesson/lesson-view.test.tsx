@@ -167,6 +167,57 @@ describe("LessonView: answering a check", () => {
   });
 });
 
+describe("LessonView: focusing a check", () => {
+  function renderRerenderable(progress: Record<string, StepProgress>) {
+    const props: LessonViewProps = {
+      steps: steps(),
+      totalSteps: 3,
+      progress,
+      onAnswer: vi.fn(),
+      onDontKnow: vi.fn(),
+      onPause: vi.fn(),
+      onContinue: vi.fn(),
+    };
+    const { rerender } = render(<LessonView {...props} />);
+    return (next: Record<string, StepProgress>) => {
+      rerender(<LessonView {...props} progress={next} />);
+    };
+  }
+
+  it("focuses the check's answer box when the check is answerable", () => {
+    renderRerenderable({});
+    expect(screen.getByRole("textbox", { name: "Your answer" })).toHaveFocus();
+  });
+
+  it("focuses it again when a repair's fresh question arrives", () => {
+    const answer = { from: "learner" as const, text: "they collided" };
+    const verdict = tutor("Close. Worker B copied **before** A put 6 back.", "missed");
+    const update = renderRerenderable({ s1: { status: "open", thread: [answer], grading: true } });
+    const box = screen.getByRole("textbox", { name: "Your answer" });
+    box.blur();
+
+    update({ s1: { status: "open", thread: [answer, verdict] } });
+    expect(box).toHaveFocus();
+
+    box.blur();
+    update({
+      s1: { status: "open", thread: [answer, verdict, tutor("What is the worst final balance?")] },
+    });
+    expect(box).toHaveFocus();
+  });
+
+  it("focuses the next step's check once the gate is passed", async () => {
+    const user = userEvent.setup();
+    const update = renderRerenderable({ s1: { status: "open", thread: [], offerGate: true } });
+    await user.click(screen.getByRole("button", { name: "Continue anyway" }));
+
+    update({ s1: { status: "settling", thread: [] } });
+    const [, second] = screen.getAllByRole("group", { name: "Check" });
+    if (!second) throw new Error("expected a second check");
+    expect(within(second).getByRole("textbox", { name: "Your answer" })).toHaveFocus();
+  });
+});
+
 describe("LessonView: step timeline", () => {
   it("lists unlocked steps by name and hides the names of locked ones", async () => {
     const user = userEvent.setup();

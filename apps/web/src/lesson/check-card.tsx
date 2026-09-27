@@ -115,6 +115,8 @@ export function CheckCard({
             disabled={progress.grading === true}
             placeholder={progress.thread.length ? "Answer the new question…" : "One or two lines…"}
             stackActions
+            autoFocus
+            focusKey={progress.thread.length}
             className="bg-background"
             actions={
               <Button

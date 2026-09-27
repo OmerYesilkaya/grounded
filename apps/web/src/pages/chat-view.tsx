@@ -168,6 +168,7 @@ export function ChatView({
               disabled={!canWrite}
               submitDisabled={send.isPending}
               placeholder={placeholder}
+              autoFocus
             />
             {(send.error ?? approve.error) && (
               <p className="mt-2 text-sm text-destructive">

@@ -113,4 +113,80 @@ describe("Composer", () => {
     await user.click(screen.getByRole("button", { name: "Extra" }));
     expect(onExtra).toHaveBeenCalled();
   });
+
+  it("returns focus to the box after sending with the button", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const box = screen.getByRole("textbox", { name: "Message" });
+    await user.type(box, "hello");
+    await user.click(screen.getByRole("button", { name: "Send" }));
+    expect(box).toHaveFocus();
+  });
+
+  describe("autoFocus", () => {
+    const props: ComposerProps = {
+      label: "Message",
+      submitLabel: "Send",
+      value: "",
+      onChange: vi.fn(),
+      onSubmit: vi.fn(),
+      autoFocus: true,
+    };
+
+    it("takes focus when it opens, when it is enabled again, and when the focus key changes", () => {
+      const { rerender } = render(<Composer {...props} focusKey={1} />);
+      const box = screen.getByRole("textbox", { name: "Message" });
+      expect(box).toHaveFocus();
+
+      rerender(<Composer {...props} focusKey={1} disabled />);
+      box.blur();
+      rerender(<Composer {...props} focusKey={1} />);
+      expect(box).toHaveFocus();
+
+      box.blur();
+      rerender(<Composer {...props} focusKey={1} />);
+      expect(box).not.toHaveFocus();
+      rerender(<Composer {...props} focusKey={2} />);
+      expect(box).toHaveFocus();
+    });
+
+    it("does not take focus from another field the learner is typing in", () => {
+      const { rerender } = render(
+        <>
+          <input aria-label="Elsewhere" />
+          <Composer {...props} disabled />
+        </>,
+      );
+      const elsewhere = screen.getByRole("textbox", { name: "Elsewhere" });
+      elsewhere.focus();
+
+      rerender(
+        <>
+          <input aria-label="Elsewhere" />
+          <Composer {...props} />
+        </>,
+      );
+      expect(elsewhere).toHaveFocus();
+    });
+
+    it("does not take focus while the learner is selecting text", () => {
+      const { rerender } = render(
+        <>
+          <p>A passage to ask about</p>
+          <Composer {...props} disabled />
+        </>,
+      );
+      const passage = screen.getByText("A passage to ask about");
+      document.getSelection()?.selectAllChildren(passage);
+
+      rerender(
+        <>
+          <p>A passage to ask about</p>
+          <Composer {...props} />
+        </>,
+      );
+      expect(screen.getByRole("textbox", { name: "Message" })).not.toHaveFocus();
+      document.getSelection()?.removeAllRanges();
+    });
+  });
 });
