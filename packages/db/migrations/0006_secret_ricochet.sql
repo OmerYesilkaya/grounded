@@ -1,0 +1,1 @@
+ALTER TABLE "learning_sessions" ADD COLUMN "probe_summary" text;

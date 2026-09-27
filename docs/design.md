@@ -258,10 +258,20 @@ the learner approves at the gates (the plan). The learner can nudge at any time 
 plan"). Sessions stay open indefinitely and resume where they stopped; **one open session per track**.
 
 **Prose first, then structure.** A tutor message is streamed from a call with no tools, so a tool call
-can never take the message's place; its actions and the phase decision ("probing done", the plan's
-terms and arcs) come from a separate structured call on the finished message. A reply without text is
-asked for again and never stored. Before the first plan, research runs as its own call with the
-provider's search tool, and its notes go into the plan's prompt.
+can never take the message's place; its actions and decisions (the plan's terms and arcs) come from a
+separate structured call on the finished message. A reply without text is asked for again and never
+stored. Before the first plan, research runs as its own call with the provider's search tool, and its
+notes go into the plan's prompt.
+
+**The probe decides first, then writes.** The session opens with the first probe question, written
+from what the learner said they want to learn (the track's title, given in the opening turn). Every
+later probe turn starts with the structured call: what the answers showed (term evidence, fix-list
+items, the teaching language) and whether probing is finished. If not, the next question is written
+with those records in its prompt. If it is, no probe message is written: the session moves to planning,
+and the plan job is the only place a plan can appear (a model that felt done used to present the plan
+in its last probe message, leaving the plan message with nothing to say). The decision's summary —
+where the learner's knowledge ends, and their goal — is stored on the session (`probe_summary`) and
+given to the plan's calls, research included; when the learner skips ahead to the plan there is none.
 
 ### 7.2 Lesson generation pipeline
 

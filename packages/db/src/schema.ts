@@ -235,6 +235,11 @@ export const learningSessions = pgTable(
     kind: text("kind").$type<"normal" | "final">().notNull().default("normal"),
     /** The session state machine's state (@grounded/core). */
     state: jsonb("state").$type<SessionState>().notNull(),
+    /**
+     * The probe's conclusion, for the plan's prompt: where the learner's knowledge ends and what they
+     * want to reach. Null until the probe finishes on its own (not when the learner skips to the plan).
+     */
+    probeSummary: text("probe_summary"),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

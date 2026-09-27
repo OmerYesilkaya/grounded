@@ -41,10 +41,18 @@ export const PLAN_ACTIONS = [
   },
 ];
 
-/** A probe turn: the message, then the structured record of what it showed and whether it's done. */
-export const probeTurn = (text: string, decision: { actions?: object[]; finished: boolean }) => ({
+export const PROBE_SUMMARY =
+  "Knowledge ends at: thinks adding one is a single step. Goal: understand why a shared counter loses updates.";
+
+/** A probe turn that goes on: the record of what the answers showed, then the next question. */
+export const probeQuestion = (text: string, actions: object[] = []) => ({
   text,
-  thenGenerate: [JSON.stringify({ actions: [], ...decision })],
+  thenGenerate: [JSON.stringify({ actions, finished: false, summary: null })],
+});
+
+/** The probe turn that ends the probe: the record and the probe's conclusion, and no message. */
+export const probeFinished = (summary: string = PROBE_SUMMARY, actions: object[] = []) => ({
+  thenGenerate: [JSON.stringify({ actions, finished: true, summary })],
 });
 
 /** A plan attempt: the plan's message, then the structured record of its actions. */
@@ -87,10 +95,9 @@ export function createFlows(t: Harness, models: Models) {
     const session = await startedSession();
     models.script(
       "probe",
-      probeTurn("Thanks, that's clear.", {
-        actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
-        finished: true,
-      }),
+      probeFinished(PROBE_SUMMARY, [
+        { type: "add-fix-item", text: "Thinks adding one is a single step" },
+      ]),
     );
     models.script("plan", planAttempt(PLAN_TEXT));
     await t.request(`/api/sessions/${session.sessionId}/messages`, {

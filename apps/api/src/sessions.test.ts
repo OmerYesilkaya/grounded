@@ -12,7 +12,10 @@ import {
   FIRST_QUESTION,
   PLAN_ACTIONS,
   PLAN_TEXT,
+  PROBE_SUMMARY,
   planAttempt,
+  probeFinished,
+  probeQuestion,
   type Snapshot,
 } from "./test/flows.js";
 
@@ -111,7 +114,6 @@ describe("probe and plan", () => {
     expect(s.messages.map((m) => [m.role, m.kind])).toEqual([
       ["tutor", "message"],
       ["learner", "message"],
-      ["tutor", "message"],
       ["tutor", "plan"],
     ]);
     const stored = await t.db.select().from(terms);
@@ -127,6 +129,66 @@ describe("probe and plan", () => {
     expect(JSON.stringify(opening?.prompt)).toContain(
       "The learner started a session. They said they want to learn: Concurrency",
     );
+  });
+
+  it("decides first, then writes the next question with what the answers showed", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script(
+      "probe",
+      probeQuestion("Verstanden. Was steht im Speicher, während das passiert?", [
+        { type: "set-language", language: "German" },
+      ]),
+    );
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "es addiert einfach eins" }),
+    });
+    await until(cookie, sessionId, (s) => s.messages.length === 3);
+
+    expect((await activities(sessionId)).map((a) => a.label).slice(1)).toEqual([
+      "Noting what your answers showed",
+      "Thinking…",
+    ]);
+    const probe = models.used.filter((u) => u.purpose === "probe")[1]?.model;
+    expect(JSON.stringify(probe?.doGenerateCalls[0]?.prompt)).not.toContain("Verstanden");
+    expect(JSON.stringify(probe?.doStreamCalls[0]?.prompt)).toContain("Teaching language: German");
+    expect((await snapshot(cookie, sessionId)).state.phase).toBe("probe");
+  });
+
+  it("writes no probe message on the turn that ends the probe: the plan is in the plan message", async () => {
+    const { cookie, sessionId } = await startedSession();
+    // A model that feels done would present the plan in its probe message, if it were asked for one.
+    models.script("probe", {
+      ...probeFinished(),
+      text: "Here's a plan aimed at your goal: first memory, then lost updates. Does that cover it?",
+    });
+    models.script("plan", planAttempt(PLAN_TEXT));
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "it just adds one; I want to know why my counter is off" }),
+    });
+    await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+
+    const stored = await t.db
+      .select()
+      .from(sessionMessages)
+      .where(eq(sessionMessages.sessionId, sessionId))
+      .orderBy(asc(sessionMessages.createdAt), asc(sessionMessages.id));
+    expect(stored.map((m) => [m.role, m.kind, m.text])).toEqual([
+      ["tutor", "message", FIRST_QUESTION],
+      ["learner", "message", "it just adds one; I want to know why my counter is off"],
+      ["tutor", "plan", PLAN_TEXT],
+    ]);
+    const probe = models.used.filter((u) => u.purpose === "probe")[1]?.model;
+    expect(probe?.doStreamCalls).toHaveLength(0);
+  });
+
+  it("gives the plan the probe's conclusion", async () => {
+    await planned();
+    const planCall = models.used.find((u) => u.purpose === "plan")?.model.doStreamCalls[0];
+    expect(JSON.stringify(planCall?.prompt)).toContain(PROBE_SUMMARY);
   });
 
   it("lets the learner skip ahead to the plan", async () => {
@@ -272,7 +334,7 @@ describe("empty replies", () => {
     models.script("probe", {
       calls: [{ name: "finish_probe", input: { summary: "Floor: variables." } }],
       thenStream: [{ text: "Got it. What does memory hold while that happens?" }],
-      thenGenerate: [JSON.stringify({ actions: [], finished: false })],
+      thenGenerate: [JSON.stringify({ actions: [], finished: false, summary: null })],
     });
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
@@ -308,7 +370,7 @@ describe("empty replies", () => {
 
   it("retracts the message and says so when every attempt is empty", async () => {
     const { cookie, sessionId } = await startedSession();
-    models.script("probe", { text: " ", thenStream: [{ text: "\n" }, {}] });
+    models.script("probe", { ...probeQuestion(" "), thenStream: [{ text: "\n" }, {}] });
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
       cookie,
@@ -337,7 +399,6 @@ describe("activity", () => {
   it("says what the tutor is doing through the probe and the plan, and ends every step", async () => {
     const { cookie, sessionId } = await planned();
     expect(await labels(sessionId)).toEqual([
-      "Thinking…",
       "Thinking…",
       "Noting what your answers showed",
       "Thinking…",

@@ -87,16 +87,17 @@ export function createDemoModels(): ModelAccess {
     return n;
   };
   const make: Record<string, (n: number) => MockLanguageModelV4> = {
+    // The opening question, then (after the learner's answer) the decision that the probe is done,
+    // which comes first and leaves no probe message to write.
     probe: (n) =>
       n % 2 === 1
-        ? model(
-            "In your own words: what do you think happens when a program adds one to a number?",
-            [JSON.stringify({ actions: [], finished: false })],
-          )
-        : model("Thanks, that's clear. I have what I need to plan.", [
+        ? model("In your own words: what do you think happens when a program adds one to a number?")
+        : model("", [
             JSON.stringify({
               actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
               finished: true,
+              summary:
+                "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
             }),
           ]),
     plan: () =>

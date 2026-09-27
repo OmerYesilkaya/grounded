@@ -43,6 +43,13 @@
       "when": 1790511854022,
       "tag": "0005_sleepy_cardiac",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1790529309803,
+      "tag": "0006_secret_ricochet",
+      "breakpoints": true
     }
   ]
 }

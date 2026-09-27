@@ -12,7 +12,16 @@ import {
   type SessionState,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
-import { asc, checkMessages, eq, lessons, sessionMessages, sql, type Db } from "@grounded/db";
+import {
+  asc,
+  checkMessages,
+  eq,
+  learningSessions,
+  lessons,
+  sessionMessages,
+  sql,
+  type Db,
+} from "@grounded/db";
 import { generateText, Output, stepCountIs, streamText, type ModelMessage, type Tool } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
@@ -41,7 +50,7 @@ const SWEEP_ATTEMPTS = 3;
 const RESEARCH_STEPS = 6;
 
 const PROBE_DECISION_PROMPT =
-  "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: it is only finished if your last message closed the probe instead of asking another question.";
+  "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, summarize both for the plan; you won't write another probe message, and the plan comes next, in its own message.";
 const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, the arcs in order, and any misconceptions found in the probe as fix-list items.";
 const RESEARCH_PROMPT =
@@ -172,45 +181,54 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     };
 
   return {
+    // Decide first, then write: a turn that finishes the probe writes no probe message, so a model
+    // that feels done can't present the plan there; the plan job is the only place a plan appears.
     "probe-turn": guarded(async ({ sessionId }) => {
-      const { session, terms, messages, learnerHasSpoken, system } = await contextFor(
-        sessionId,
-        "probe",
-      );
+      let context = await contextFor(sessionId, "probe");
+      const { session } = context;
       const model = await models.model({
         userId: session.userId,
         purpose: "probe",
         role: "strong",
       });
-      const reply = await writeChatMessage({
+      // The opening question follows nothing the learner said: nothing to record, nothing decided.
+      if (context.learnerHasSpoken) {
+        const { output } = await withActivity(
+          db,
+          sessionId,
+          "Noting what your answers showed",
+          () =>
+            generateText({
+              model,
+              system: context.system,
+              output: Output.object({ schema: probeDecisionSchema }),
+              messages: [...context.messages, { role: "user", content: PROBE_DECISION_PROMPT }],
+            }),
+        );
+        if (output.actions.length) {
+          await applyActions(db, session.trackId, output.actions, { source: "probe" });
+          // The question is written with what was just recorded (the teaching language, the fix-list).
+          context = await contextFor(sessionId, "probe");
+        }
+        if (output.finished) {
+          await db
+            .update(learningSessions)
+            .set({ probeSummary: output.summary })
+            .where(eq(learningSessions.id, sessionId));
+          await applyEvent(db, sessionId, { type: "probe-done" });
+          await queue.enqueue("plan", { sessionId });
+          return;
+        }
+      }
+      await writeChatMessage({
         db,
         sessionId,
         model,
-        system,
-        messages,
-        terms,
+        system: context.system,
+        messages: context.messages,
+        terms: context.terms,
         kind: "message",
       });
-      // The opening question follows nothing the learner said: nothing to record, nothing decided.
-      if (!learnerHasSpoken) return;
-      const { output } = await withActivity(db, sessionId, "Noting what your answers showed", () =>
-        generateText({
-          model,
-          system,
-          output: Output.object({ schema: probeDecisionSchema }),
-          messages: [
-            ...messages,
-            { role: "assistant", content: reply.text },
-            { role: "user", content: PROBE_DECISION_PROMPT },
-          ],
-        }),
-      );
-      if (output.actions.length)
-        await applyActions(db, session.trackId, output.actions, { source: "probe" });
-      if (output.finished) {
-        await applyEvent(db, sessionId, { type: "probe-done" });
-        await queue.enqueue("plan", { sessionId });
-      }
     }),
 
     lesson: guarded(async ({ sessionId }) => {
@@ -451,6 +469,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         models.model({ userId: session.userId, purpose: "plan", role: "strong" });
 
       // Research runs before the first plan only, as its own call: a search can't take the plan's place.
+      // The probe's conclusion, stated for the plan (null when the learner skipped ahead to it).
+      const probeFound = session.probeSummary
+        ? [
+            {
+              heading: "What the probe found (the learner hasn't seen this)",
+              body: session.probeSummary,
+            },
+          ]
+        : [];
       const search =
         session.state.plan === "none" ? await models.searchTool(session.userId) : undefined;
       const notes = search
@@ -458,20 +485,19 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             db,
             sessionId,
             model: await modelFor(),
-            system: assemblePrompt(method, "plan", track),
+            system: assemblePrompt(method, "plan", { ...track, extra: probeFound }),
             messages,
             search,
           })
         : "";
       const system = assemblePrompt(method, "plan", {
         ...track,
-        ...(notes
-          ? {
-              extra: [
-                { heading: "Your research notes (the learner hasn't seen them)", body: notes },
-              ],
-            }
-          : {}),
+        extra: [
+          ...probeFound,
+          ...(notes
+            ? [{ heading: "Your research notes (the learner hasn't seen them)", body: notes }]
+            : []),
+        ],
       });
 
       let feedback: ModelMessage[] = [];
