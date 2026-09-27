@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ImportActions } from "@grounded/core";
+import type { ImportReading } from "@grounded/core";
 
 /*
  * A small synthetic track in the earlier setup's format (a "Learning" folder): the same sections,
@@ -16,20 +16,28 @@ Rewritten at the close of every session.
 
 ### Assumed (held before teaching, from probing)
 knife · stove ·
-boiling water (probe floor)
+boiling water (probe floor) · salt dissolves
+· **P1 probe floors (2026-01-04):** a whisk mixes air in; oil floats on water
 
 ### Confirmed (used correctly in his own words or passed a check)
 | Term | Evidence |
 | --- | --- |
 | heat moves from the hot pan into the food (conduction) | Session 1 check 2: "the pan warms the egg from below" |
+| **a lid traps steam** | Session 1 check 3 |
+
+| salt raises the boiling point only slightly | Session 2 homework |
 
 ### Taught (defined and motivated; not yet confirmed by his usage)
 | Term | Where | Note |
 | --- | --- | --- |
 | Maillard reaction | Session 2 lesson | check leaked once |
+| emulsion | Session 3 lesson | |
 
 ### Planned (in the arc, not yet taught)
-emulsion · roux
+roux ·
+from S3: hollandaise · mayonnaise · Emulsion ·
+(arc B remaining: beurre blanc, pan sauce) · bread
+crust
 
 ## Map
 
@@ -109,46 +117,27 @@ export async function writeLearningFixture(): Promise<string> {
   return track;
 }
 
-/** A valid conversion of the fixture's state, as the model would return it. */
-export function fixtureConversion(): ImportActions {
+/**
+ * The model's reading of the fixture, by term number. The terms as the ledger lists them, first
+ * appearance first: 1 knife, 2 stove, 3 boiling water (probe floor), 4 salt dissolves, 5 a whisk mixes
+ * air in, 6 oil floats on water, 7 heat moves… (conduction), 8 a lid traps steam, 9 salt raises the
+ * boiling point only slightly, 10 Maillard reaction, 11 emulsion, 12 roux, 13 hollandaise,
+ * 14 mayonnaise, 15 beurre blanc, 16 pan sauce, 17 bread crust.
+ */
+export function fixtureReading(): ImportReading {
   return {
-    actions: [
-      { type: "set-language", language: "English" },
-      { type: "set-term-status", term: "knife", status: "assumed", evidence: "probe" },
-      { type: "set-term-status", term: "stove", status: "assumed", evidence: "probe" },
-      {
-        type: "set-term-status",
-        term: "boiling water",
-        status: "assumed",
-        evidence: "probe floor",
-      },
-      { type: "add-planned-term", term: "conduction", restsOn: ["stove"] },
-      { type: "add-planned-term", term: "Maillard reaction", restsOn: ["conduction"] },
-      { type: "add-planned-term", term: "emulsion", restsOn: [] },
-      { type: "add-planned-term", term: "roux", restsOn: [] },
-      {
-        type: "set-term-status",
-        term: "conduction",
-        status: "confirmed",
-        evidence:
-          'heat moves from the hot pan into the food — Session 1 check 2: "the pan warms the egg from below"',
-      },
-      {
-        type: "set-term-status",
-        term: "Maillard reaction",
-        status: "taught",
-        evidence: "Session 2 lesson; check leaked once",
-      },
-      { type: "add-fix-item", text: "Salt makes water boil much faster." },
-      {
-        type: "set-plan",
-        arcs: [
-          { title: "A — heat (closed)", terms: ["conduction", "Maillard reaction"] },
-          { title: "B — sauces", terms: ["emulsion", "roux"] },
-        ],
-        notes: "Arc B has started: sauces next.",
-      },
+    dependencies: [
+      { term: 7, restsOn: [2] },
+      { term: 10, restsOn: [7] },
+      { term: 11, restsOn: [6, 5] },
+      { term: 13, restsOn: [11] },
     ],
+    arcs: [
+      { title: "A — heat (closed)", terms: [7, 8, 9, 10] },
+      { title: "B — sauces", terms: [11, 12, 13, 14, 15, 16] },
+    ],
+    fixItems: ["Salt makes water boil much faster."],
+    planNotes: "Arc B has started: sauces next.",
     unplaced: ["The map's root 'a stove makes a pan hot' is a sentence, not a term."],
   };
 }

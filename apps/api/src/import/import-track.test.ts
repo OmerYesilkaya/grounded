@@ -1,7 +1,7 @@
 import { appendFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import type { ImportActions } from "@grounded/core";
+import type { ImportReading } from "@grounded/core";
 import {
   credentials,
   eq,
@@ -19,7 +19,7 @@ import { ProviderCallError } from "../engine/model-call.js";
 import { loadTrackContext } from "../engine/track-state.js";
 import { createTestHarness } from "../test/harness.js";
 import {
-  fixtureConversion,
+  fixtureReading,
   HANDOFF,
   LATEST_LESSON,
   OWED_HOMEWORK,
@@ -27,7 +27,8 @@ import {
 } from "../test/learning-fixture.js";
 import { scriptedModels } from "../test/scripted-models.js";
 import { IMPORT_ATTEMPTS, importTrack, type ImportOutcome } from "./import-track.js";
-import { formatOutcome } from "./report.js";
+import { ASSUMED_EVIDENCE } from "./ledger.js";
+import { formatOutcome, formatReport } from "./report.js";
 
 const t = createTestHarness();
 const models = scriptedModels();
@@ -52,7 +53,7 @@ async function learner(options: { key?: boolean } = {}) {
   return user;
 }
 
-const reply = (conversion: ImportActions) => ({ text: JSON.stringify(conversion) });
+const reply = (reading: ImportReading) => ({ text: JSON.stringify(reading) });
 
 /** A dry run; with `write`, then the write of what that dry run showed (as the CLI does). */
 async function run(options: { write: boolean; email?: string }) {
@@ -73,10 +74,12 @@ function reportOf(outcome: ImportOutcome) {
   return outcome.report;
 }
 
+const CONDUCTION = "heat moves from the hot pan into the food (conduction)";
+
 describe("importTrack: dry run", () => {
   it("reports what it would import, calls the model once, and writes nothing", async () => {
     await learner();
-    models.script("import", reply(fixtureConversion()));
+    models.script("import", reply(fixtureReading()));
 
     const outcome = await run({ write: false });
     const report = reportOf(outcome);
@@ -86,11 +89,13 @@ describe("importTrack: dry run", () => {
       trackId: null,
       title: "Cooking basics",
       language: "English",
-      termCounts: { assumed: 3, confirmed: 1, taught: 1, planned: 2 },
-      dependencies: 2,
+      ledgerCounts: { assumed: 6, confirmed: 3, taught: 2, planned: 7 },
+      merged: ["emulsion: taught (also listed as planned)"],
+      termCounts: { assumed: 6, confirmed: 3, taught: 2, planned: 6 },
+      dependencies: 5,
       arcs: [
-        { title: "A — heat (closed)", terms: 2 },
-        { title: "B — sauces", terms: 2 },
+        { title: "A — heat (closed)", terms: 4 },
+        { title: "B — sauces", terms: 6 },
       ],
       fixItems: ["Salt makes water boil much faster."],
       owedHomework: { folder: "2026-01-03-heat", length: OWED_HOMEWORK.length },
@@ -111,29 +116,36 @@ describe("importTrack: dry run", () => {
 
     const printed = formatOutcome(outcome);
     expect(printed).toContain("Dry run");
-    expect(printed).toContain("7: 3 assumed · 1 confirmed · 1 taught · 2 planned");
+    expect(printed).toContain("Ledger parsed  6 assumed · 3 confirmed · 2 taught · 7 planned");
+    expect(printed).toContain("in two sections: emulsion: taught (also listed as planned)");
+    expect(printed).toContain("17: 6 assumed · 3 confirmed · 2 taught · 6 planned");
     expect(printed).toContain("2026-01-03-heat/homework.md");
     expect(printed).toContain("- Re-probe the Maillard reaction cold");
   });
 
-  it("sends the state, the handoff and the README row to the learner's strong model", async () => {
+  it("sends the numbered terms, the map, the plan and the open threads, not the ledger", async () => {
     await learner();
-    models.script("import", reply(fixtureConversion()));
+    models.script("import", reply(fixtureReading()));
     await run({ write: false });
 
     const [call] = models.used;
     expect(call?.purpose).toBe("import");
     const prompt = JSON.stringify(call?.model.doStreamCalls[0]?.prompt);
-    expect(prompt).toContain("heat moves from the hot pan into the food (conduction)");
-    expect(prompt).toContain("Arc A closed; arc B started.");
+    expect(prompt).toContain(`7. ${CONDUCTION} [confirmed]`);
+    expect(prompt).toContain("11. emulsion [taught]");
+    expect(prompt).toContain("17. bread crust [planned]");
+    expect(prompt).toContain("conduction ──► Maillard reaction");
+    expect(prompt).toContain("Arcs: **A** heat (closed)");
+    expect(prompt).toContain("Believes salt makes water boil much faster.");
     expect(prompt).toContain("Cooking from first principles.");
+    expect(prompt).not.toContain("Session 1 check 2");
   });
 });
 
 describe("importTrack: --write", () => {
   it("creates the track with its terms, evidence, map, fix-list, plan notes and last lesson", async () => {
     const user = await learner();
-    models.script("import", reply(fixtureConversion()));
+    models.script("import", reply(fixtureReading()));
 
     const report = reportOf(await run({ write: true }));
 
@@ -146,29 +158,80 @@ describe("importTrack: --write", () => {
     expect(context.terms).toEqual([
       { term: "knife", status: "assumed", restsOn: [] },
       { term: "stove", status: "assumed", restsOn: [] },
-      { term: "boiling water", status: "assumed", restsOn: [] },
-      { term: "conduction", status: "confirmed", restsOn: ["stove"] },
-      { term: "Maillard reaction", status: "taught", restsOn: ["conduction"] },
-      { term: "emulsion", status: "planned", restsOn: [] },
+      { term: "boiling water (probe floor)", status: "assumed", restsOn: [] },
+      { term: "salt dissolves", status: "assumed", restsOn: [] },
+      { term: "a whisk mixes air in", status: "assumed", restsOn: [] },
+      { term: "oil floats on water", status: "assumed", restsOn: [] },
+      { term: CONDUCTION, status: "confirmed", restsOn: ["stove"] },
+      { term: "a lid traps steam", status: "confirmed", restsOn: [] },
+      { term: "salt raises the boiling point only slightly", status: "confirmed", restsOn: [] },
+      { term: "Maillard reaction", status: "taught", restsOn: [CONDUCTION] },
+      {
+        term: "emulsion",
+        status: "taught",
+        restsOn: expect.arrayContaining([
+          "a whisk mixes air in",
+          "oil floats on water",
+        ]) as string[],
+      },
       { term: "roux", status: "planned", restsOn: [] },
+      { term: "hollandaise", status: "planned", restsOn: ["emulsion"] },
+      { term: "mayonnaise", status: "planned", restsOn: [] },
+      { term: "beurre blanc", status: "planned", restsOn: [] },
+      { term: "pan sauce", status: "planned", restsOn: [] },
+      { term: "bread crust", status: "planned", restsOn: [] },
     ]);
     expect(context.fixList).toEqual([
       { text: "Salt makes water boil much faster.", status: "open" },
     ]);
 
-    const [conduction] = await t.db.select().from(terms).where(eq(terms.term, "conduction"));
-    const events = await t.db
-      .select()
-      .from(termEvents)
-      .where(eq(termEvents.termId, conduction?.id ?? ""));
-    expect(events.find((e) => e.toStatus === "confirmed")).toMatchObject({
-      fromStatus: "planned",
-      evidence: expect.stringContaining('"the pan warms the egg from below"') as string,
-      source: "imported from Learning 2026-01-05",
+    const evidenceOf = async (name: string) => {
+      const [row] = await t.db.select().from(terms).where(eq(terms.term, name));
+      const events = await t.db
+        .select()
+        .from(termEvents)
+        .where(eq(termEvents.termId, row?.id ?? ""));
+      return events.find((e) => e.fromStatus === "planned");
+    };
+    const source = "imported from Learning 2026-01-05";
+    expect(await evidenceOf(CONDUCTION)).toMatchObject({
+      toStatus: "confirmed",
+      evidence: 'Session 1 check 2: "the pan warms the egg from below"',
+      source,
+    });
+    expect(await evidenceOf("Maillard reaction")).toMatchObject({
+      toStatus: "taught",
+      evidence: "Session 2 lesson; check leaked once",
+    });
+    expect(await evidenceOf("emulsion")).toMatchObject({
+      toStatus: "taught",
+      evidence: "Session 3 lesson; also listed as planned: from S3",
+    });
+    expect(await evidenceOf("knife")).toMatchObject({
+      toStatus: "assumed",
+      evidence: ASSUMED_EVIDENCE,
+    });
+    expect(await evidenceOf("oil floats on water")).toMatchObject({
+      toStatus: "assumed",
+      evidence: `${ASSUMED_EVIDENCE} — P1 probe floors (2026-01-04)`,
     });
 
     const { plan } = context;
-    expect(plan.arcs.map((a) => a.title)).toEqual(["A — heat (closed)", "B — sauces"]);
+    expect(plan.arcs).toEqual([
+      {
+        title: "A — heat (closed)",
+        terms: [
+          CONDUCTION,
+          "a lid traps steam",
+          "salt raises the boiling point only slightly",
+          "Maillard reaction",
+        ],
+      },
+      {
+        title: "B — sauces",
+        terms: ["emulsion", "roux", "hollandaise", "mayonnaise", "beurre blanc", "pan sauce"],
+      },
+    ]);
     expect(plan.notes).toMatch(/^Arc B has started: sauces next\./);
     expect(plan.notes).toContain("### Open threads carried forward");
     expect(plan.notes).toContain("- Believes salt makes water boil much faster.");
@@ -178,6 +241,9 @@ describe("importTrack: --write", () => {
     );
     // Copied headings sit below the prompt's own.
     expect(plan.notes).toContain("##### Homework: browning");
+    expect(plan.notes).toContain(
+      "### Planned terms' notes in the ledger\n\n- hollandaise: from S3\n- mayonnaise: from S3\n- beurre blanc: arc B remaining\n- pan sauce: arc B remaining",
+    );
     expect(plan.notes).toContain("### Session log");
     expect(plan.notes).toContain("| 2026-01-03-heat | browning | assigned |");
     expect(plan.notes).toContain("Arcs: **A** heat (closed) → **B** sauces");
@@ -197,59 +263,41 @@ describe("importTrack: --write", () => {
   });
 });
 
-describe("importTrack: rejected edits", () => {
-  it("feeds the reasons back and retries", async () => {
+describe("importTrack: what the reading names", () => {
+  it("leaves out and reports ids that name no term and a dependency cycle, instead of failing", async () => {
     await learner();
-    const [language, ...rest] = fixtureConversion().actions;
-    if (!language) throw new Error("no actions");
-    const outOfOrder: ImportActions = {
-      actions: [
-        language,
-        { type: "add-planned-term", term: "sear", restsOn: ["Maillard reaction"] },
-        ...rest,
-      ],
-      unplaced: [],
-    };
-    models.script("import", reply(outOfOrder), reply(fixtureConversion()));
+    const reading = fixtureReading();
+    models.script(
+      "import",
+      reply({
+        ...reading,
+        dependencies: [
+          ...reading.dependencies,
+          { term: 99, restsOn: [1] },
+          { term: 2, restsOn: [10] },
+        ],
+        arcs: reading.arcs.map((arc, i) => (i === 0 ? { ...arc, terms: [...arc.terms, 77] } : arc)),
+      }),
+    );
 
     const report = reportOf(await run({ write: true }));
 
-    expect(report.attempts).toBe(2);
-    expect(models.used).toHaveLength(2);
-    const retry = JSON.stringify(models.used[1]?.model.doStreamCalls[0]?.prompt);
-    expect(retry).toContain(
-      `\\"sear\\" rests on \\"Maillard reaction\\", which isn't in the term list.`,
-    );
-    expect(await t.db.select().from(tracks)).toHaveLength(1);
-  });
-
-  it("asks for a language and exactly one plan", async () => {
-    await learner();
-    const actions = fixtureConversion().actions.filter((a) => a.type !== "set-language");
-    const broken: ImportActions = {
-      actions: actions.map((a) =>
-        a.type === "set-plan" ? { ...a, arcs: [{ title: "C — bread", terms: ["yeast"] }] } : a,
-      ),
-      unplaced: [],
-    };
-    models.script("import", reply(broken), reply(broken), reply(broken));
-
-    const outcome = await run({ write: true });
-
-    expect(outcome).toEqual({
-      status: "rejected",
-      attempts: IMPORT_ATTEMPTS,
-      errors: ["Set the teaching language (set-language)."],
-    });
-    expect(models.used).toHaveLength(IMPORT_ATTEMPTS);
-    expect(await t.db.select().from(tracks)).toEqual([]);
+    expect(report.written).toBe(true);
+    expect(report.unplaced).toEqual([
+      "A dependency named term 99, which isn't in the list; left out.",
+      `"${CONDUCTION}" was said to rest on "stove", which already rests on it (directly or through other terms): a cycle; that edge was left out.`,
+      `Arc "A — heat (closed)" listed term 77, which isn't in the list; left out.`,
+      "The map's root 'a stove makes a pan hot' is a sentence, not a term.",
+    ]);
+    expect(report.arcs[0]).toEqual({ title: "A — heat (closed)", terms: 4 });
+    expect(formatReport(report)).toContain("Couldn't place:\n  - A dependency named term 99");
   });
 });
 
 describe("importTrack: the write applies what was reviewed", () => {
   it("writes the dry run's result without calling the model again", async () => {
     await learner();
-    models.script("import", reply(fixtureConversion()));
+    models.script("import", reply(fixtureReading()));
     const report = reportOf(await run({ write: true }));
     expect(report.written).toBe(true);
     expect(models.used).toHaveLength(1);
@@ -272,9 +320,30 @@ describe("importTrack: the write applies what was reviewed", () => {
     expect(models.used).toEqual([]);
   });
 
+  it("refuses a dry run saved by an earlier version of the importer", async () => {
+    await learner();
+    models.script("import", reply(fixtureReading()));
+    const folder = await writeLearningFixture();
+    const base = { db: t.db, models: models.access, folder, email: EMAIL };
+    const dry = await importTrack({ ...base, write: false });
+    if (dry.status !== "ok") throw new Error("dry run failed");
+
+    const outcome = await importTrack({
+      ...base,
+      write: true,
+      reviewed: { ...dry.conversion, version: 1 },
+    });
+    expect(outcome).toEqual({
+      status: "refused",
+      reason:
+        "The saved dry run was made by an earlier version of the importer. Run the dry run again.",
+    });
+    expect(await t.db.select().from(tracks)).toEqual([]);
+  });
+
   it("refuses when the earlier setup changed since the dry run", async () => {
     await learner();
-    models.script("import", reply(fixtureConversion()));
+    models.script("import", reply(fixtureReading()));
     const folder = await writeLearningFixture();
     const base = { db: t.db, models: models.access, folder, email: EMAIL };
     const dry = await importTrack({ ...base, write: false });
@@ -290,48 +359,32 @@ describe("importTrack: the write applies what was reviewed", () => {
   });
 });
 
-describe("importTrack: arcs", () => {
-  it("drops an arc entry that names no term and reports it, instead of rejecting the batch", async () => {
-    await learner();
-    const conversion = fixtureConversion();
-    const loose: ImportActions = {
-      ...conversion,
-      actions: conversion.actions.map((a) =>
-        a.type === "set-plan"
-          ? {
-              ...a,
-              arcs: a.arcs.map((arc, i) =>
-                i === 0 ? { ...arc, terms: [...arc.terms, "why pans warp"] } : arc,
-              ),
-            }
-          : a,
-      ),
-    };
-    models.script("import", reply(loose));
-
-    const report = reportOf(await run({ write: false }));
-
-    expect(report.attempts).toBe(1);
-    expect(report.arcs).toEqual([
-      { title: "A — heat (closed)", terms: 2 },
-      { title: "B — sauces", terms: 2 },
-    ]);
-    expect(report.unplaced).toContain(
-      `Arc "A — heat (closed)" listed "why pans warp", which isn't a term; left out.`,
-    );
-  });
-});
-
 describe("importTrack: failed replies", () => {
   it("asks again when the reply isn't the requested shape", async () => {
     await learner();
-    models.script("import", { text: '{"actions": [' }, reply(fixtureConversion()));
+    models.script("import", { text: '{"dependencies": [' }, reply(fixtureReading()));
 
     const report = reportOf(await run({ write: false }));
 
     expect(report.attempts).toBe(2);
     const retry = JSON.stringify(models.used[1]?.model.doStreamCalls[0]?.prompt);
     expect(retry).toContain("The reply wasn't a complete object in the requested shape.");
+  });
+
+  it("gives up after a bounded number of unusable replies, writing nothing", async () => {
+    await learner();
+    const broken = { text: '{"arcs": 3}' };
+    models.script("import", broken, broken, broken);
+
+    const outcome = await run({ write: true });
+
+    expect(outcome).toEqual({
+      status: "rejected",
+      attempts: IMPORT_ATTEMPTS,
+      errors: ["The reply wasn't a complete object in the requested shape."],
+    });
+    expect(models.used).toHaveLength(IMPORT_ATTEMPTS);
+    expect(await t.db.select().from(tracks)).toEqual([]);
   });
 
   it("stops at a provider failure instead of paying for more attempts", async () => {
@@ -342,13 +395,13 @@ describe("importTrack: failed replies", () => {
           stream: simulateReadableStream<LanguageModelV4StreamPart>({
             chunks: [
               { type: "text-start", id: "t" },
-              { type: "text-delta", id: "t", delta: '{"actions": [' },
+              { type: "text-delta", id: "t", delta: '{"dependencies": [' },
               { type: "error", error: new ProviderCallError("timeout", "Too slow.") },
             ],
           }),
         }),
     });
-    models.script("import", failing, reply(fixtureConversion()));
+    models.script("import", failing, reply(fixtureReading()));
 
     await expect(run({ write: true })).rejects.toThrow("Too slow.");
     expect(models.used).toHaveLength(1);

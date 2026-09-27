@@ -420,12 +420,23 @@ A refined "typographic index":
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:
   it prints the track, term counts per status, dependencies, arcs, fix-list, the open threads, the owed
-  homework and the last lesson found, and writes nothing. One call to the learner's strong model
-  (purpose `import`, streamed with its own 30-minute limit, structured output) turns `state.md` + `handoff.md` + the README row into
-  the same track edits a session makes; they are validated against an empty track and retried with the
-  reasons (at most 3 calls) if rejected. The model's plan notes get the state's open threads, owed
-  homework (full text, as typed homework doesn't exist yet), plan, session log and handoff appended
-  verbatim. Only the latest lesson comes along, stored as its original HTML in `imported_lessons` and
+  homework and the last lesson found, and writes nothing. The ledger is parsed without a model: every
+  row and item of Assumed, Confirmed, Taught and Planned becomes a term in its own wording, with the
+  row's evidence ("Held before teaching (probe)" plus any note label for assumed; the context, such as
+  "from S6", for planned); a name listed twice keeps its strongest status (confirmed > taught >
+  assumed > planned) with the other evidence appended. The report shows the parsed counts per section
+  next to the resulting term counts. One call to the learner's strong model (purpose `import`,
+  streamed with its own 30-minute limit, strict structured output) only reads: given the numbered
+  terms, the map, the plan and the open threads, it answers by term number with the dependencies, the
+  arcs, the open misconceptions for the fix-list, and a few lines of plan notes. Numbers that name no
+  term are left out and reported, as is an edge that would close a dependency cycle; only an
+  unparseable reply is asked again (at most 3 calls), and a provider failure stops. The edits are then
+  built the way a session's are (language English, every term as a planned term in dependency order
+  with what it rests on, the statuses with their evidence, the plan, the fix-list) and must validate
+  against an empty track. The dry run saves them to `.imports/<slug>.json`; `--write` applies exactly
+  that file without a model call, and refuses if the earlier setup's files changed since. The model's
+  plan notes get the state's open threads, owed homework (full text, as typed homework doesn't exist
+  yet), the planned terms' ledger context, plan, session log and handoff appended verbatim. Only the latest lesson comes along, stored as its original HTML in `imported_lessons` and
   shown on the track page in an `<iframe sandbox>` with no scripts or same-origin access; older lessons
   are not imported. Refuses a learner without a key or a duplicate title.
 - Everything else through the database directly, with care.

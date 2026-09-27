@@ -1,4 +1,5 @@
 import type { LearningTrack } from "./learning-folder.js";
+import type { LedgerTerm } from "./ledger.js";
 
 /** state.md sections copied after the open threads, the owed homework and the last lesson. */
 const LATER_SECTIONS = [
@@ -17,11 +18,15 @@ export function stateSection(track: LearningTrack, prefix: string): string | nul
  * The plan's notes: the model's few lines, then the earlier setup's own words, verbatim. The notes sit
  * under the prompt's "## Plan" heading, so copied headings are pushed below level 3.
  */
-export function composePlanNotes(modelNotes: string, track: LearningTrack): string {
+export function composePlanNotes(
+  modelNotes: string,
+  track: LearningTrack,
+  terms: readonly LedgerTerm[],
+): string {
   const parts: string[] = [];
   if (modelNotes.trim()) parts.push(modelNotes.trim());
   parts.push(
-    `### From the earlier setup (imported, as of ${track.snapshotDate ?? "the last session"})\n\nCopied verbatim from the learner's earlier notes; the term list and arcs were built from them.`,
+    `### From the earlier setup (imported, as of ${track.snapshotDate ?? "the last session"})\n\nCopied verbatim from the learner's earlier notes; the term list was read from their ledger, the map and arcs from their map and plan.`,
   );
 
   const threads = stateSection(track, "open threads");
@@ -40,6 +45,14 @@ export function composePlanNotes(modelNotes: string, track: LearningTrack): stri
       : "";
     parts.push(
       `### The last lesson: ${folder}\n\n"${title}" is the last lesson the learner was given; they can reread it on the track page.${unlogged}`,
+    );
+  }
+
+  // A planned term has no evidence to carry its ledger context ("from S6"), so the notes keep it.
+  const plannedNotes = terms.filter((t) => t.status === "planned" && t.evidence);
+  if (plannedNotes.length > 0) {
+    parts.push(
+      `### Planned terms' notes in the ledger\n\n${plannedNotes.map((t) => `- ${t.term}: ${t.evidence}`).join("\n")}`,
     );
   }
 

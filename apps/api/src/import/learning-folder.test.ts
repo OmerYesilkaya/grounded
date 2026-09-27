@@ -20,6 +20,7 @@ describe("readLearningTrack", () => {
       "Session log",
       "Open threads carried forward",
     ]);
+    expect(track.ledger.counts).toEqual({ assumed: 6, confirmed: 3, taught: 2, planned: 7 });
     expect(track.latestLesson).toEqual({
       folder: "2026-01-05-sauces",
       title: "Sauces & emulsions — 2026-01-05",

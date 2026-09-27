@@ -9,7 +9,7 @@ export function formatOutcome(outcome: ImportOutcome): string {
       return `Refused: ${outcome.reason}\nNothing was written.`;
     case "rejected":
       return [
-        `The model's edits were still rejected after ${String(outcome.attempts)} attempts. Nothing was written.`,
+        `The model's reply was still unusable after ${String(outcome.attempts)} attempts. Nothing was written.`,
         ...outcome.errors.map((e) => `  - ${e}`),
       ].join("\n");
     case "ok":
@@ -20,6 +20,7 @@ export function formatOutcome(outcome: ImportOutcome): string {
 export function formatReport(r: ImportReport): string {
   const c = r.termCounts;
   const total = c.assumed + c.confirmed + c.taught + c.planned;
+  const l = r.ledgerCounts;
   const lines = [
     r.written
       ? `Imported ${r.folder} (track ${r.trackId ?? ""})`
@@ -27,6 +28,8 @@ export function formatReport(r: ImportReport): string {
     "",
     `Learner        ${r.email}`,
     `Track          ${r.title}${r.language ? ` (taught in ${r.language})` : ""}`,
+    `Ledger parsed  ${count(l.assumed)} assumed · ${count(l.confirmed)} confirmed · ${count(l.taught)} taught · ${count(l.planned)} planned`,
+    ...r.merged.map((m) => `  in two sections: ${m}`),
     `Terms          ${count(total)}: ${count(c.assumed)} assumed · ${count(c.confirmed)} confirmed · ${count(c.taught)} taught · ${count(c.planned)} planned`,
     `Dependencies   ${count(r.dependencies)} "rests on" edges`,
     `Arcs           ${String(r.arcs.length)}`,
@@ -42,7 +45,7 @@ export function formatReport(r: ImportReport): string {
       `Older homework without an answers file (not imported; see the open threads): ${r.otherUnansweredHomework.join(", ")}`,
     );
   lines.push(
-    `Model          ${String(r.attempts)} call${r.attempts === 1 ? "" : "s"} (edits accepted on attempt ${String(r.attempts)})`,
+    `Model          ${String(r.attempts)} call${r.attempts === 1 ? "" : "s"} (read the map, plan and open threads; reply accepted on attempt ${String(r.attempts)})`,
   );
   lines.push(
     "",

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { importActionsSchema, type ImportActions, type TrackAction } from "@grounded/core";
+import { importReadingSchema, type ImportReading, type TrackAction } from "@grounded/core";
 import {
   and,
   credentials,
@@ -22,17 +22,18 @@ import { normalizeEmail } from "../allowlist.js";
 import { callLimitsFor, type CallLimits } from "../engine/call-limits.js";
 import type { ModelAccess } from "../engine/model-call.js";
 import { applyActions, emptyTrackShape, validateActions } from "../engine/track-state.js";
+import { buildEdits } from "./edits.js";
 import { readLearningTrack, type LearningTrack } from "./learning-folder.js";
+import { mergeLedger, type LedgerTerm } from "./ledger.js";
 import { composePlanNotes, stateSection } from "./notes.js";
 import { IMPORT_SYSTEM, importPrompt } from "./prompt.js";
 
-/** One call, plus bounded retries only when the edits are rejected. */
+/** One call, plus bounded retries only when the reply isn't a whole object in the requested shape. */
 export const IMPORT_ATTEMPTS = 3;
 
 /**
- * Time limits for the import's call (see call-limits.ts). A whole track's edits are tens of thousands
- * of tokens written in one stream, far past a session call's limits; silences stay bounded so a hung
- * connection still ends.
+ * Time limits for the import's call (see call-limits.ts). Reading a whole track's map and plan takes
+ * longer than a session call; silences stay bounded so a hung connection still ends.
  */
 export const IMPORT_CALL_LIMITS: CallLimits = {
   generateMs: 180 * 1000,
@@ -62,11 +63,15 @@ export interface ImportOptions {
  * A dry run's result, kept so that a write applies exactly what was reviewed. `sourceHash` pins it to
  * the files it was made from; a write refuses if they changed.
  */
+/** Bumped when a saved dry run from an earlier importer can no longer be applied as it is. */
+export const CONVERSION_VERSION = 2;
+
 export interface ReviewedConversion {
-  version: 1;
+  version: number;
   slug: string;
   sourceHash: string;
   actions: TrackAction[];
+  /** The model's own plan notes, before the earlier setup's words are appended. */
   planNotes: string;
   unplaced: string[];
   attempts: number;
@@ -80,6 +85,10 @@ export interface ImportReport {
   title: string;
   language: string | null;
   termCounts: Record<TermStatus, number>;
+  /** Rows and items per ledger section as parsed, before duplicates were merged. */
+  ledgerCounts: Record<TermStatus, number>;
+  /** Terms listed in more than one section, and the status kept. */
+  merged: string[];
   dependencies: number;
   arcs: { title: string; terms: number }[];
   fixItems: string[];
@@ -100,9 +109,10 @@ export type ImportOutcome =
   | { status: "ok"; report: ImportReport; conversion: ReviewedConversion };
 
 /**
- * The one-time import of a track kept in the learner's earlier setup (design §10). The model turns
- * the state into the same edits a session makes; the edits are validated against an empty track, and
- * only a write applies them, with the latest lesson, to a new track.
+ * The one-time import of a track kept in the learner's earlier setup (design §10). The ledger's terms,
+ * statuses and evidence are parsed; one model call reads the map, the plan and the open threads for
+ * dependencies, arcs and the fix-list. Only a write applies the edits, with the latest lesson, to a
+ * new track.
  */
 export async function importTrack(options: ImportOptions): Promise<ImportOutcome> {
   const { db, models } = options;
@@ -121,38 +131,51 @@ export async function importTrack(options: ImportOptions): Promise<ImportOutcome
     .where(and(eq(tracks.userId, user.id), sql`lower(${tracks.title}) = lower(${title})`));
   if (duplicate) return refused(`${email} already has a track called "${title}".`);
 
+  const terms = mergeLedger(track.ledger.entries);
   const sourceHash = hashSource(track);
-  let converted: Conversion;
+  let conversion: ReviewedConversion;
   if (options.write) {
-    // What was reviewed is what gets written: no second model call, which could condense differently.
+    // What was reviewed is what gets written: no second model call, which could read differently.
     const { reviewed } = options;
     if (!reviewed) {
       return refused(
         "There is no reviewed dry run. Run it without --write first; --write applies exactly what it showed.",
       );
     }
+    if (reviewed.version !== CONVERSION_VERSION) {
+      return refused(
+        "The saved dry run was made by an earlier version of the importer. Run the dry run again.",
+      );
+    }
     if (reviewed.sourceHash !== sourceHash || reviewed.slug !== track.slug) {
       return refused("The earlier setup's files changed since the dry run. Run the dry run again.");
     }
-    converted = { ok: true, ...reviewed };
+    conversion = reviewed;
   } else {
-    converted = await convert(models, user.id, track);
+    const read = await readTrack(models, user.id, track, terms);
+    if (!read.ok) return { status: "rejected", attempts: read.attempts, errors: read.errors };
+    const edits = buildEdits(terms, read.reading);
+    const problems = importProblems(edits.actions);
+    if (problems.length > 0) {
+      // The edits are built to be valid; a rejection here is the importer's bug, not the model's.
+      throw new Error(
+        `The importer built edits that don't validate (a bug in the importer):\n${problems.map((p) => `  - ${p}`).join("\n")}`,
+      );
+    }
+    conversion = {
+      version: CONVERSION_VERSION,
+      slug: track.slug,
+      sourceHash,
+      actions: edits.actions,
+      planNotes: read.reading.planNotes.trim(),
+      unplaced: edits.unplaced,
+      attempts: read.attempts,
+    };
   }
-  if (!converted.ok)
-    return { status: "rejected", attempts: converted.attempts, errors: converted.errors };
-  const conversion: ReviewedConversion = {
-    version: 1,
-    slug: track.slug,
-    sourceHash,
-    actions: converted.actions,
-    planNotes: converted.planNotes,
-    unplaced: converted.unplaced,
-    attempts: converted.attempts,
-  };
 
-  const notes = composePlanNotes(converted.planNotes, track);
-  const actions = converted.actions.map((a) => (a.type === "set-plan" ? { ...a, notes } : a));
-  const report = reportOf(options, track, title, actions, notes, converted);
+  const notes = composePlanNotes(conversion.planNotes, track, terms);
+  const actions = conversion.actions.map((a) => (a.type === "set-plan" ? { ...a, notes } : a));
+  const report = reportOf(options, track, title, terms, actions, notes, conversion);
   if (!options.write) return { status: "ok", report, conversion };
 
   const trackId = await write(db, user.id, title, track, actions);
@@ -161,107 +184,57 @@ export async function importTrack(options: ImportOptions): Promise<ImportOutcome
 
 const refused = (reason: string): ImportOutcome => ({ status: "refused", reason });
 
-type Conversion =
-  | {
-      ok: true;
-      actions: TrackAction[];
-      planNotes: string;
-      unplaced: string[];
-      attempts: number;
-    }
+type Reading =
+  | { ok: true; reading: ImportReading; attempts: number }
   | { ok: false; errors: string[]; attempts: number };
 
-async function convert(
+/** The one model call; asked again only when the reply isn't a whole object in the requested shape. */
+async function readTrack(
   models: ModelAccess,
   userId: string,
   track: LearningTrack,
-): Promise<Conversion> {
-  const messages: ModelMessage[] = [{ role: "user", content: importPrompt(track) }];
-  let errors: string[] = [];
+  terms: readonly LedgerTerm[],
+): Promise<Reading> {
+  const messages: ModelMessage[] = [{ role: "user", content: importPrompt(track, terms) }];
+  const errors = ["The reply wasn't a complete object in the requested shape."];
   for (let attempt = 1; attempt <= IMPORT_ATTEMPTS; attempt++) {
     const model = await models.model({ userId, purpose: "import", role: "strong" });
-    // Streamed: a whole track's edits take minutes to write, longer than a plain request may stay open.
+    // Streamed: a long reply can take longer than a plain request may stay open.
     let streamError: Error | undefined;
     const result = streamText({
       model,
       system: IMPORT_SYSTEM,
       messages,
-      output: Output.object({ schema: importActionsSchema }),
+      output: Output.object({ schema: importReadingSchema }),
       onError: ({ error }) => {
         streamError ??= error instanceof Error ? error : new Error("The model's reply failed.");
       },
     });
-    let output: ImportActions;
     try {
-      output = await result.output;
+      return { ok: true, reading: await result.output, attempts: attempt };
     } catch (error) {
       // A failed stream also ends in "no object"; only a reply that came back whole is worth a retry.
       if (streamError) throw streamError;
       if (!NoObjectGeneratedError.isInstance(error) && !NoOutputGeneratedError.isInstance(error))
         throw error;
-      errors = ["The reply wasn't a complete object in the requested shape."];
-      messages.push({ role: "user", content: retryPrompt(errors) });
-      continue;
+      messages.push({
+        role: "user",
+        content: `${errors.join("\n")}\nReturn the whole answer again, in the requested shape.`,
+      });
     }
-    // An arc is a grouping for the plan: an entry that names no term is left out and reported, not
-    // worth rejecting a whole track's edits over (a real import failed three times on one such phrase).
-    const tidied = dropUnknownArcTerms(output.actions);
-    errors = importProblems(tidied.actions);
-    if (errors.length === 0) {
-      const plan = tidied.actions.find((a) => a.type === "set-plan");
-      return {
-        ok: true,
-        actions: tidied.actions,
-        planNotes: plan?.type === "set-plan" ? plan.notes : "",
-        unplaced: [...output.unplaced, ...tidied.dropped],
-        attempts: attempt,
-      };
-    }
-    messages.push(
-      { role: "assistant", content: JSON.stringify(output) },
-      { role: "user", content: retryPrompt(errors) },
-    );
   }
   return { ok: false, errors, attempts: IMPORT_ATTEMPTS };
 }
 
-const retryPrompt = (errors: string[]) =>
-  `Those edits were rejected:\n${errors.map((e) => `- ${e}`).join("\n")}\nReturn the whole batch again, fixed.`;
-
 /** What the track's validator checks, plus what an import needs: a language and exactly one plan. */
 export function importProblems(actions: readonly TrackAction[]): string[] {
-  const shape = emptyTrackShape();
-  const errors = validateActions(shape, actions);
+  const errors = validateActions(emptyTrackShape(), actions);
   if (!actions.some((a) => a.type === "set-language"))
     errors.push("Set the teaching language (set-language).");
   const plans = actions.filter((a) => a.type === "set-plan");
   if (plans.length !== 1)
     errors.push(`Give exactly one set-plan with the arcs (there were ${String(plans.length)}).`);
   return errors;
-}
-
-/** Removes arc entries that name no term in the batch, and says which. */
-export function dropUnknownArcTerms(actions: readonly TrackAction[]): {
-  actions: TrackAction[];
-  dropped: string[];
-} {
-  const shape = emptyTrackShape();
-  validateActions(shape, actions);
-  const dropped: string[] = [];
-  const tidied = actions.map((action): TrackAction => {
-    if (action.type !== "set-plan") return action;
-    const arcs = action.arcs.map((arc) => ({
-      ...arc,
-      terms: arc.terms.filter((term) => {
-        const known = shape.terms.has(term.trim().toLowerCase());
-        if (!known)
-          dropped.push(`Arc "${arc.title}" listed "${term}", which isn't a term; left out.`);
-        return known;
-      }),
-    }));
-    return { ...action, arcs };
-  });
-  return { actions: tidied, dropped };
 }
 
 /** Track, latest lesson and edits; a failure part-way removes the track again, with everything on it. */
@@ -298,6 +271,7 @@ function reportOf(
   options: ImportOptions,
   track: LearningTrack,
   title: string,
+  terms: readonly LedgerTerm[],
   actions: readonly TrackAction[],
   notes: string,
   conversion: { unplaced: string[]; attempts: number },
@@ -355,6 +329,10 @@ function reportOf(
     title,
     language,
     termCounts,
+    ledgerCounts: track.ledger.counts,
+    merged: terms
+      .filter((t) => t.alsoIn.length > 0)
+      .map((t) => `${t.term}: ${t.status} (also listed as ${t.alsoIn.join(", ")})`),
     dependencies,
     arcs,
     fixItems,
@@ -371,7 +349,7 @@ function reportOf(
           length: track.latestLesson.html.length,
         }
       : null,
-    unplaced: conversion.unplaced,
+    unplaced: [...track.ledger.skipped, ...conversion.unplaced],
     missing,
     attempts: conversion.attempts,
   };

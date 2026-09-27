@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import { parseLedger, type Ledger } from "./ledger.js";
 
 /**
  * A track as the learner's earlier setup kept it (a "Learning" folder): `state.md` written by a model
@@ -16,6 +17,8 @@ export interface LearningTrack {
   readmeRow: string | null;
   /** state.md's `## ` sections by heading, bodies trimmed. */
   sections: Map<string, string>;
+  /** The `## Ledger` section's terms, parsed. */
+  ledger: Ledger;
   /** The newest session folder's lesson. Older lessons are not imported. */
   latestLesson: { folder: string; title: string; html: string } | null;
   /** The newest homework, when it has no answers file: still owed. */
@@ -52,13 +55,17 @@ export async function readLearningTrack(folder: string): Promise<LearningTrack> 
   const owedFolder = newestHomework && unanswered.includes(newestHomework) ? newestHomework : null;
 
   const newestFolder = sessionFolders.at(-1);
+  const sections = sectionsOf(state);
   return {
     slug,
     title: titleFromSlug(slug),
     state,
     handoff: await readText(join(folder, "handoff.md")),
     readmeRow: readmeRow((await readText(join(dirname(folder), "README.md"))) ?? "", slug),
-    sections: sectionsOf(state),
+    sections,
+    ledger: parseLedger(
+      [...sections].find(([heading]) => heading.toLowerCase().startsWith("ledger"))?.[1] ?? "",
+    ),
     latestLesson:
       lessonFolder && lessonHtml !== null
         ? { folder: lessonFolder, title: htmlTitle(lessonHtml) ?? lessonFolder, html: lessonHtml }
