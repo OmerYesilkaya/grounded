@@ -89,7 +89,10 @@ export function createDemoModels(): ModelAccess {
   const make: Record<string, (n: number) => MockLanguageModelV4> = {
     probe: (n) =>
       n % 2 === 1
-        ? model("In your own words: what do you think happens when a program adds one to a number?")
+        ? model(
+            "In your own words: what do you think happens when a program adds one to a number?",
+            [JSON.stringify({ actions: [], finished: false })],
+          )
         : model("Thanks, that's clear. I have what I need to plan.", [
             JSON.stringify({
               actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],

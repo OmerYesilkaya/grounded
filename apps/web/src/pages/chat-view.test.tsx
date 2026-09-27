@@ -26,6 +26,7 @@ function model(messages: ChatMessage[]): SessionModel {
     messages,
     lesson: null,
     checks: [],
+    activities: [],
     lastEventId: 0,
     error: null,
   };
@@ -85,5 +86,32 @@ describe("ChatView: the composer", () => {
     update([first, answer, message("m3", "tutor", "And when two people add at once?")]);
     expect(box).toBeEnabled();
     expect(box).toHaveFocus();
+  });
+});
+
+describe("ChatView: what the tutor is doing", () => {
+  it("shows the current activity, with its reasoning behind a toggle", async () => {
+    const user = userEvent.setup();
+    const current = model([]);
+    current.activities = [
+      { id: "a1", label: "Researching the subject", detail: null, reasoning: "" },
+      {
+        id: "a2",
+        label: "Searching the web for",
+        detail: "“area of a triangle”",
+        reasoning: "Start from rectangles.",
+      },
+    ];
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatView model={current} onOpenLesson={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Searching the web for“area of a triangle”");
+    expect(screen.queryByText("Start from rectangles.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Show thinking" }));
+    expect(screen.getByText("Start from rectangles.")).toBeInTheDocument();
   });
 });

@@ -35,9 +35,24 @@ export interface SessionModel {
     notes: Record<string, string>;
   } | null;
   checks: CheckEntry[];
+  /** What the tutor is doing right now, oldest first; the last one is the one to show. */
+  activities: Activity[];
   lastEventId: number;
   error: string | null;
 }
+
+/** A running job step (api: engine/events.ts), with the reasoning the model shared, if any. */
+export interface Activity {
+  id: string;
+  label: string;
+  detail: string | null;
+  reasoning: string;
+}
+
+/** What GET /api/sessions/:id returns: the model without its local state. */
+export type SessionSnapshot = Omit<SessionModel, "error" | "activities"> & {
+  activities: { id: string; label: string; detail: string | null; state: "running" | "done" }[];
+};
 
 interface Event {
   type: string;
@@ -133,6 +148,31 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
         },
       };
     }
+    case "activity": {
+      const { id, label, detail, state } = data as {
+        id: string;
+        label: string;
+        detail: string | null;
+        state: string;
+      };
+      if (state === "done")
+        return { ...next, activities: model.activities.filter((a) => a.id !== id) };
+      const existing = model.activities.find((a) => a.id === id);
+      if (existing) {
+        return {
+          ...next,
+          activities: model.activities.map((a) => (a.id === id ? { ...a, label, detail } : a)),
+        };
+      }
+      return { ...next, activities: [...model.activities, { id, label, detail, reasoning: "" }] };
+    }
+    case "activity-reasoning":
+      return {
+        ...next,
+        activities: model.activities.map((a) =>
+          a.id === data.id ? { ...a, reasoning: a.reasoning + (data.text as string) } : a,
+        ),
+      };
     case "error":
       return { ...next, error: data.message as string };
     default:
@@ -152,6 +192,9 @@ const EVENT_TYPES = [
   "lesson-step-failed",
   "check-message",
   "note",
+  "activity",
+  "activity-reasoning",
+  // Also the name of EventSource's own connection error; the listener tells them apart by data.
   "error",
 ];
 
@@ -163,7 +206,7 @@ type Action = { kind: "snapshot"; model: SessionModel } | { kind: "event"; event
 export function useSessionModel(sessionId: string): SessionModel | undefined {
   const snapshot = useQuery({
     queryKey: ["session", sessionId],
-    queryFn: () => api<Omit<SessionModel, "error">>(`/api/sessions/${sessionId}`),
+    queryFn: () => api<SessionSnapshot>(`/api/sessions/${sessionId}`),
     staleTime: Infinity,
   });
   const [model, dispatch] = useReducer((current: SessionModel | undefined, action: Action) => {
@@ -172,7 +215,14 @@ export function useSessionModel(sessionId: string): SessionModel | undefined {
   }, undefined);
 
   useEffect(() => {
-    if (snapshot.data) dispatch({ kind: "snapshot", model: { ...snapshot.data, error: null } });
+    if (!snapshot.data) return;
+    const activities = snapshot.data.activities.map(({ id, label, detail }) => ({
+      id,
+      label,
+      detail,
+      reasoning: "",
+    }));
+    dispatch({ kind: "snapshot", model: { ...snapshot.data, activities, error: null } });
   }, [snapshot.data]);
 
   const after = snapshot.data?.lastEventId;
@@ -182,6 +232,8 @@ export function useSessionModel(sessionId: string): SessionModel | undefined {
     let source: EventSource | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const listener = (e: MessageEvent<string>) => {
+      // The browser's own connection errors arrive as "error" events without data; they aren't ours.
+      if (typeof e.data !== "string") return;
       const id = Number(e.lastEventId);
       lastSeen = Math.max(lastSeen, id);
       dispatch({ kind: "event", event: { type: e.type, id, data: JSON.parse(e.data) as unknown } });

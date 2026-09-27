@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { Composer } from "@/components/composer";
+import { ActivityLine } from "@/components/activity-line";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { api } from "@/lib/api";
@@ -56,6 +57,7 @@ export function ChatView({
   const endRef = useRef<HTMLDivElement>(null);
   const { phase, plan } = model.state;
   const writing = model.messages.some((m) => m.streaming);
+  const hasSteps = (model.lesson?.steps.length ?? 0) > 0;
   const waiting = !writing && model.messages.at(-1)?.role === "learner";
 
   const send = useMutation({
@@ -105,17 +107,26 @@ export function ChatView({
         {model.messages.map((m) => (
           <Message key={m.id} message={m} />
         ))}
-        {(waiting || (phase === "plan" && plan !== "proposed" && !writing)) && (
-          <p className="text-sm text-subtle-foreground">
-            {phase === "plan" ? "Putting the plan together…" : "Thinking…"}
-          </p>
-        )}
+        <ActivityLine
+          activities={model.activities}
+          fallback={
+            waiting || (phase === "plan" && plan !== "proposed" && !writing)
+              ? "Thinking…"
+              : undefined
+          }
+        />
         {phase === "lesson" && (
           <div className="rounded-xl border bg-card px-5 py-4 text-sm">
-            The lesson is on.{" "}
-            <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
-              Open the lesson
-            </Button>
+            {hasSteps ? (
+              <>
+                The lesson is on.{" "}
+                <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
+                  Open the lesson
+                </Button>
+              </>
+            ) : (
+              "The lesson is being written; it opens as soon as the first step is ready."
+            )}
           </div>
         )}
         {phase === "closed" && (

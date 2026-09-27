@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { ActivityLine } from "@/components/activity-line";
 import { ContentProvider } from "@/content/environment";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
 import { api } from "@/lib/api";
@@ -86,6 +87,21 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
             setTab("lesson");
           }}
         />
+      ) : model.lesson.steps.length === 0 ? (
+        // The outline exists but no step is written yet: say so, rather than an empty timeline.
+        <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
+          <h2 className="font-serif text-2xl font-semibold tracking-tight">Writing your lesson</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {model.lesson.totalSteps > 0
+              ? `${String(model.lesson.totalSteps)} steps are planned. The first one opens as soon as it's written.`
+              : "The first step opens as soon as it's written."}
+          </p>
+          <ActivityLine
+            activities={model.activities}
+            fallback="Getting started…"
+            className="mt-6"
+          />
+        </div>
       ) : (
         <LessonView
           steps={model.lesson.steps}
@@ -110,6 +126,12 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
             post.mutate({ path: `/api/sessions/${sessionId}/steps/${stepId}/continue` });
           }}
         />
+      )}
+      {tab === "lesson" && (model.lesson?.steps.length ?? 0) > 0 && model.activities.length > 0 && (
+        // Later steps are still being written, or an answer is being checked.
+        <div className="fixed bottom-4 left-4 rounded-lg border bg-card/95 px-3 py-2 shadow backdrop-blur md:left-[264px]">
+          <ActivityLine activities={model.activities} />
+        </div>
       )}
       {model.state.phase === "lesson" &&
         model.state.steps[model.state.currentStep ?? ""]?.status === "paused" && (

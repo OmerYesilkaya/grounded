@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSessionModel, type SessionModel } from "./session";
+import { useSessionModel, type SessionSnapshot } from "./session";
 
 /** A stand-in for the browser's EventSource: the test plays the server. */
 class FakeEventSource {
@@ -45,7 +45,7 @@ class FakeEventSource {
 const SESSION_ID = "0190c2a0-0000-7000-8000-000000000001";
 const tutor = { role: "tutor", kind: "message" } as const;
 
-function snapshot(overrides: Partial<SessionModel> = {}): Omit<SessionModel, "error"> {
+function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
   return {
     id: SESSION_ID,
     trackId: "0190c2a0-0000-7000-8000-000000000002",
@@ -54,11 +54,12 @@ function snapshot(overrides: Partial<SessionModel> = {}): Omit<SessionModel, "er
     lesson: null,
     checks: [],
     lastEventId: 7,
+    activities: [],
     ...overrides,
   };
 }
 
-function serve(body: Omit<SessionModel, "error">) {
+function serve(body: SessionSnapshot) {
   vi.stubGlobal(
     "fetch",
     vi.fn(() => Promise.resolve(Response.json(body))),
@@ -175,5 +176,68 @@ describe("useSessionModel", () => {
       second.emit("lesson-step", 9, { step });
     });
     expect(result.current?.lesson).toMatchObject({ totalSteps: 12, steps: [step] });
+  });
+});
+
+describe("useSessionModel: what the tutor is doing", () => {
+  const thinking = { id: "a1", label: "Thinking…", detail: null };
+
+  it("shows an activity while it runs, follows its changes, and drops it when done", async () => {
+    const { result } = await renderModel();
+    const source = openStream();
+    act(() => {
+      source.emit("activity", 8, { ...thinking, state: "running" });
+    });
+    expect(result.current?.activities).toEqual([{ ...thinking, reasoning: "" }]);
+    act(() => {
+      source.emit("activity", 9, {
+        id: "a1",
+        label: "Writing step 2 of 12",
+        detail: null,
+        state: "running",
+      });
+    });
+    expect(result.current?.activities.map((a) => a.label)).toEqual(["Writing step 2 of 12"]);
+    act(() => {
+      source.emit("activity", 10, {
+        id: "a1",
+        label: "Writing step 2 of 12",
+        detail: null,
+        state: "done",
+      });
+    });
+    expect(result.current?.activities).toEqual([]);
+  });
+
+  it("keeps the model's reasoning with its activity", async () => {
+    const { result } = await renderModel();
+    const source = openStream();
+    act(() => {
+      source.emit("activity", 8, { ...thinking, state: "running" });
+      source.emit("activity-reasoning", 9, { id: "a1", text: "The learner said " });
+      source.emit("activity-reasoning", 10, { id: "a1", text: "width times height." });
+    });
+    expect(result.current?.activities[0]?.reasoning).toBe("The learner said width times height.");
+  });
+
+  it("picks up activities already running when the page opened", async () => {
+    serve(snapshot({ activities: [{ ...thinking, state: "running" }] }));
+    const { result } = await renderModel();
+    expect(result.current?.activities).toEqual([{ ...thinking, reasoning: "" }]);
+  });
+
+  it("tells a session error apart from the stream's own connection errors", async () => {
+    const { result } = await renderModel();
+    const source = openStream();
+    act(() => {
+      // The browser's connection error: an event named "error" with no data.
+      for (const listener of source.listeners.get("error") ?? [])
+        listener(new MessageEvent("error"));
+    });
+    expect(result.current?.error).toBeNull();
+    act(() => {
+      source.emit("error", 8, { message: "Your OpenAI key was rejected." });
+    });
+    expect(result.current?.error).toBe("Your OpenAI key was rejected.");
   });
 });
