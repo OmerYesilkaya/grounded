@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { Auth } from "./auth.js";
 import { eventsAfter, type EventHub } from "./engine/events.js";
 import type { JobQueue } from "./engine/queue.js";
+import { registerSessionRoutes } from "./routes/sessions.js";
 
 export interface AppDependencies {
   db: Db;
@@ -153,6 +154,8 @@ export function createApp(deps: AppDependencies) {
       }
     });
   });
+
+  registerSessionRoutes(app, { db, queue: deps.queue });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

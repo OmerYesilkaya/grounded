@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { loadMethod } from "@grounded/core";
 import { createKeyVault } from "@grounded/crypto";
 import { createDb } from "@grounded/db";
 import type { KeyCheck } from "@grounded/providers";
@@ -7,13 +8,15 @@ import { afterAll, beforeAll, beforeEach } from "vitest";
 import { createApp } from "../app.js";
 import { createAuth } from "../auth.js";
 import { createEventHub } from "../engine/events.js";
+import type { ModelAccess } from "../engine/model-call.js";
 import { createJobQueue, startWorker } from "../engine/queue.js";
+import { createTasks } from "../engine/tasks.js";
 import { TEST_DATABASE_URL } from "./global-setup.js";
 
 export const BASE_URL = "http://localhost:3000";
 
 /** The real app on the test database, with magic links captured and key validation faked. */
-export function createTestHarness(options: { tasks?: TaskList } = {}) {
+export function createTestHarness(options: { tasks?: TaskList; models?: ModelAccess } = {}) {
   const { db, client, close } = createDb(TEST_DATABASE_URL);
   const events = createEventHub(client);
   const queue = createJobQueue(TEST_DATABASE_URL);
@@ -49,8 +52,14 @@ export function createTestHarness(options: { tasks?: TaskList } = {}) {
     );
   });
   beforeAll(async () => {
-    if (options.tasks)
-      runner = await startWorker(TEST_DATABASE_URL, options.tasks, { concurrency: 2 });
+    const tasks = {
+      ...(options.models
+        ? createTasks({ db, queue, method: loadMethod(), models: options.models })
+        : {}),
+      ...options.tasks,
+    };
+    if (Object.keys(tasks).length > 0)
+      runner = await startWorker(TEST_DATABASE_URL, tasks, { concurrency: 2 });
   });
   afterAll(async () => {
     await runner?.stop();

@@ -8,10 +8,11 @@ import { credentials, eq, usageEvents, type Db } from "@grounded/db";
 import {
   cheapModelFor,
   classifyProviderError,
+  createSearchTool,
   type ProviderErrorKind,
   type ProviderId,
 } from "@grounded/providers";
-import { APICallError, RetryError, wrapLanguageModel } from "ai";
+import { APICallError, RetryError, wrapLanguageModel, type Tool } from "ai";
 
 /** A provider failure with the plain message the learner is shown (design §4.4). */
 export class ProviderCallError extends Error {
@@ -45,6 +46,13 @@ export interface ModelCallerDependencies {
   createLanguageModel: (provider: ProviderId, modelId: string, apiKey: string) => LanguageModelV4;
 }
 
+/** What session jobs need from model access; tests substitute scripted models. */
+export interface ModelAccess {
+  model(request: ModelRequest): Promise<LanguageModelV4>;
+  /** The learner's provider's web search tool, if it has one. */
+  searchTool(userId: string): Promise<Tool | undefined>;
+}
+
 export interface ModelRequest {
   userId: string;
   /** What the call is for, recorded with its usage: "probe", "lesson", "check", "aside"… */
@@ -58,10 +66,18 @@ export interface ModelRequest {
  * made through them records its usage, failed calls included, because the recording lives in
  * middleware around the model rather than in each caller.
  */
-export function createModelCaller(deps: ModelCallerDependencies) {
+export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
   const { db, vault } = deps;
 
   return {
+    async searchTool(userId) {
+      const [credential] = await db
+        .select()
+        .from(credentials)
+        .where(eq(credentials.userId, userId));
+      if (!credential) throw new NoCredentialError();
+      return createSearchTool(credential.provider, vault.open(credential.sealedKey, userId));
+    },
     async model(request: ModelRequest): Promise<LanguageModelV4> {
       const [credential] = await db
         .select()
@@ -144,5 +160,3 @@ export function createModelCaller(deps: ModelCallerDependencies) {
     },
   };
 }
-
-export type ModelCaller = ReturnType<typeof createModelCaller>;

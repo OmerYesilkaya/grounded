@@ -19,3 +19,18 @@ export function createLanguageModel(
       return createGoogleGenerativeAI({ apiKey })(modelId);
   }
 }
+
+/**
+ * The provider's own web search, for research during planning and fact checks (design §4.4).
+ * Undefined when a provider has none.
+ */
+export function createSearchTool(provider: ProviderId, apiKey: string) {
+  switch (provider) {
+    case "anthropic":
+      return createAnthropic({ apiKey }).tools.webSearch_20260318({ maxUses: 5 });
+    case "openai":
+      return createOpenAI({ apiKey }).tools.webSearch({});
+    case "google":
+      return createGoogleGenerativeAI({ apiKey }).tools.googleSearch({});
+  }
+}

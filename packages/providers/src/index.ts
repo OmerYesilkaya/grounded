@@ -1,4 +1,4 @@
-export { createLanguageModel } from "./adapters.js";
+export { createLanguageModel, createSearchTool } from "./adapters.js";
 export { classifyProviderError, PROVIDER_NAMES } from "./errors.js";
 export type { ProviderError, ProviderErrorKind, ProviderFailure, ProviderId } from "./errors.js";
 export { cheapModelFor, estimateCost, findModel, MODELS, offeredModels } from "./models.js";

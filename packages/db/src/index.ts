@@ -2,4 +2,4 @@ export { createDb, type Db } from "./client.js";
 export { runMigrations } from "./migrations.js";
 export * from "./schema.js";
 // Query helpers come from here, so every package shares one drizzle-orm.
-export { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
+export { and, asc, desc, eq, gt, inArray, isNull, sql } from "drizzle-orm";
