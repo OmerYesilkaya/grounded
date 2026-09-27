@@ -2,6 +2,7 @@ import { loadMethod } from "@grounded/core";
 import { createKeyVault, parseMasterKeys } from "@grounded/crypto";
 import { createDb } from "@grounded/db";
 import { createLanguageModel } from "@grounded/providers";
+import { createDemoModels } from "./dev/demo-models.js";
 import { createModelCaller } from "./engine/model-call.js";
 import { createJobQueue, startWorker } from "./engine/queue.js";
 import { createTasks } from "./engine/tasks.js";
@@ -21,11 +22,16 @@ const runner = await startWorker(
     db,
     queue,
     method: loadMethod(),
-    models: createModelCaller({ db, vault, createLanguageModel }),
+    models:
+      env.DEMO_MODELS === "true"
+        ? createDemoModels()
+        : createModelCaller({ db, vault, createLanguageModel }),
   }),
   { concurrency: 4 },
 );
-console.log("worker running");
+console.log(
+  env.DEMO_MODELS === "true" ? "worker running with DEMO models (no real calls)" : "worker running",
+);
 const stop = () => {
   void runner.stop().then(() => process.exit(0));
 };

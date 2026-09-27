@@ -9,6 +9,8 @@ const schema = z.object({
   APP_URL: z.url().default("http://localhost:5173"),
   PORT: z.coerce.number().default(8787),
   ALLOW_UNGATED_MODELS: z.enum(["true", "false"]).default("false"),
+  /** Development only: canned responses instead of real model calls. */
+  DEMO_MODELS: z.enum(["true", "false"]).default("false"),
 });
 
 export type Env = z.infer<typeof schema>;
