@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+/* Dark by default. Values come from the lesson-page prototype; names follow shadcn so its
+   components pick them up. The "follow system" option sets data-theme from JavaScript. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --background: #111214;
+  --foreground: #e6e4df;
+  --card: #17181b;
+  --card-foreground: #e6e4df;
+  --popover: #17181b;
+  --popover-foreground: #e6e4df;
+  --primary: #e0a458;
+  --primary-foreground: #1a1408;
+  --secondary: #1e2024;
+  --secondary-foreground: #e6e4df;
+  --muted: #1e2024;
+  --muted-foreground: #a9a7a1;
+  --subtle-foreground: #75736e;
+  --accent: #1e2024;
+  --accent-foreground: #e6e4df;
+  --destructive: #d98572;
+  --success: #7fb88a;
+  --border: #2a2c31;
+  --border-strong: #34373d;
+  --input: #34373d;
+  --ring: rgba(224, 164, 88, 0.45);
+  --highlight: rgba(224, 164, 88, 0.14);
+  --radius: 0.625rem;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --background: #fbfaf7;
+  --foreground: #22211e;
+  --card: #f3f1ec;
+  --card-foreground: #22211e;
+  --popover: #f3f1ec;
+  --popover-foreground: #22211e;
+  --primary: #b8741f;
+  --primary-foreground: #ffffff;
+  --secondary: #ebe8e1;
+  --secondary-foreground: #22211e;
+  --muted: #ebe8e1;
+  --muted-foreground: #5d5a53;
+  --subtle-foreground: #8d8980;
+  --accent: #ebe8e1;
+  --accent-foreground: #22211e;
+  --destructive: #b0513c;
+  --success: #3f7f4d;
+  --border: #e2ded5;
+  --border-strong: #d3cec3;
+  --input: #d3cec3;
+  --ring: rgba(184, 116, 31, 0.45);
+  --highlight: rgba(184, 116, 31, 0.1);
+  color-scheme: light;
+}
+
+@theme inline {
+  --font-sans: Inter, system-ui, sans-serif;
+  --font-serif: "Source Serif 4", Georgia, serif;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-highlight: var(--highlight);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
+}
