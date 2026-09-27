@@ -19,6 +19,7 @@
     "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test",
     "invite": "pnpm --filter @grounded/api cli invite",
     "revoke": "pnpm --filter @grounded/api cli revoke",
+    "import-track": "pnpm --filter @grounded/api import-track",
     "dev:api": "pnpm --filter @grounded/api dev",
     "dev:web": "pnpm --filter @grounded/web dev",
     "dev:worker": "pnpm --filter @grounded/api worker"

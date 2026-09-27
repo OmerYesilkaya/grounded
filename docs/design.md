@@ -62,7 +62,7 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   needs (plus the learner profile and track state). One document to read and maintain; shorter,
   focused prompts per call — cheaper and much better for weaker models.
 - Teach in the learner's language; terms are gated in the language taught.
-- Omer migrates his existing tracks with an import script once the app reaches parity, and becomes
+- Omer migrates his existing tracks with an import script (`pnpm import-track`, §10) and becomes
   user #1.
 
 ### 3.2 Changes the app makes to the method (approved 2026-09-27)
@@ -194,6 +194,7 @@ about, test and debug.
 | `submissions`              | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    |
 | `reviews`                  | margin comments on a submission, checklist outcome (held / leaked / missing)                          |
 | `usage_events`             | per model call                                                                                        |
+| `imported_lessons`         | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)        |
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -416,6 +417,17 @@ A refined "typographic index":
 
 - Allowlist: `pnpm invite a@b.com`, `pnpm revoke a@b.com`.
 - Model list: `models.config.ts` in the repo, reviewed with its eval results.
+- Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
+  `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:
+  it prints the track, term counts per status, dependencies, arcs, fix-list, the open threads, the owed
+  homework and the last lesson found, and writes nothing. One call to the learner's strong model
+  (purpose `import`, streamed with its own 30-minute limit, structured output) turns `state.md` + `handoff.md` + the README row into
+  the same track edits a session makes; they are validated against an empty track and retried with the
+  reasons (at most 3 calls) if rejected. The model's plan notes get the state's open threads, owed
+  homework (full text, as typed homework doesn't exist yet), plan, session log and handoff appended
+  verbatim. Only the latest lesson comes along, stored as its original HTML in `imported_lessons` and
+  shown on the track page in an `<iframe sandbox>` with no scripts or same-origin access; older lessons
+  are not imported. Refuses a learner without a key or a duplicate title.
 - Everything else through the database directly, with care.
 
 ## 11. Eval harness (`tools/eval`)

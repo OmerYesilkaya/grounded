@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   checkVerdictSchema,
+  importActionsSchema,
   lessonOutlineSchema,
   planActionsSchema,
   probeDecisionSchema,
@@ -41,6 +42,7 @@ describe("model output schemas", () => {
     ["lesson outline", lessonOutlineSchema],
     ["probe decision", probeDecisionSchema],
     ["plan actions", planActionsSchema],
+    ["import actions", importActionsSchema],
   ])("%s are accepted by strict structured outputs", (_, schema) => {
     expect(strictProblems(z.toJSONSchema(schema))).toEqual([]);
   });

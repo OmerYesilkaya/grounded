@@ -218,6 +218,23 @@ export const fixListItems = pgTable("fix_list_items", {
   closedAt: timestamp("closed_at", { withTimezone: true }),
 });
 
+/**
+ * The last lesson of a track imported from the learner's earlier setup (design §10), kept exactly as
+ * it was and shown read-only in a sandboxed frame. One per track; older lessons are not imported.
+ */
+export const importedLessons = pgTable("imported_lessons", {
+  trackId: uuid("track_id")
+    .primaryKey()
+    .references(() => tracks.id, { onDelete: "cascade" }),
+  /** The lesson's title, from its <title>. */
+  title: text("title").notNull(),
+  /** Where it came from, e.g. the session folder's name. */
+  source: text("source").notNull(),
+  /** The original HTML document. Never rendered outside a sandboxed iframe. */
+  html: text("html").notNull(),
+  createdAt: createdAt(),
+});
+
 // ---------------------------------------------------------------------------------------------
 // Learning sessions (design §7). "sessions" is Better Auth's table.
 // ---------------------------------------------------------------------------------------------
