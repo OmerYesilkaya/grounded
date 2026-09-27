@@ -4,6 +4,7 @@ import { createDb } from "@grounded/db";
 import { validateKey } from "@grounded/providers";
 import { createApp } from "./app.js";
 import { createAuth } from "./auth.js";
+import { consoleSender, createResendSender } from "./email.js";
 import { createEventHub } from "./engine/events.js";
 import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
@@ -16,10 +17,9 @@ const auth = createAuth({
   baseURL: env.APP_URL,
   secret: env.BETTER_AUTH_SECRET,
   trustedOrigins: [env.APP_URL],
-  // Development: the link goes to the console. An email provider replaces this when deployed.
-  sendMagicLink: (email, url) => {
-    console.log(`\nMagic link for ${email}:\n${url}\n`);
-  },
+  sendMagicLink: env.RESEND_API_KEY
+    ? createResendSender({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })
+    : consoleSender,
 });
 
 const app = createApp({
@@ -37,4 +37,9 @@ const app = createApp({
 
 serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   console.log(`api listening on http://localhost:${String(port)}`);
+  console.log(
+    env.RESEND_API_KEY
+      ? `magic links by email from ${env.EMAIL_FROM}`
+      : "magic links in this console (no RESEND_API_KEY)",
+  );
 });

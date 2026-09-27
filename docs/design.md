@@ -135,6 +135,9 @@ about, test and debug.
 
 - **Better Auth** (or equivalent that grows): email magic link, gated by an allowlist Omer manages with
   the CLI. Google sign-in and open sign-up later, behind configuration.
+- **Email: Resend**, called through its REST API. With `RESEND_API_KEY` unset (development, tests), the
+  link is printed to the API console. Until a domain is verified in Resend, only
+  `onboarding@resend.dev` can send, and only to the Resend account's own address (`EMAIL_FROM`).
 - **Keys:** envelope encryption — a per-row data key encrypts the API key; a master key (host secret
   now, a KMS later) encrypts the data keys. Decrypted only in the worker at call time; never sent to
   the browser after entry, never logged. Learners can replace or delete their key.
