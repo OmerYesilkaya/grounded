@@ -94,6 +94,13 @@ describe("LessonView: answering a check", () => {
     await user.type(input, "again{Enter}");
     expect(props.onAnswer).toHaveBeenLastCalledWith("s1", "again");
 
+    await user.type(input, "x = 5{Shift>}{Enter}{/Shift}y = 6");
+    expect(input).toHaveValue("x = 5\ny = 6");
+    expect(props.onAnswer).toHaveBeenCalledTimes(2);
+    await user.type(input, "{Enter}");
+    expect(props.onAnswer).toHaveBeenLastCalledWith("s1", "x = 5\ny = 6");
+    expect(input).toHaveValue("");
+
     await user.click(screen.getByRole("button", { name: "I don't know" }));
     expect(props.onDontKnow).toHaveBeenCalledWith("s1");
   });

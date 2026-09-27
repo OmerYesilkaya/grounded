@@ -1,5 +1,6 @@
 import type { CheckBlock } from "@grounded/content";
 import { useState } from "react";
+import { Composer } from "@/components/composer";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { cn } from "@/lib/utils";
@@ -26,9 +27,7 @@ export function CheckCard({
   const done = progress.status === "passed" || progress.status === "settling";
   const answering = progress.status === "open" && !progress.offerGate;
 
-  const submit = () => {
-    const text = draft.trim();
-    if (!text || progress.grading) return;
+  const submit = (text: string) => {
     onAnswer(text);
     setDraft("");
   };
@@ -106,36 +105,31 @@ export function CheckCard({
       )}
 
       {answering && (
-        <form
-          className="flex flex-wrap gap-2 px-3 pb-3 max-sm:flex-col"
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          <input
-            aria-label="Your answer"
+        <div className="px-3 pb-3">
+          <Composer
+            label="Your answer"
+            submitLabel="Answer"
             value={draft}
-            disabled={progress.grading}
+            onChange={setDraft}
+            onSubmit={submit}
+            disabled={progress.grading === true}
             placeholder={progress.thread.length ? "Answer the new question…" : "One or two lines…"}
-            onChange={(event) => {
-              setDraft(event.target.value);
-            }}
-            className="min-w-0 flex-1 rounded-lg border border-input bg-background px-3 py-2.5 text-foreground outline-none focus:border-ring disabled:opacity-60 max-sm:w-full"
+            stackActions
+            className="bg-background"
+            actions={
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={progress.grading}
+                onClick={onDontKnow}
+                className="text-muted-foreground max-sm:border max-sm:border-input"
+              >
+                I don&apos;t know
+              </Button>
+            }
           />
-          <Button
-            type="button"
-            variant="outline"
-            disabled={progress.grading}
-            onClick={onDontKnow}
-            className="h-auto"
-          >
-            I don&apos;t know
-          </Button>
-          <Button type="submit" disabled={!draft.trim() || progress.grading} className="h-auto">
-            Answer
-          </Button>
-        </form>
+        </div>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { Composer } from "@/components/composer";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { api } from "@/lib/api";
@@ -81,6 +82,9 @@ export function ChatView({
     },
   });
 
+  const barRef = useRef<HTMLDivElement>(null);
+  const barHeight = useBarHeight(barRef, phase === "probe" || phase === "plan");
+
   const lastLength = model.messages.at(-1)?.text?.length ?? 0;
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -96,7 +100,10 @@ export function ChatView({
         : "";
 
   return (
-    <div className="mx-auto flex w-full max-w-[68ch] flex-1 flex-col px-6 pt-9 pb-40">
+    <div
+      className="mx-auto flex w-full max-w-[68ch] flex-1 flex-col px-6 pt-9"
+      style={{ paddingBottom: `${String(barHeight + 40)}px` }}
+    >
       <div className="flex flex-col gap-5">
         {model.messages.map((m) => (
           <Message key={m.id} message={m} />
@@ -147,48 +154,86 @@ export function ChatView({
       )}
 
       {(phase === "probe" || phase === "plan") && (
-        <form
-          className="fixed right-0 bottom-0 left-0 border-t bg-background/90 py-3 backdrop-blur md:left-[248px]"
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (draft.trim()) send.mutate(draft.trim());
-          }}
+        <div
+          ref={barRef}
+          className="fixed right-0 bottom-0 left-0 bg-background/90 pt-2 pb-4 backdrop-blur md:left-[248px]"
         >
-          <div className="mx-auto flex max-w-[68ch] gap-2 px-6">
-            <input
-              aria-label="Message"
+          <div className="mx-auto max-w-[68ch] px-6">
+            <Composer
+              label="Message"
+              submitLabel="Send"
+              submitIcon
               value={draft}
-              disabled={!canWrite}
-              placeholder={placeholder}
-              onChange={(event) => {
-                setDraft(event.target.value);
+              onChange={setDraft}
+              onSubmit={(text) => {
+                send.mutate(text);
               }}
-              className="min-w-0 flex-1 rounded-lg border border-input bg-card px-3 py-2.5 outline-none focus:border-ring disabled:opacity-60"
+              disabled={!canWrite}
+              submitDisabled={send.isPending}
+              placeholder={placeholder}
+              actions={
+                phase === "probe" && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="mr-auto text-muted-foreground"
+                    disabled={skip.isPending || writing}
+                    onClick={() => {
+                      skip.mutate();
+                    }}
+                  >
+                    Skip to the plan
+                  </Button>
+                )
+              }
             />
-            <Button type="submit" disabled={!canWrite || !draft.trim()} className="h-auto">
-              Send
-            </Button>
-            {phase === "probe" && (
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-auto"
-                disabled={skip.isPending || writing}
-                onClick={() => {
-                  skip.mutate();
-                }}
-              >
-                Skip to the plan
-              </Button>
+            {(send.error ?? approve.error ?? skip.error) && (
+              <p className="mt-2 text-sm text-destructive">
+                {(send.error ?? approve.error ?? skip.error)?.message}
+              </p>
             )}
           </div>
-          {(send.error ?? approve.error ?? skip.error) && (
-            <p className="mx-auto mt-2 max-w-[68ch] px-6 text-sm text-destructive">
-              {(send.error ?? approve.error ?? skip.error)?.message}
-            </p>
-          )}
-        </form>
+        </div>
       )}
     </div>
   );
+}
+
+/**
+ * The composer bar's height, kept current: the bar is fixed over the page and grows with its text,
+ * so the conversation leaves that much room below its last message.
+ */
+function useBarHeight(ref: RefObject<HTMLElement | null>, present: boolean): number {
+  const [height, setHeight] = useState(0);
+  const pinToBottom = useRef(false);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!present || !element || typeof ResizeObserver === "undefined") return;
+    let last = 0;
+    // Called once on observe, then on every change.
+    const observer = new ResizeObserver(() => {
+      const next = element.offsetHeight;
+      if (next === last) return;
+      const root = document.documentElement;
+      pinToBottom.current =
+        next > last && window.innerHeight + window.scrollY >= root.scrollHeight - 8;
+      last = next;
+      setHeight(next);
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [ref, present]);
+
+  // A reader at the bottom stays there as the bar grows, so their last message isn't covered.
+  useLayoutEffect(() => {
+    if (!pinToBottom.current) return;
+    pinToBottom.current = false;
+    window.scrollTo({ top: document.documentElement.scrollHeight });
+  }, [height]);
+
+  return present ? height : 0;
 }
