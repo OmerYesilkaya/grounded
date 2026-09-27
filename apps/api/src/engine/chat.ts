@@ -76,13 +76,42 @@ function chatIssues(
 /**
  * Writes one tutor message into the session chat: streamed to the learner as it is written, then
  * validated against the surface's rules; if it breaks one, it is rewritten once with the issues.
+ * A message that fails part-way is retracted, so no half-written message is left in the chat.
  */
 export async function writeChatMessage(options: ChatMessageOptions): Promise<ChatMessageResult> {
   const { db, sessionId, kind } = options;
-  const surface = options.surface ?? "chat";
   const messageId = uuidv7();
   await publish(db, sessionId, "message-start", { id: messageId, role: "tutor", kind });
+  let written: Omit<ChatMessageResult, "messageId">;
+  try {
+    written = await composeMessage(options, messageId);
+    await db.insert(sessionMessages).values({
+      id: messageId,
+      sessionId,
+      role: "tutor",
+      text: written.text,
+      blocks: written.blocks,
+      kind,
+    });
+  } catch (error) {
+    await publish(db, sessionId, "message-retracted", { id: messageId });
+    throw error;
+  }
+  await publish(db, sessionId, "message-done", {
+    id: messageId,
+    role: "tutor",
+    kind,
+    blocks: written.blocks,
+  });
+  return { messageId, ...written };
+}
 
+async function composeMessage(
+  options: ChatMessageOptions,
+  messageId: string,
+): Promise<Omit<ChatMessageResult, "messageId">> {
+  const { db, sessionId } = options;
+  const surface = options.surface ?? "chat";
   const deltas = batcher((text) =>
     publish(db, sessionId, "message-delta", { id: messageId, text }).then(() => undefined),
   );
@@ -118,9 +147,5 @@ export async function writeChatMessage(options: ChatMessageOptions): Promise<Cha
     ({ blocks } = chatIssues(text, surface, options.terms));
   }
 
-  await db
-    .insert(sessionMessages)
-    .values({ id: messageId, sessionId, role: "tutor", text, blocks, kind });
-  await publish(db, sessionId, "message-done", { id: messageId, role: "tutor", kind, blocks });
-  return { messageId, text, blocks, toolCalls };
+  return { text, blocks, toolCalls };
 }

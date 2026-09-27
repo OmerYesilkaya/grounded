@@ -1,5 +1,7 @@
 import { invite } from "./allowlist.js";
-import { eq, sessionMessages, terms, users } from "@grounded/db";
+import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
+import { asc, eq, sessionEvents, sessionMessages, terms, users } from "@grounded/db";
+import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -58,6 +60,37 @@ describe("starting a session", () => {
       error: "This track already has an open session.",
       sessionId,
     });
+  });
+
+  it("retracts a tutor message the model fails part-way through", async () => {
+    const { cookie, trackId } = await learner();
+    // The connection to the provider drops after the first words.
+    const dropping = new MockLanguageModelV4({
+      doStream: {
+        stream: new ReadableStream<LanguageModelV4StreamPart>({
+          start(controller) {
+            controller.enqueue({ type: "text-start", id: "t" });
+            controller.enqueue({ type: "text-delta", id: "t", delta: "In your own words" });
+            controller.error(new Error("socket hang up"));
+          },
+        }),
+      },
+    });
+    models.script("probe", dropping);
+    const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
+    const { id: sessionId } = (await started.json()) as { id: string };
+
+    const types = async () =>
+      (
+        await t.db
+          .select({ type: sessionEvents.type })
+          .from(sessionEvents)
+          .where(eq(sessionEvents.sessionId, sessionId))
+          .orderBy(asc(sessionEvents.id))
+      ).map((e) => e.type);
+    await t.waitFor(async () => (await types()).includes("error"));
+    expect(await types()).toEqual(["state", "message-start", "message-retracted", "error"]);
+    expect((await snapshot(cookie, sessionId)).messages).toEqual([]);
   });
 });
 
