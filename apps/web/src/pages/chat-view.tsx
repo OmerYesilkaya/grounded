@@ -68,9 +68,6 @@ export function ChatView({
   const approve = useMutation({
     mutationFn: () => api(`/api/sessions/${model.id}/approve-plan`, { method: "POST" }),
   });
-  const skip = useMutation({
-    mutationFn: () => api(`/api/sessions/${model.id}/skip-to-plan`, { method: "POST" }),
-  });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const next = useMutation({
@@ -171,26 +168,10 @@ export function ChatView({
               disabled={!canWrite}
               submitDisabled={send.isPending}
               placeholder={placeholder}
-              actions={
-                phase === "probe" && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="mr-auto text-muted-foreground"
-                    disabled={skip.isPending || writing}
-                    onClick={() => {
-                      skip.mutate();
-                    }}
-                  >
-                    Skip to the plan
-                  </Button>
-                )
-              }
             />
-            {(send.error ?? approve.error ?? skip.error) && (
+            {(send.error ?? approve.error) && (
               <p className="mt-2 text-sm text-destructive">
-                {(send.error ?? approve.error ?? skip.error)?.message}
+                {(send.error ?? approve.error)?.message}
               </p>
             )}
           </div>
