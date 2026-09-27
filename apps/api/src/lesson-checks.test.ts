@@ -1,4 +1,6 @@
 import { terms } from "@grounded/db";
+import { APICallError } from "@ai-sdk/provider";
+import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -60,7 +62,7 @@ const verdict = (v: {
   freshQuestion?: string;
   note?: string;
 }) => ({
-  thenGenerate: [JSON.stringify({ actions: [], ...v })],
+  thenGenerate: [JSON.stringify({ actions: [], freshQuestion: null, note: null, ...v })],
 });
 
 async function inLesson() {
@@ -259,5 +261,36 @@ describe("closing the session", () => {
     expect(tracks[0]?.openSession).toBeNull();
     const stored = await t.db.select().from(terms);
     expect(stored.find((row) => row.term === "lost update")?.status).toBe("confirmed");
+  });
+});
+
+describe("a check that fails to run", () => {
+  it("says so in the thread and lets the learner answer again", async () => {
+    const { cookie, sessionId } = await inLesson();
+    const failing = new MockLanguageModelV4({
+      doGenerate: () =>
+        Promise.reject(
+          new APICallError({
+            message: "Invalid schema",
+            url: "https://api.openai.com/v1/responses",
+            requestBodyValues: {},
+            statusCode: 400,
+            responseBody: JSON.stringify({ error: { code: "invalid_json_schema" } }),
+            isRetryable: false,
+          }),
+        ),
+    });
+    models.script("check", failing, verdict({ verdict: "landed", reply: "That's it." }));
+
+    await answer(cookie, sessionId, "s1", { text: "memory still holds 5" });
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
+    const [failure] = tutorReplies(await snapshot(cookie, sessionId), "s1");
+    expect(failure?.verdict).toBeNull();
+    expect(failure?.text).toContain("That didn't go through.");
+
+    expect((await answer(cookie, sessionId, "s1", { text: "memory still holds 5" })).status).toBe(
+      202,
+    );
+    await until(cookie, sessionId, (s) => s.state.currentStep === "s2");
   });
 });

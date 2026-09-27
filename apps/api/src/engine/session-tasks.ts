@@ -259,69 +259,85 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
     check: guarded(async ({ sessionId, stepId }) => {
       if (!stepId) throw new Error("check job without a step");
-      const { state } = await loadSession(db, sessionId);
-      const { session, system, thread, terms, introduced } = await checkPrompt(
-        sessionId,
-        stepId,
-        state,
-      );
-      const answer = thread.filter((m) => m.role === "learner").at(-1)?.text ?? "";
-      const model = await models.model({
-        userId: session.userId,
-        purpose: "check",
-        role: "strong",
-      });
-
-      const grade = async (feedback: string) =>
-        (
-          await generateText({
-            model,
-            system,
-            output: Output.object({ schema: checkVerdictSchema }),
-            prompt: `The learner's answer to this step's check: ${answer}${feedback}`,
-          })
-        ).output;
-      const problems = (text: string | undefined) => {
-        if (!text) return [];
-        const parsed = parseBlocks(text);
-        return [
-          ...parsed.issues,
-          ...validate(parsed.blocks, { surface: "repair", terms, introduced }),
-        ].filter((i) => i.severity !== "review");
-      };
-      let verdict = await grade("");
-      const issues = [...problems(verdict.reply), ...problems(verdict.freshQuestion)];
-      if (issues.length > 0) {
-        verdict = await grade(
-          `\n\nYour last reply broke these rules; fix them:\n${issues.map((i) => `- ${i.message}`).join("\n")}`,
+      try {
+        const { state } = await loadSession(db, sessionId);
+        const { session, system, thread, terms, introduced } = await checkPrompt(
+          sessionId,
+          stepId,
+          state,
         );
-      }
+        const answer = thread.filter((m) => m.role === "learner").at(-1)?.text ?? "";
+        const model = await models.model({
+          userId: session.userId,
+          purpose: "check",
+          role: "strong",
+        });
 
-      if (verdict.actions.length)
-        await applyActions(db, session.trackId, verdict.actions, { source: `check ${stepId}` });
-      const next = await applyEvent(db, sessionId, {
-        type: "check-verdict",
-        stepId,
-        verdict: verdict.verdict,
-      });
-      await recordCheckMessage(sessionId, stepId, verdict.reply, verdict.verdict);
-
-      const step = next.steps[stepId];
-      if (verdict.verdict === "missed") {
-        if (step?.status === "open" && !step.offerGate && verdict.freshQuestion) {
-          await recordCheckMessage(sessionId, stepId, verdict.freshQuestion, null);
-        }
-        if (verdict.note) {
-          await db
-            .update(lessons)
-            .set({
-              notes: sql`${lessons.notes} || ${JSON.stringify({ [stepId]: verdict.note })}::jsonb`,
+        const grade = async (feedback: string) =>
+          (
+            await generateText({
+              model,
+              system,
+              output: Output.object({ schema: checkVerdictSchema }),
+              prompt: `The learner's answer to this step's check: ${answer}${feedback}`,
             })
-            .where(eq(lessons.sessionId, sessionId));
-          await publish(db, sessionId, "note", { stepId, note: verdict.note });
+          ).output;
+        const problems = (text: string | null) => {
+          if (!text) return [];
+          const parsed = parseBlocks(text);
+          return [
+            ...parsed.issues,
+            ...validate(parsed.blocks, { surface: "repair", terms, introduced }),
+          ].filter((i) => i.severity !== "review");
+        };
+        let verdict = await grade("");
+        const issues = [...problems(verdict.reply), ...problems(verdict.freshQuestion)];
+        if (issues.length > 0) {
+          verdict = await grade(
+            `\n\nYour last reply broke these rules; fix them:\n${issues.map((i) => `- ${i.message}`).join("\n")}`,
+          );
         }
+
+        if (verdict.actions.length)
+          await applyActions(db, session.trackId, verdict.actions, { source: `check ${stepId}` });
+        const next = await applyEvent(db, sessionId, {
+          type: "check-verdict",
+          stepId,
+          verdict: verdict.verdict,
+        });
+        await recordCheckMessage(sessionId, stepId, verdict.reply, verdict.verdict);
+
+        const step = next.steps[stepId];
+        if (verdict.verdict === "missed") {
+          if (step?.status === "open" && !step.offerGate && verdict.freshQuestion) {
+            await recordCheckMessage(sessionId, stepId, verdict.freshQuestion, null);
+          }
+          if (verdict.note) {
+            await db
+              .update(lessons)
+              .set({
+                notes: sql`${lessons.notes} || ${JSON.stringify({ [stepId]: verdict.note })}::jsonb`,
+              })
+              .where(eq(lessons.sessionId, sessionId));
+            await publish(db, sessionId, "note", { stepId, note: verdict.note });
+          }
+        }
+        await completeIfDone(db, queue, sessionId, next);
+      } catch (error) {
+        // Otherwise the answer stays "being checked" forever: say so in the thread, so the learner
+        // can answer again.
+        const reason =
+          error instanceof ProviderCallError || error instanceof NoCredentialError
+            ? ` ${error.message}`
+            : "";
+        await recordCheckMessage(
+          sessionId,
+          stepId,
+          `That didn't go through.${reason} Answer again when you're ready.`,
+          null,
+        );
+        throw error;
       }
-      await completeIfDone(db, queue, sessionId, next);
     }),
 
     "fresh-question": guarded(async ({ sessionId, stepId }) => {

@@ -151,7 +151,13 @@ export function createDemoModels(): ModelAccess {
                   note: "The second worker copied the value out before the first put its result back, so it worked from an old copy.",
                   actions: [],
                 }
-              : { verdict: "landed", reply: "That's it.", actions: [] },
+              : {
+                  verdict: "landed",
+                  reply: "That's it.",
+                  freshQuestion: null,
+                  note: null,
+                  actions: [],
+                },
           ),
         ],
       ),

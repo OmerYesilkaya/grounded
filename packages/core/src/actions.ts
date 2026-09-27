@@ -2,9 +2,10 @@ import { z } from "zod";
 
 /**
  * Structured edits the model returns instead of rewriting state (design §5). The server validates a
- * whole batch and applies it only if every edit is valid.
+ * whole batch and applies it only if every edit is valid. A plain union (JSON Schema anyOf), not a
+ * discriminated one: OpenAI's strict structured outputs reject oneOf.
  */
-export const trackActionSchema = z.discriminatedUnion("type", [
+export const trackActionSchema = z.union([
   z.object({
     type: z.literal("set-term-status"),
     term: z.string().min(1),

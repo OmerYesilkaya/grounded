@@ -110,6 +110,10 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       // Retryable failures go back to the SDK unchanged so it can retry; each attempt is recorded.
       const fail = async (error: unknown): Promise<never> => {
         const converted = providerErrorFrom(provider, error);
+        // The learner sees a plain message; the operator needs the cause (never the learner's text).
+        console.error(
+          `model call failed: ${provider}/${modelId} (${request.purpose}) → ${converted.kind}: ${describeFailure(error)}`,
+        );
         await record(null, converted.kind);
         if (APICallError.isInstance(error) && error.isRetryable) throw error;
         throw converted;
@@ -159,4 +163,13 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       });
     },
   };
+}
+
+/** Status and the provider's error body, for the operator's log. */
+function describeFailure(error: unknown): string {
+  const cause = RetryError.isInstance(error) ? error.lastError : error;
+  if (APICallError.isInstance(cause)) {
+    return `${String(cause.statusCode ?? "no status")} ${(cause.responseBody ?? cause.message).slice(0, 500)}`;
+  }
+  return cause instanceof Error ? cause.message : String(cause);
 }
