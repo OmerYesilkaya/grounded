@@ -1,0 +1,18 @@
+{
+  "name": "@grounded/providers",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.65",
+    "@ai-sdk/google": "^4.0.82",
+    "@ai-sdk/openai": "^4.0.78",
+    "ai": "^7.0.118"
+  }
+}
