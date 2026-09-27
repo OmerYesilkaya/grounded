@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/provider": "^4.0.18",
     "@grounded/content": "workspace:^",
+    "ai": "^7.0.118",
     "zod": "^4.6.5"
   }
 }

@@ -205,9 +205,15 @@ importers:
 
   packages/core:
     dependencies:
+      '@ai-sdk/provider':
+        specifier: ^4.0.18
+        version: 4.0.18
       '@grounded/content':
         specifier: workspace:^
         version: link:../content
+      ai:
+        specifier: ^7.0.118
+        version: 7.0.118(zod@4.6.5)
       zod:
         specifier: ^4.6.5
         version: 4.6.5

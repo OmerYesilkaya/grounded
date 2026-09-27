@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseLesson } from "./index.js";
+import { parseLesson, splitLessonSteps } from "./index.js";
 
 const step = (title: string, body: string, check = ":::check\nOne sentence: why?\n:::") =>
   `## ${title}\n\n${body}\n\n${check}`;
@@ -87,5 +87,39 @@ describe("parseLesson", () => {
 
   it("reports an empty lesson", () => {
     expect(parseLesson("   ").issues.map((i) => i.code)).toEqual(["lesson/empty"]);
+  });
+});
+
+describe("splitLessonSteps", () => {
+  it("cuts a lesson at its top-level ## headings, never inside code", () => {
+    const lesson = "## One\n\nText.\n\n```md\n## not a step\n```\n\n## Two\n\nMore.";
+    expect(splitLessonSteps(lesson)).toEqual([
+      "## One\n\nText.\n\n```md\n## not a step\n```",
+      "## Two\n\nMore.",
+    ]);
+  });
+
+  it("returns nothing before the first step", () => {
+    expect(splitLessonSteps("Intro only.")).toEqual([]);
+  });
+});
+
+describe("parseLesson: numbering", () => {
+  it("numbers steps from firstStepNumber", () => {
+    const { steps } = parseLesson(step("Three", "Body."), { firstStepNumber: 3 });
+    expect(steps[0]?.id).toBe("s3");
+    expect(steps[0]?.check.id).toBe("s3.b3");
+  });
+});
+
+describe("parseLesson: tolerated issues", () => {
+  it("keeps a step whose issues are all tolerated, without the broken blocks", () => {
+    const markdown = step("Drawing", "Text.\n\n```diagram\nno caption\n```");
+    expect(parseLesson(markdown).steps).toEqual([]);
+    const { steps, issues } = parseLesson(markdown, {
+      tolerate: (issue) => issue.code.startsWith("diagram/"),
+    });
+    expect(steps[0]?.body.map((b) => b.type)).toEqual(["paragraph"]);
+    expect(issues.map((i) => i.code)).toEqual(["diagram/missing-separator"]);
   });
 });

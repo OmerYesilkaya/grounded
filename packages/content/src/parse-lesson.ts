@@ -9,7 +9,15 @@ const isStepHeading = (node: RootContent) => node.type === "heading" && node.dep
  * Parses a whole lesson. Every step starts with a "##" heading and ends with exactly one check;
  * anything else is reported against that step so it alone can be regenerated.
  */
-export function parseLesson(markdown: string): LessonParseResult {
+export interface ParseLessonOptions {
+  /** Number of the first step (default 1), for parsing a single step in place. */
+  firstStepNumber?: number;
+  /** Issues that don't disqualify a step; the broken blocks are left out and the issue is reported. */
+  tolerate?: (issue: Issue) => boolean;
+}
+
+export function parseLesson(markdown: string, options: ParseLessonOptions = {}): LessonParseResult {
+  const first = options.firstStepNumber ?? 1;
   const nodes = parseMarkdown(markdown).children;
   const issues: Issue[] = [];
   if (nodes.length === 0) {
@@ -36,12 +44,12 @@ export function parseLesson(markdown: string): LessonParseResult {
 
   const steps: LessonStep[] = [];
   groups.forEach((group, index) => {
-    const stepId = `s${String(index + 1)}`;
+    const stepId = `s${String(first + index)}`;
     const stepIssues: Issue[] = [];
     const blocks = convertNodes(group, `${stepId}.b`, stepIssues);
     const step = toStep(stepId, blocks, stepIssues);
     issues.push(...stepIssues.map((issue) => ({ ...issue, stepId })));
-    if (step && stepIssues.length === 0) steps.push(step);
+    if (step && stepIssues.every((issue) => options.tolerate?.(issue) ?? false)) steps.push(step);
   });
 
   return { steps, issues };
@@ -86,4 +94,16 @@ function plainText(inlines: Inline[]): string {
       return " ";
     })
     .join("");
+}
+
+/**
+ * The markdown of each step, cut at top-level "##" headings (a "##" inside code is not a step).
+ * Text before the first step is dropped; parseLesson reports it.
+ */
+export function splitLessonSteps(markdown: string): string[] {
+  const starts = parseMarkdown(markdown)
+    .children.filter(isStepHeading)
+    .map((node) => node.position?.start.offset)
+    .filter((offset): offset is number => offset !== undefined);
+  return starts.map((start, i) => markdown.slice(start, starts[i + 1]).trim());
 }
