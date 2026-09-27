@@ -155,6 +155,8 @@ const EVENT_TYPES = [
   "error",
 ];
 
+const RECONNECT_MS = 3000;
+
 type Action = { kind: "snapshot"; model: SessionModel } | { kind: "event"; event: Event };
 
 /** The session: a snapshot, then live events from the stream (which resumes by itself). */
@@ -176,16 +178,30 @@ export function useSessionModel(sessionId: string): SessionModel | undefined {
   const after = snapshot.data?.lastEventId;
   useEffect(() => {
     if (after === undefined) return;
-    const source = new EventSource(`/api/sessions/${sessionId}/stream?after=${String(after)}`);
+    let lastSeen = after;
+    let source: EventSource | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     const listener = (e: MessageEvent<string>) => {
-      dispatch({
-        kind: "event",
-        event: { type: e.type, id: Number(e.lastEventId), data: JSON.parse(e.data) as unknown },
-      });
+      const id = Number(e.lastEventId);
+      lastSeen = Math.max(lastSeen, id);
+      dispatch({ kind: "event", event: { type: e.type, id, data: JSON.parse(e.data) as unknown } });
     };
-    for (const type of EVENT_TYPES) source.addEventListener(type, listener);
+    const open = () => {
+      const current = new EventSource(
+        `/api/sessions/${sessionId}/stream?after=${String(lastSeen)}`,
+      );
+      for (const type of EVENT_TYPES) current.addEventListener(type, listener);
+      // EventSource reconnects a dropped stream by itself, but gives up for good when a reconnect gets
+      // an error response (a 502 while the API restarts); then open a new one from the last event.
+      current.addEventListener("error", () => {
+        if (current.readyState === EventSource.CLOSED) retry = setTimeout(open, RECONNECT_MS);
+      });
+      source = current;
+    };
+    open();
     return () => {
-      source.close();
+      clearTimeout(retry);
+      source?.close();
     };
   }, [sessionId, after]);
 
