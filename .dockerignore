@@ -10,5 +10,3 @@
 .env.*
 .imports
 .files
-prototypes
-test

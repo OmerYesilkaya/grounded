@@ -56,7 +56,7 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 ### 3.1 `method.md`
 
 - Lives at the repo root; extracted from Omer's Claude Code `teach` skill with his name, quotes and
-  Claude Code specifics generalized. A chat-app version at `test/method.md` passed Omer's manual
+  Claude Code specifics generalized. A chat-app version (`test/method.md`, since removed) passed Omer's manual
   ChatGPT test; its transcripts seed the eval personas.
 - Sections are **tagged by phase**; the server assembles each phase's prompt from the sections it
   needs (plus the learner profile and track state). One document to read and maintain; shorter,
@@ -596,8 +596,8 @@ Built with **shadcn/ui** (Tailwind + Radix), themed with our own tokens.
 
 ### 9.1 Lesson page — prototype verdict
 
-Prototype: `prototypes/lesson-page-prototype/index.html` (throwaway; run
-`python3 -m http.server 4817` in that folder). Three structurally different variants were explored
+Prototype: `prototypes/lesson-page-prototype/index.html`, since removed (it is in the git history).
+Three structurally different variants were explored
 (docs margin, focus reader, paged steps) and combined into:
 
 - **Left: the track list**, collapsible (☰) for distraction-free reading.

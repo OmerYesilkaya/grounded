@@ -5,8 +5,6 @@ motivated, no word used before it has been taught. Invite-only; learners bring t
 
 - `method.md`: the teaching method, used as the system prompt (sections tagged by phase)
 - `docs/design.md`: the design and every decision behind it
-- `prototypes/`: throwaway UI prototypes
-- `test/`: the chat-app version of the method used for manual testing
 
 ## Development
 
