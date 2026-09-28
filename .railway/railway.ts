@@ -24,10 +24,10 @@ export default defineRailway(() => {
     BETTER_AUTH_SECRET: preserve(),
   };
 
-  const db = postgres("Postgres", { region: "sfo" });
+  const db = postgres("Postgres", { region: "ams" });
   db.networking = { privateNetworkEndpoint: "postgres" };
   const dbVolume = volume("postgres-volume", {
-    region: "sfo",
+    region: "ams",
     sizeMB: 500,
     allowOnlineResize: true,
     alerts: { usage: { "80": {}, "95": {}, "100": {} } },
@@ -55,7 +55,7 @@ export default defineRailway(() => {
     build,
     start: "node --import tsx src/worker.ts",
     preDeploy: [],
-    replicas: { sfo: 1 },
+    replicas: { "europe-west4-drams3a": 1 },
     // Time for running generations to finish before a redeploy stops the old worker.
     deploy: { drainingSeconds: 300, overlapSeconds: 0 },
     networking: { privateNetworkEndpoint: "groundedworker" },
