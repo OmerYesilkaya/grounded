@@ -232,6 +232,16 @@ export async function loadTrackContext(
         )
     : [];
   const nameOf = new Map(rows.map((r) => [r.id, r.term]));
+  // In the term list's order, so the prompt renders the same way on every load (design §4.4).
+  const position = new Map(rows.map((r, i) => [r.id, i]));
+  const restsOn = new Map<string, string[]>();
+  for (const d of deps.toSorted(
+    (a, b) =>
+      (position.get(a.restsOnTermId) ?? rows.length) -
+      (position.get(b.restsOnTermId) ?? rows.length),
+  )) {
+    restsOn.set(d.termId, [...(restsOn.get(d.termId) ?? []), nameOf.get(d.restsOnTermId) ?? ""]);
+  }
   const fixList = await db
     .select()
     .from(fixListItems)
@@ -243,7 +253,7 @@ export async function loadTrackContext(
     terms: rows.map((r) => ({
       term: r.term,
       status: r.status,
-      restsOn: deps.filter((d) => d.termId === r.id).map((d) => nameOf.get(d.restsOnTermId) ?? ""),
+      restsOn: restsOn.get(r.id) ?? [],
     })),
     plan: track.plan,
     fixList: fixList.map((f) => ({ text: f.text, status: f.status })),

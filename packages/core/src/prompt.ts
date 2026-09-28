@@ -57,23 +57,69 @@ export interface PromptContext {
   extra?: readonly { heading: string; body: string }[];
 }
 
-export function assemblePrompt(method: Method, phase: Phase, context: PromptContext): string {
+/**
+ * A call's system prompt in parts, ordered so that its start stays byte-identical from one call of a
+ * track to the next (design §4.4): providers reuse a cached prefix, so what changes least comes
+ * first. Joined, the parts are the prompt the model reads.
+ */
+export interface SystemPrompt {
+  /** The phase's method sections: the same for every call of the phase. */
+  method: string;
+  /** The track's slowly changing state, under the context heading; "" when the call has none. */
+  track: string;
+  /** What only this call carries (the step being checked, research notes…); "" when none. */
+  call: string;
+}
+
+const CONTEXT_HEADING = "# What the app gives you in this call";
+
+export function assembleSystemPrompt(
+  method: Method,
+  phase: Phase,
+  context: PromptContext,
+): SystemPrompt {
   const body = method.sections
     .filter((s) => s.phases.includes("all") || s.phases.includes(phase))
     .map((s) => s.text)
     .join("\n\n");
-  const rendered = renderContext(context);
-  return rendered ? `${body}\n\n# What the app gives you in this call\n\n${rendered}` : body;
+  const track = renderTrack(context);
+  const call = (context.extra ?? []).map((s) => `## ${s.heading}\n\n${s.body}`).join("\n\n");
+  // The heading opens the app's context, in whichever part the context starts.
+  const headed = (part: string) => `${CONTEXT_HEADING}\n\n${part}`;
+  return {
+    method: body,
+    track: track ? headed(track) : "",
+    call: call && !track ? headed(call) : call,
+  };
 }
 
-function renderContext(context: PromptContext): string {
+/** The whole prompt as one text: its parts in order. */
+export function joinSystemPrompt(prompt: SystemPrompt): string {
+  return [prompt.method, prompt.track, prompt.call].filter(Boolean).join("\n\n");
+}
+
+export function assemblePrompt(method: Method, phase: Phase, context: PromptContext): string {
+  return joinSystemPrompt(assembleSystemPrompt(method, phase, context));
+}
+
+/**
+ * The track's state, slowest-changing first: the subject and language are set once, the plan changes
+ * when it is revised, and term statuses and the fix-list change within a session.
+ */
+function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
-  const { track, terms, borrowed, plan, fixList, teachingNotes, extra } = context;
+  const { track, terms, borrowed, plan, fixList, teachingNotes } = context;
   if (track) {
     const language =
       track.language ??
       "not known yet. Teach in the language the learner writes in, and record it with set-language.";
     parts.push(`## Track\n\nSubject: ${track.title}\nTeaching language: ${language}`);
+  }
+  if (plan) {
+    const arcs = plan.arcs.map(
+      (arc, i) => `${String(i + 1)}. ${arc.title}: ${arc.terms.join(", ")}`,
+    );
+    parts.push(["## Plan", "", ...arcs, ...(plan.notes ? ["", plan.notes] : [])].join("\n"));
   }
   if (terms?.length) {
     const rows = terms.map(
@@ -94,18 +140,11 @@ function renderContext(context: PromptContext): string {
       ].join("\n"),
     );
   }
-  if (plan) {
-    const arcs = plan.arcs.map(
-      (arc, i) => `${String(i + 1)}. ${arc.title}: ${arc.terms.join(", ")}`,
-    );
-    parts.push(["## Plan", "", ...arcs, ...(plan.notes ? ["", plan.notes] : [])].join("\n"));
-  }
   if (fixList?.length) {
     parts.push(["## Fix-list", "", ...fixList.map((f) => `- [${f.status}] ${f.text}`)].join("\n"));
   }
   if (teachingNotes?.length) {
     parts.push(["## Teaching notes", "", ...teachingNotes.map((n) => `- ${n}`)].join("\n"));
   }
-  for (const section of extra ?? []) parts.push(`## ${section.heading}\n\n${section.body}`);
   return parts.join("\n\n");
 }

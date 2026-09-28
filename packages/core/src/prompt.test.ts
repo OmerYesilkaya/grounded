@@ -1,6 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { assemblePrompt, parseMethod, PHASES, type PromptContext } from "./index.js";
+import {
+  assemblePrompt,
+  assembleSystemPrompt,
+  joinSystemPrompt,
+  parseMethod,
+  PHASES,
+  type PromptContext,
+} from "./index.js";
 
 const FIXTURE = `<!--
   Header comment explaining the tags; never part of a prompt.
@@ -67,6 +74,59 @@ describe("assemblePrompt", () => {
     expect(prompt).toContain("Reordered: backend first.");
     expect(prompt).toContain("- [open] Thinks adding one is a single step");
     expect(prompt).toContain("- Abstract ideas land after one concrete example first.");
+  });
+
+  it("orders the prompt stable-first: method, then the track's state, then the call's own parts", () => {
+    const prompt = assemblePrompt(method, "check", {
+      ...context,
+      extra: [{ heading: "The step being checked", body: "Step one." }],
+    });
+    const order = [
+      "Always on.",
+      "# What the app gives you in this call",
+      "## Track",
+      "## Plan",
+      "## Term list",
+      "## Borrowed terms",
+      "## Fix-list",
+      "## Teaching notes",
+      "## The step being checked",
+    ].map((heading) => prompt.indexOf(heading));
+    expect(order.every((at) => at >= 0)).toBe(true);
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+  });
+
+  it("keeps the prefix of two calls in the same track and phase byte-identical up to the call's own part", () => {
+    const grading = assembleSystemPrompt(method, "check", {
+      ...context,
+      extra: [{ heading: "The step being checked", body: "Step one." }],
+    });
+    const next = assembleSystemPrompt(method, "check", {
+      ...context,
+      extra: [{ heading: "The step being checked", body: "Step two, with more to say." }],
+    });
+    expect(next.method).toBe(grading.method);
+    expect(next.track).toBe(grading.track);
+    expect(next.call).not.toBe(grading.call);
+
+    const prefix = `${grading.method}\n\n${grading.track}\n\n`;
+    expect(joinSystemPrompt(grading).startsWith(prefix)).toBe(true);
+    expect(joinSystemPrompt(next).startsWith(prefix)).toBe(true);
+    expect(joinSystemPrompt(grading).slice(prefix.length)).toBe(grading.call);
+  });
+
+  it("joins its parts into exactly the prompt, the context heading opening whichever part comes first", () => {
+    const extra = [{ heading: "Research notes", body: "Notes." }];
+    for (const ctx of [{}, context, { extra }, { ...context, extra }]) {
+      const parts = assembleSystemPrompt(method, "plan", ctx);
+      expect(joinSystemPrompt(parts)).toBe(assemblePrompt(method, "plan", ctx));
+    }
+    const callOnly = assembleSystemPrompt(method, "plan", { extra });
+    expect(callOnly.track).toBe("");
+    expect(callOnly.call).toBe(
+      "# What the app gives you in this call\n\n## Research notes\n\nNotes.",
+    );
+    expect(assembleSystemPrompt(method, "plan", {})).toMatchObject({ track: "", call: "" });
   });
 
   it("leaves out context sections that weren't provided", () => {

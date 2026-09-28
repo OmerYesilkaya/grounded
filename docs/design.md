@@ -191,6 +191,13 @@ about, test and debug.
   within the time the call has left, so a learner never waits past the limit.
 - **Usage** (input/output/cached tokens, model, purpose) is recorded for every call from day one and
   shown simply per session and per month.
+- **Prompts are ordered stable-first** (`assembleSystemPrompt` in `packages/core/src/prompt.ts`), so
+  a provider can reuse the cached start of the previous call: the phase's method sections, then the
+  track's slowly changing state (subject and language, plan, term list, borrowed terms, fix-list,
+  teaching notes, in that order), then what only this call carries (the step being checked, research
+  notes, the probe's conclusion), then the conversation. The track's state renders the same way on
+  every load (terms and fix-list in creation order, what a term rests on in the term list's order),
+  so two calls of a track and phase are byte-identical up to their own parts.
 
 ## 5. Data model (sketch)
 

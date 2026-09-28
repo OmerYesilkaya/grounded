@@ -40,6 +40,28 @@ describe("applyActions", () => {
     ]);
   });
 
+  it("lists what a term rests on in the term list's order, the same on every load", async () => {
+    const trackId = await newTrack();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "add-planned-term", term: "worker", restsOn: [] },
+        { type: "add-planned-term", term: "race condition", restsOn: ["worker", "memory"] },
+      ],
+      { source: "plan" },
+    );
+
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.terms.at(-1)).toEqual({
+      term: "race condition",
+      status: "planned",
+      restsOn: ["memory", "worker"],
+    });
+    expect(await loadTrackContext(t.db, trackId)).toEqual(context);
+  });
+
   it("records every status change with the learner's words as evidence", async () => {
     const trackId = await newTrack();
     await applyActions(t.db, trackId, [{ type: "add-planned-term", term: "memory", restsOn: [] }], {
