@@ -21,11 +21,16 @@ import { createMemoryFileStore } from "./files/store.js";
 
 export const BASE_URL = "http://localhost:3000";
 
+// What a harness around the embedded backend needs besides it.
+export { invite } from "./allowlist.js";
+export { createDemoModels } from "./dev/demo-models.js";
+export { createModelCaller, type ModelAccess } from "./engine/model-call.js";
+
 /** A new, migrated database on the server `serverUrl` points at, named after it plus `suffix`. */
 export async function createFreshDatabase(
   serverUrl: string,
   suffix: string,
-): Promise<{ url: string; drop: () => Promise<void> }> {
+): Promise<{ url: string; drop: () => Promise<void>; keep: () => Promise<void> }> {
   const url = new URL(serverUrl);
   url.pathname = `/${url.pathname.slice(1)}_${suffix}`;
   const name = url.pathname.slice(1);
@@ -46,13 +51,18 @@ export async function createFreshDatabase(
       await admin.unsafe(`drop database if exists "${name}" with (force)`);
       await admin.end();
     },
+    /** Leaves the database in place, to be looked at. */
+    keep: () => admin.end(),
   };
 }
 
 export interface EmbeddedOptions {
   databaseUrl: string;
-  /** Model access for the session jobs; without it (and without `tasks`) no worker runs. */
-  models?: ModelAccess;
+  /**
+   * Model access for the session jobs, or how to make it from the backend's database and vault (the
+   * real model caller needs both); without it (and without `tasks`) no worker runs.
+   */
+  models?: ModelAccess | ((backend: { db: Db; vault: KeyVault }) => ModelAccess);
   /** Jobs to run besides (or instead of) the session jobs. */
   tasks?: TaskList;
   /** The teaching method (default: the repo's method.md). */
@@ -171,7 +181,10 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
               queue,
               files,
               method: options.method ?? loadMethod(),
-              models: options.models,
+              models:
+                typeof options.models === "function"
+                  ? options.models({ db, vault })
+                  : options.models,
             })
           : {}),
         ...options.tasks,

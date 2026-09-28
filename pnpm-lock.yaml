@@ -303,6 +303,33 @@ importers:
         specifier: ^7.0.118
         version: 7.0.118(zod@4.6.5)
 
+  tools/eval:
+    dependencies:
+      '@ai-sdk/provider':
+        specifier: ^4.0.18
+        version: 4.0.18
+      '@grounded/api':
+        specifier: workspace:^
+        version: link:../../apps/api
+      '@grounded/core':
+        specifier: workspace:^
+        version: link:../../packages/core
+      '@grounded/db':
+        specifier: workspace:^
+        version: link:../../packages/db
+      '@grounded/providers':
+        specifier: workspace:^
+        version: link:../../packages/providers
+      ai:
+        specifier: ^7.0.118
+        version: 7.0.118(zod@4.6.5)
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
+      zod:
+        specifier: ^4.6.5
+        version: 4.6.5
+
 packages:
 
   '@adobe/css-tools@4.5.0':

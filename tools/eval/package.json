@@ -1,0 +1,20 @@
+{
+  "name": "@grounded/eval",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "eval": "tsx --env-file-if-exists=../../.env src/cli.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/provider": "^4.0.18",
+    "@grounded/api": "workspace:^",
+    "@grounded/core": "workspace:^",
+    "@grounded/db": "workspace:^",
+    "@grounded/providers": "workspace:^",
+    "ai": "^7.0.118",
+    "tsx": "^4.23.15",
+    "zod": "^4.6.5"
+  }
+}

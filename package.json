@@ -22,7 +22,8 @@
     "import-track": "pnpm --filter @grounded/api import-track",
     "dev:api": "pnpm --filter @grounded/api dev",
     "dev:web": "pnpm --filter @grounded/web dev",
-    "dev:worker": "pnpm --filter @grounded/api worker"
+    "dev:worker": "pnpm --filter @grounded/api worker",
+    "eval": "pnpm --filter @grounded/eval eval"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

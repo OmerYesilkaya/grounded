@@ -109,7 +109,7 @@ packages/
   db/           Drizzle schema and migrations
   crypto/       envelope encryption behind a KeyVault interface
 tools/
-  eval/         eval harness (personas, runner, reports; §11, not built yet: #48)
+  eval/         eval harness: personas, the session driver, counts and the judge, reports (§11)
 method.md
 ```
 
@@ -766,12 +766,34 @@ A refined "typographic index":
 
 ## 11. Eval harness (`tools/eval`)
 
-A test suite for AI models, not personalization. A fixed strong model plays scripted learners from
-persona files (cold start, warm start, a misconception, "I don't know" — shaped by Omer's manual
-ChatGPT transcripts). The candidate model runs the real session phases; the **production validators**
-plus a judge model score the transcripts: untaught terms, the probe teaching, scaffolding words,
-stacked questions, check length, parse failures, diagram validity. Runs before a model joins the list
-and whenever `method.md` changes. Built after the first working session.
+A test suite for AI models and for the method, not personalization. `pnpm eval` runs whole sessions of
+the real app — the API and the worker in one process (`apps/api/src/embedded.ts`, which the test
+harness shares), on a fresh database per run — with a fixed strong model playing a learner from a
+persona sheet (`tools/eval/src/personas/*.md`: who they are, what they know, don't know and believe
+wrongly, how they behave; cold start, warm start, a misconception, and a real learner's session). The
+learner signs in and stores a key through the real routes, so every tutor call goes through the
+production prompts, validators, retries and usage records; it answers the probe, reacts to the plan
+(one revision at most), reads each step as it opens and answers the checks, until the session closes.
+
+Each run is scored twice:
+
+- **Counted** from the database: probe questions and stacked questions, steps and checks, checks
+  landed on the first try, misses, steps left settling, what the learner already held, rewrites of
+  drafts that broke a rule, errors shown, calls, tokens and cost.
+- **Judged** by a fixed model against a fixed rubric (`judge.ts`), with the persona sheet as the
+  truth about the learner, so it can say whether the probe found the level: the probe teaching or
+  stacking questions, whether it located each strand and asked about the goal, whether its summary
+  matches the learner, whether the plan fits their level and the first session reaches the goal,
+  whether each check makes the learner use the idea or can be answered from the text, whether
+  verdicts are right, misconceptions dislodged, promises kept, "I already knew this" heard, and
+  factual errors. The rubric is its own text, not `method.md`, so one judge compares two methods.
+
+`--model` picks the tutor (a model on the list; a new one joins as `pending` first) and `--method` a
+version of the method, so a failure can be put down to the model or to the method by running the
+other combinations: if it follows the method across models, it is the method's. Transcripts and
+reports go to `tools/eval/results/` (not committed). Runs before a model joins the list and whenever
+`method.md` changes; recording results next to each model-list entry, and turning a run into its
+`gate: "passed"`, is still owed (#48).
 
 ## 12. Security and privacy
 
