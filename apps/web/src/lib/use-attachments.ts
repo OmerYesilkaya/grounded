@@ -1,4 +1,4 @@
-import { attachmentKind, attachmentProblem, attachmentsProblem } from "@grounded/core";
+import { attachmentKind, attachmentProblem, attachmentsProblem } from "@grounded/core/attachments";
 import { useEffect, useRef, useState } from "react";
 
 export interface PendingFile {

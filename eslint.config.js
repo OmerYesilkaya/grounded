@@ -27,7 +27,26 @@ export default tseslint.config(
         "error",
         { allow: [{ from: "package", package: "@tanstack/router-core", name: "Redirect" }] },
       ],
+      // @grounded/core's index also loads method.md from disk (node:fs), which the browser can't:
+      // the web takes its types, and code only from subpaths made for it.
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@grounded/core",
+              allowTypeImports: true,
+              message: "Import code from a browser-safe subpath, e.g. @grounded/core/attachments.",
+            },
+          ],
+        },
+      ],
     },
+  },
+  {
+    // Tests run in Node, where all of @grounded/core loads.
+    files: ["apps/web/**/*.test.{ts,tsx}"],
+    rules: { "@typescript-eslint/no-restricted-imports": "off" },
   },
   {
     files: ["**/*.js"],

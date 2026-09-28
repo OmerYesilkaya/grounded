@@ -1,4 +1,4 @@
-import type { AttachmentKind } from "@grounded/core";
+import type { AttachmentKind } from "@grounded/core/attachments";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 

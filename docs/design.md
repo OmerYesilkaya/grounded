@@ -349,7 +349,7 @@ about, test and debug.
   since a container's disk doesn't outlive a deploy. MinIO was the first choice for development and
   was dropped: its community images stopped in October 2025. Keys are made by the app
   (`tracks/<track id>/<file id>`), never from a file's name.
-- **What can be attached** (`packages/core/src/attachments.ts`, shared by the web, which checks as
+- **What can be attached** (`@grounded/core/attachments`, shared by the web, which checks as
   files are added, and the API, which checks again and decides): images (PNG, JPEG, WebP, GIF, at
   most 5 MB each, Anthropic's per-image limit), PDFs, Word documents (.docx) and text files (.txt,
   .md), at most 10 MB each; at most 8 files and 20 MB together; the PDFs at most 50 pages together
