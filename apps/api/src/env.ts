@@ -9,6 +9,8 @@ const schema = z.object({
   APP_URL: z.url().default("http://localhost:5173"),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   PORT: z.coerce.number().default(8787),
+  /** Production: the built web app, served by the API on the same origin. Vite serves it otherwise. */
+  WEB_DIST_DIR: z.string().min(1).optional(),
   /** Magic links go by email when set; to the console otherwise. */
   RESEND_API_KEY: z.string().min(1).optional(),
   /** Until a domain is verified in Resend, only onboarding@resend.dev works (to your own address). */

@@ -8,6 +8,7 @@ import { createMagicLinkDelivery, createResendSender } from "./email.js";
 import { createEventHub } from "./engine/events.js";
 import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
+import { serveWeb } from "./web.js";
 
 const env = readEnv();
 const { db, client } = createDb(env.DATABASE_URL);
@@ -38,6 +39,8 @@ const app = createApp({
   validateKey: (provider, apiKey) => validateKey(provider, apiKey),
 });
 
+if (env.WEB_DIST_DIR) serveWeb(app, env.WEB_DIST_DIR);
+
 serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   console.log(`api listening on http://localhost:${String(port)}`);
   const email = env.RESEND_API_KEY ? `by email from ${env.EMAIL_FROM}` : "";
@@ -46,3 +49,4 @@ serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
     `magic links: ${[printed, email].filter(Boolean).join(", and ") || "nowhere (set RESEND_API_KEY)"}`,
   );
 });
+
