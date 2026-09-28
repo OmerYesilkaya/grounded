@@ -124,7 +124,12 @@ about, test and debug.
   retries provider calls, and a blind job retry could spend the learner's credit twice.
 - **Every session has an ordered event log** (`session_events`). Jobs append to it as they stream and
   send a Postgres notification; one listener per API process wakes that session's SSE streams. The
-  browser replays from its last event id after a reconnect or a closed tab. API servers hold no state
+  browser replays from its last event id after a reconnect or a closed tab. A session's events become
+  visible in id order: appending one takes the session's event lock (a transaction-scoped advisory
+  lock) before its id, so a later event can't commit before an earlier one and be skipped by a stream
+  or a snapshot cursor that is already past it. Sessions don't wait for each other. The lock order is
+  the event lock, then the session row; a state transition appends its state event in its own
+  transaction, so states arrive in the order they were applied. API servers hold no state
   in memory, so API and workers scale independently; Redis replaces `NOTIFY` only if Postgres becomes
   the bottleneck.
 - **Jobs say what they are doing.** Alongside their output, jobs publish `activity` events

@@ -25,6 +25,26 @@ export interface ActivityEvent {
   state: "running" | "done";
 }
 
+/** A transaction on the database, for work that must commit together with its events. */
+export type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
+
+/*
+ * A session's events become visible in id order. Ids come from a sequence, taken at insert, but
+ * transactions commit in their own order: two publishers on one session could otherwise commit 102
+ * before 101, and a stream that has delivered 102 resumes after it and never delivers 101 (nor would
+ * a snapshot whose cursor is 102). So appending first takes the session's event lock, an advisory
+ * lock held until the transaction ends: the session's next event gets its id only once the previous
+ * one has committed. Sessions don't wait for each other.
+ *
+ * Lock order: a session's event lock, then its row. Appending an event takes a key-share lock on the
+ * session row (the foreign key) while holding the event lock, so a transaction that locks the session
+ * row takes the event lock first (applyEvent does, and appends its state event inside), and nothing
+ * may wait for a publish on another connection while holding the session row.
+ */
+export async function lockSessionEvents(tx: Tx, sessionId: string): Promise<void> {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${CHANNEL}), hashtext(${sessionId}))`);
+}
+
 /** Appends an event to the session's log and wakes its open streams. Returns the event id. */
 export async function publish(
   db: Db,
@@ -32,12 +52,27 @@ export async function publish(
   type: string,
   data: unknown,
 ): Promise<number> {
-  const [row] = await db
+  return db.transaction((tx) => appendEvent(tx, sessionId, type, data));
+}
+
+/**
+ * Appends an event within the caller's transaction; it becomes visible when that commits. The
+ * session's event lock is held until then, so keep the rest of the transaction short.
+ */
+export async function appendEvent(
+  tx: Tx,
+  sessionId: string,
+  type: string,
+  data: unknown,
+): Promise<number> {
+  await lockSessionEvents(tx, sessionId);
+  const [row] = await tx
     .insert(sessionEvents)
     .values({ sessionId, type, data })
     .returning({ id: sessionEvents.id });
   if (!row) throw new Error("event insert returned nothing");
-  await db.execute(sql`select pg_notify(${CHANNEL}, ${sessionId})`);
+  // Delivered when the transaction commits, so a woken stream finds the event.
+  await tx.execute(sql`select pg_notify(${CHANNEL}, ${sessionId})`);
   return row.id;
 }
 
