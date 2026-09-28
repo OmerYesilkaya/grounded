@@ -12,7 +12,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
 import { appendEvent, eventsAfter, publish } from "./engine/events.js";
 import { applyEvent } from "./engine/session-store.js";
-import { TEST_DATABASE_URL } from "./test/global-setup.js";
+import { TEST_DATABASE_URL } from "./test/database.js";
 import { createTestHarness } from "./test/harness.js";
 import { readSse } from "./test/sse.js";
 

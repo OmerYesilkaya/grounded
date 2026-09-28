@@ -12,7 +12,7 @@ import type { ModelAccess } from "../engine/model-call.js";
 import { createJobQueue, startWorker, type Worker } from "../engine/queue.js";
 import { createTasks } from "../engine/tasks.js";
 import { createMemoryFileStore } from "../files/store.js";
-import { TEST_DATABASE_URL } from "./global-setup.js";
+import { TEST_DATABASE_URL } from "./database.js";
 
 export const BASE_URL = "http://localhost:3000";
 
