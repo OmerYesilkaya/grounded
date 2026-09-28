@@ -1,4 +1,5 @@
 import {
+  and,
   asc,
   checkMessages,
   desc,
@@ -8,6 +9,7 @@ import {
   lessons,
   sessionEvents,
   sessionMessages,
+  sql,
   type Db,
 } from "@grounded/db";
 import { log, withLogContext } from "../log.js";
@@ -45,13 +47,26 @@ const LESSON_INTERRUPTED = "Writing the lesson was interrupted by a problem on o
  * an error event. Work still queued is left to its job: a queued check job grades the answer, a
  * queued lesson job writes the lesson. Safe while other workers run, and running it again changes
  * nothing.
+ *
+ * A session with an event in the last `quietForMs` is left for a later run: a request may be
+ * between recording work (an answer to grade, a lesson to write) and queuing its job, and that work
+ * holds no lock. Every such request publishes an event first.
  */
-export async function recoverAbandonedWork(db: Db): Promise<RecoveredSession[]> {
+export async function recoverAbandonedWork(
+  db: Db,
+  options: { quietForMs?: number } = {},
+): Promise<RecoveredSession[]> {
+  const quietFor = options.quietForMs ?? RECOVERY_QUIET_MS;
   // A closed session runs no more jobs, and the recap that closes it is the last one.
   const open = await db
     .select({ id: learningSessions.id })
     .from(learningSessions)
-    .where(isNull(learningSessions.closedAt));
+    .where(
+      and(
+        isNull(learningSessions.closedAt),
+        sql`not exists (select 1 from ${sessionEvents} where ${sessionEvents.sessionId} = ${learningSessions.id} and ${sessionEvents.createdAt} > now() - make_interval(secs => ${quietFor / 1000}))`,
+      ),
+    );
   const recovered: RecoveredSession[] = [];
   for (const { id } of open) {
     const result = await withLogContext({ sessionId: id }, () =>
@@ -63,8 +78,38 @@ export async function recoverAbandonedWork(db: Db): Promise<RecoveredSession[]> 
     log.warn({ sessionId, ...what }, "recovered a session a dead job left half-done");
     recovered.push(result);
   }
-  log.info({ open: open.length, recovered: recovered.length }, "recovery done");
+  // Every minute, so a line only when it found something.
+  log[recovered.length ? "info" : "debug"](
+    { open: open.length, recovered: recovered.length },
+    "recovery done",
+  );
   return recovered;
+}
+
+/** How long a session must be quiet before recovery looks at it. */
+export const RECOVERY_QUIET_MS = 30_000;
+/** How often a worker runs recovery, besides at its start. */
+export const RECOVERY_EVERY_MS = 60_000;
+
+/**
+ * Runs recovery every `everyMs` (design §4.2): a worker that dies while others keep running is
+ * cleaned up after within about a minute, not at the next worker start. Cheap: it takes only free
+ * locks, so it waits for no job. A run that fails is logged, and the next one goes ahead; runs never
+ * overlap. Returns how to stop it.
+ */
+export function recoverPeriodically(db: Db, everyMs = RECOVERY_EVERY_MS): () => Promise<void> {
+  let running: Promise<unknown> = Promise.resolve();
+  const timer = setInterval(() => {
+    running = running.then(() =>
+      recoverAbandonedWork(db).catch((error: unknown) => {
+        log.error({ err: error }, "recovery failed");
+      }),
+    );
+  }, everyMs);
+  return async () => {
+    clearInterval(timer);
+    await running;
+  };
 }
 
 /** Recovers one session no live job is working on; null when nothing was left half-done. */

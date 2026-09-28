@@ -158,9 +158,17 @@ about, test and debug.
   before telling the learner why, so an unfinished lesson is always one whose job died, and a failed
   one is never reported twice.
   Nothing is re-run: jobs are attempted once. A check job grades only an answer still waiting, so
-  one that starts late never contradicts recovery. Running recovery again changes nothing. Open
-  gap: a worker that dies while others keep running is recovered at the next worker start, not
-  sooner (#22).
+  one that starts late never contradicts recovery. Running recovery again changes nothing.
+  **Recovery also runs every minute in every worker** (`recoverPeriodically`, #22), so a worker that
+  dies while others keep running is cleaned up after within about a minute. It is cheap: it takes
+  only free locks, so it never waits on a job. It leaves a session with an event in the last 30
+  seconds for a later run: a request may be between recording work (an answer to grade, an approved
+  plan's lesson) and queuing its job, which holds no lock, and every such request publishes an event
+  first. A worker that loses the connection holding its locks exits (its running jobs are no longer
+  protected), and the others' recovery cleans up after it; Railway restarts it. In development
+  `pnpm dev:worker` runs it under a small supervisor (`src/dev/worker-dev.ts`) that restarts it when
+  the code changes, as `tsx watch` did, and also when it stops, which `tsx watch` wouldn't; one that
+  fails within seconds of starting waits for a change instead.
 - **A failed lesson can be written again** (`engine/lesson-again.ts`). A lesson fails when its job
   dies or fails (above), and also when a step is still broken after its rewrites: the lesson can't
   go past a step that isn't there, so it isn't left "ready" with a hole in it. The steps written

@@ -402,13 +402,13 @@ describe("an aside's answer on the way", () => {
   it("is told it didn't go through when its job died, without an error for the session", async () => {
     const { sessionId, view } = await inLesson();
     await createAside(t.db, sessionId, { stepId: "s1", anchor: ANCHOR, question: "Where to?" });
-    const [recovered] = await recoverAbandonedWork(t.db);
+    const [recovered] = await recoverAbandonedWork(t.db, { quietForMs: 0 });
     expect(recovered).toMatchObject({ sessionId, asides: 1, messages: 0, checks: [] });
     const s = await view();
     expect(JSON.stringify(s.asides[0]?.messages[1]?.blocks)).toContain("That didn't go through.");
     const errors = await t.db.select().from(sessionEvents).where(eq(sessionEvents.type, "error"));
     expect(errors).toEqual([]);
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
   });
 });
 

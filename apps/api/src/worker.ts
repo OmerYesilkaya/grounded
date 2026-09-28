@@ -5,7 +5,7 @@ import { createLanguageModel } from "@grounded/providers";
 import { createDemoModels } from "./dev/demo-models.js";
 import { createModelCaller } from "./engine/model-call.js";
 import { createJobQueue, migrateQueue, startWorker } from "./engine/queue.js";
-import { recoverAbandonedWork } from "./engine/recovery.js";
+import { recoverAbandonedWork, recoverPeriodically } from "./engine/recovery.js";
 import { createTasks } from "./engine/tasks.js";
 import { readEnv } from "./env.js";
 import { fileStoreFor } from "./files/from-env.js";
@@ -43,7 +43,9 @@ const runner = await startWorker(
     concurrency: 4,
     // Without its work locks, this worker's running jobs look dead to recovery: exit, and be recovered.
     onLocksLost: () => {
-      log.fatal("exiting: the next worker start recovers what this one was doing");
+      log.fatal(
+        "exiting: recovery in a running worker, or the next to start, cleans up after this one",
+      );
       process.exit(1);
     },
   },
@@ -52,8 +54,12 @@ log.info(
   { concurrency: 4, demoModels: env.DEMO_MODELS === "true" },
   env.DEMO_MODELS === "true" ? "worker running with DEMO models (no real calls)" : "worker running",
 );
+// And every minute after: a worker that dies while this one runs is cleaned up after here.
+const stopRecovering = recoverPeriodically(db);
 const stop = () => {
-  void runner.stop().then(() => process.exit(0));
+  void stopRecovering()
+    .then(() => runner.stop())
+    .then(() => process.exit(0));
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);

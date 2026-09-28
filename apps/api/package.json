@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit",
     "cli": "tsx --env-file-if-exists=../../.env src/cli.ts",
     "import-track": "tsx --env-file-if-exists=../../.env src/import/cli.ts",
-    "worker": "tsx watch --env-file-if-exists=../../.env src/worker.ts",
+    "worker": "tsx src/dev/worker-dev.ts",
     "start:worker": "node --import tsx src/worker.ts"
   },
   "dependencies": {

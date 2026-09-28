@@ -14,7 +14,7 @@ import { v7 as uuidv7 } from "uuid";
 import { beforeEach, describe, expect, it } from "vitest";
 import { publish, type ActivityEvent } from "./engine/events.js";
 import { ProviderCallError } from "./engine/model-call.js";
-import { recoverAbandonedWork } from "./engine/recovery.js";
+import { recoverAbandonedWork, recoverPeriodically } from "./engine/recovery.js";
 import { checkFailedText } from "./engine/session-tasks.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -136,7 +136,7 @@ describe("recovery after a worker dies mid-job", () => {
     expect(before.messages).toHaveLength(2);
     expect(before.activities).toHaveLength(1);
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([
       { sessionId, messages: 1, activities: 1, checks: [], asides: 0, lesson: false },
     ]);
 
@@ -150,14 +150,40 @@ describe("recovery after a worker dies mid-job", () => {
     expect(after.activities).toEqual([]);
   });
 
+  it("leaves a session that was just busy for a later run: a request may be about to queue its job", async () => {
+    const { sessionId } = await startedSession();
+    await idle(sessionId);
+    await abandonMessage(t.db, sessionId);
+
+    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toMatchObject([{ sessionId }]);
+  });
+
+  it("runs every so often, so a worker that died is recovered while others keep running", async () => {
+    const { sessionId } = await startedSession();
+    await idle(sessionId);
+    const { messageId } = await abandonMessage(t.db, sessionId);
+    await t.db.execute(sql`
+      update session_events set created_at = now() - interval '1 minute'
+      where session_id = ${sessionId}`);
+
+    const stop = recoverPeriodically(t.db, 20);
+    try {
+      await t.waitFor(async () => (await eventsOf(sessionId, "message-retracted")).length > 0);
+    } finally {
+      await stop();
+    }
+    expect(await eventsOf(sessionId, "message-retracted")).toEqual([{ id: messageId }]);
+  });
+
   it("changes nothing when run again", async () => {
     const { sessionId } = await startedSession();
     await idle(sessionId);
     await abandonMessage(t.db, sessionId);
-    await recoverAbandonedWork(t.db);
+    await recoverAbandonedWork(t.db, { quietForMs: 0 });
     const count = (await events(sessionId)).length;
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
     expect(await events(sessionId)).toHaveLength(count);
   });
 
@@ -169,14 +195,16 @@ describe("recovery after a worker dies mid-job", () => {
     await stalled.promise;
     const count = (await events(sessionId)).length;
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
     expect(await events(sessionId)).toHaveLength(count);
     expect((await snapshot(cookie, sessionId)).messages).toHaveLength(2);
 
     // Once the job is gone, what is left half-done is recovered.
     released.resolve(undefined);
     await idle(sessionId);
-    expect(await recoverAbandonedWork(t.db)).toMatchObject([{ sessionId, messages: 1 }]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toMatchObject([
+      { sessionId, messages: 1 },
+    ]);
   });
 
   it("tells a check answer whose job died that it didn't go through, and takes a new answer", async () => {
@@ -186,7 +214,7 @@ describe("recovery after a worker dies mid-job", () => {
       .values({ sessionId, stepId: "s1", role: "learner", text: "memory still holds 5" });
     await deadJob("check", { sessionId, stepId: "s1" });
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([
       { sessionId, messages: 0, activities: 0, checks: ["s1"], asides: 0, lesson: false },
     ]);
 
@@ -228,7 +256,7 @@ describe("recovery after a worker dies mid-job", () => {
       .values({ sessionId, stepId: "s1", role: "learner", text: "memory still holds 5" });
     await queuedJob("check", { sessionId, stepId: "s1" });
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
     expect((await snapshot(cookie, sessionId)).checks.map((m) => m.role)).toEqual(["learner"]);
   });
 
@@ -237,7 +265,7 @@ describe("recovery after a worker dies mid-job", () => {
     await t.db
       .insert(checkMessages)
       .values({ sessionId, stepId: "s1", role: "learner", text: "memory still holds 5" });
-    await recoverAbandonedWork(t.db);
+    await recoverAbandonedWork(t.db, { quietForMs: 0 });
 
     // A check job that only started after recovery: it finds nothing waiting for a verdict.
     await t.queue.enqueue("check", { sessionId, stepId: "s1" });
@@ -259,7 +287,7 @@ describe("recovery after a worker dies mid-job", () => {
       .where(eq(lessons.sessionId, sessionId));
     await deadJob("lesson", { sessionId });
 
-    expect(await recoverAbandonedWork(t.db)).toEqual([
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([
       { sessionId, messages: 0, activities: 0, checks: [], asides: 0, lesson: true },
     ]);
     const s = await snapshot(cookie, sessionId);
@@ -270,7 +298,7 @@ describe("recovery after a worker dies mid-job", () => {
         message: "Writing the lesson was interrupted by a problem on our side.",
       },
     ]);
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
   });
 
   it("marks a lesson whose job died before its outline failed, unless the job is still queued", async () => {
@@ -290,11 +318,13 @@ describe("recovery after a worker dies mid-job", () => {
       .where(eq(learningSessions.id, sessionId));
 
     await queuedJob("lesson", { sessionId });
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
 
     await t.db.execute(sql`
       delete from graphile_worker._private_jobs where payload->>'sessionId' = ${sessionId}`);
-    expect(await recoverAbandonedWork(t.db)).toMatchObject([{ sessionId, lesson: true }]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toMatchObject([
+      { sessionId, lesson: true },
+    ]);
     expect((await snapshot(cookie, sessionId)).state.lesson.status).toBe("failed");
   });
 
@@ -312,7 +342,7 @@ describe("recovery after a worker dies mid-job", () => {
     expect((await snapshot(cookie, sessionId)).state.lesson.status).toBe("failed");
 
     // The next worker start finds nothing to recover, so the learner isn't told a second time.
-    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
     expect(await eventsOf(sessionId, "error")).toEqual([{ message: outOfCredit.message }]);
   });
 });
