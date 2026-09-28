@@ -11,6 +11,7 @@ import type { JobQueue } from "./engine/queue.js";
 import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerTrackRoutes } from "./routes/tracks.js";
 
 export interface AppDependencies {
   db: Db;
@@ -172,6 +173,7 @@ export function createApp(deps: AppDependencies) {
     });
   });
 
+  registerTrackRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerSessionRoutes(app, { db, queue: deps.queue, files: deps.files });
 
   app.delete("/api/credentials", async (c) => {
