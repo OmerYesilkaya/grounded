@@ -50,6 +50,13 @@ export type SessionEvent =
   | { type: "plan-approved" }
   | { type: "lesson-ready"; steps: LessonStepInfo[] }
   | { type: "lesson-failed" }
+  /**
+   * A failed lesson written again from `from`, the first step not written, on the same outline (null
+   * when every step is written). The steps before it stay as they are.
+   */
+  | { type: "lesson-resumed"; from: string | null }
+  /** A failed lesson written again from the start: a new outline, and every step with it. */
+  | { type: "lesson-restarted" }
   | { type: "check-verdict"; stepId: string; verdict: "landed" | "missed" }
   | { type: "pause"; stepId: string }
   | { type: "continue"; stepId: string }
@@ -112,12 +119,7 @@ export function transition(state: SessionState, event: SessionEvent): Transition
     case "lesson-ready": {
       if (state.plan !== "approved" || state.phase !== "lesson")
         return no("The plan hasn't been approved.");
-      const steps = Object.fromEntries(
-        event.steps.map((s): [string, StepState] => [
-          s.id,
-          { status: s.check ? "open" : "unchecked", misses: 0, offerGate: false },
-        ]),
-      );
+      const steps = Object.fromEntries(event.steps.map((s) => [s.id, unread(s)]));
       return ok({
         lesson: { status: "ready", steps: event.steps },
         steps,
@@ -129,6 +131,30 @@ export function transition(state: SessionState, event: SessionEvent): Transition
       return state.phase === "lesson"
         ? ok({ lesson: { ...state.lesson, status: "failed" } })
         : no("No lesson is being written.");
+
+    case "lesson-resumed": {
+      if (state.phase !== "lesson" || state.lesson.status !== "failed")
+        return no("Only a lesson that failed can be written again.");
+      const at =
+        event.from === null
+          ? state.lesson.steps.length
+          : state.lesson.steps.findIndex((s) => s.id === event.from);
+      if (at === -1) return no(`Step ${String(event.from)} isn't in this lesson.`);
+      // The steps written again start over; the ones before them keep where the learner got to.
+      const steps = { ...state.steps };
+      for (const s of state.lesson.steps.slice(at)) steps[s.id] = unread(s);
+      const lesson = { status: "ready" as const, steps: state.lesson.steps };
+      return ok({
+        lesson,
+        steps,
+        currentStep: lesson.steps.find((s) => !resolved(steps[s.id]))?.id ?? null,
+      });
+    }
+
+    case "lesson-restarted":
+      if (state.phase !== "lesson" || state.lesson.status !== "failed")
+        return no("Only a lesson that failed can be written again.");
+      return ok({ lesson: { status: "generating", steps: [] }, steps: {}, currentStep: null });
 
     case "check-verdict": {
       const step = state.steps[event.stepId];
@@ -191,6 +217,11 @@ export function transition(state: SessionState, event: SessionEvent): Transition
         ? ok({ phase: "closed" })
         : no("The recap comes after the homework.");
   }
+}
+
+/** A step as the learner first meets it: its check open, or opening with the step before it. */
+function unread(step: LessonStepInfo): StepState {
+  return { status: step.check ? "open" : "unchecked", misses: 0, offerGate: false };
 }
 
 function advance(state: SessionState, stepId: string, step: StepState): TransitionResult {

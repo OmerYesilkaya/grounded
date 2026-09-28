@@ -194,3 +194,48 @@ describe("checks and the gate", () => {
     );
   });
 });
+
+describe("a failed lesson", () => {
+  const failed = (...events: SessionEvent[]) =>
+    run(inLesson(), ...events, { type: "lesson-failed" });
+
+  it("is written again from its first missing step, keeping where the learner got to before it", () => {
+    const state = failed(
+      { type: "check-verdict", stepId: "s1", verdict: "landed" },
+      { type: "check-verdict", stepId: "s2", verdict: "missed" },
+    );
+    const resumed = run(state, { type: "lesson-resumed", from: "s2" });
+    expect(resumed.lesson).toEqual({ status: "ready", steps: LESSON_STEPS });
+    expect(resumed.steps.s1).toMatchObject({ status: "passed" });
+    expect(resumed.steps.s2).toEqual({ status: "open", misses: 0, offerGate: false });
+    expect(resumed.currentStep).toBe("s2");
+  });
+
+  it("is ready again when every step is written", () => {
+    expect(run(failed(), { type: "lesson-resumed", from: null }).lesson.status).toBe("ready");
+  });
+
+  it("is written again from the start: a new outline, nothing kept", () => {
+    const restarted = run(failed({ type: "check-verdict", stepId: "s1", verdict: "landed" }), {
+      type: "lesson-restarted",
+    });
+    expect(restarted).toMatchObject({
+      phase: "lesson",
+      lesson: { status: "generating", steps: [] },
+      steps: {},
+      currentStep: null,
+    });
+  });
+
+  it("is the only lesson that can be written again", () => {
+    expect(rejected(inLesson(), { type: "lesson-restarted" })).toBe(
+      "Only a lesson that failed can be written again.",
+    );
+    expect(rejected(inLesson(), { type: "lesson-resumed", from: "s1" })).toBe(
+      "Only a lesson that failed can be written again.",
+    );
+    expect(rejected(failed(), { type: "lesson-resumed", from: "s9" })).toBe(
+      "Step s9 isn't in this lesson.",
+    );
+  });
+});

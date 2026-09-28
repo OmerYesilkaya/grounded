@@ -41,6 +41,19 @@ export interface SessionModel {
   error: string | null;
 }
 
+/**
+ * The lesson's steps the learner can read: those written in order from the first, up to the first
+ * one missing. A step that failed leaves a gap, and what comes after it rests on it.
+ */
+export function readableSteps(lesson: SessionModel["lesson"]): LessonStep[] {
+  const steps: LessonStep[] = [];
+  for (const step of lesson?.steps ?? []) {
+    if (step.id !== `s${String(steps.length + 1)}`) break;
+    steps.push(step);
+  }
+  return steps;
+}
+
 /** A running job step (api: engine/events.ts), with the reasoning the model shared, if any. */
 export interface Activity {
   id: string;
@@ -122,6 +135,22 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
         },
       };
     }
+    case "lesson-again": {
+      // A failed lesson is written again: the steps kept stay, the rest go with their threads.
+      const { keep, totalSteps } = data as { keep: string[]; totalSteps: number };
+      const lesson = model.lesson ?? emptyLesson;
+      const kept = (stepId: string) => keep.includes(stepId);
+      return {
+        ...next,
+        lesson: {
+          steps: lesson.steps.filter((s) => kept(s.id)),
+          totalSteps,
+          failedSteps: [],
+          notes: Object.fromEntries(Object.entries(lesson.notes).filter(([id]) => kept(id))),
+        },
+        checks: model.checks.filter((c) => kept(c.stepId)),
+      };
+    }
     case "check-message":
       if (model.checks.some((c) => c.id === data.id)) return next;
       return {
@@ -190,6 +219,7 @@ const EVENT_TYPES = [
   "lesson-outline",
   "lesson-step",
   "lesson-step-failed",
+  "lesson-again",
   "check-message",
   "note",
   "activity",

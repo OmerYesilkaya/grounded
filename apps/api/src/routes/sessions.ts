@@ -17,6 +17,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
+import { writeLessonAgain } from "../engine/lesson-again.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
 import type { FileStore } from "../files/store.js";
@@ -193,6 +194,20 @@ export function registerSessionRoutes(
     await queue.enqueue("lesson", { sessionId: session.id });
     return c.json({ state: applied.state });
   });
+
+  // A failed lesson, written again: the rest of it, or from the start (lesson-again.ts).
+  for (const [path, from] of [
+    ["write-rest", "rest"],
+    ["start-over", "start"],
+  ] as const) {
+    app.post(`/api/sessions/:id/lesson/${path}`, async (c) => {
+      const session = await ownSession(c.get("user").id, c.req.param("id"));
+      if (!session) return c.json({ error: "Not found." }, 404);
+      const again = await writeLessonAgain(db, queue, session.id, from);
+      if (!again.ok) return c.json({ error: again.reason }, 409);
+      return c.json({ state: again.state });
+    });
+  }
 
   const answerInput = z.union([
     z.object({ text: z.string().trim().min(1).max(2000) }),

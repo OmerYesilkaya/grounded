@@ -267,8 +267,7 @@ describe("recovery after a worker dies mid-job", () => {
     expect(s.lesson?.steps).toHaveLength(1);
     expect(await eventsOf(sessionId, "error")).toEqual([
       {
-        message:
-          "Writing the lesson was interrupted by a problem on our side, and it can't be finished.",
+        message: "Writing the lesson was interrupted by a problem on our side.",
       },
     ]);
     expect(await recoverAbandonedWork(t.db)).toEqual([]);

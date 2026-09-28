@@ -53,14 +53,20 @@ export interface GenerateLessonOptions {
   onOutlineRejected?: (attempt: number, problems: number) => void | Promise<void>;
   /** Retries per outline and per broken step (default 2). */
   maxRetries?: number;
+  /**
+   * Writing the rest of a lesson whose writing stopped: its outline, and the markdown of the steps
+   * already written, from the first (the rest are written after them). No outline is asked for.
+   */
+  resume?: { outline: LessonOutline; written: readonly string[] };
 }
 
 export interface LessonResult {
   outline: LessonOutline;
+  /** The steps this call wrote (after the ones it resumed from). */
   steps: LessonStep[];
   /** Every step of the outline, with the check it ends with, if any. */
   stepInfo: LessonStepInfo[];
-  /** Steps still broken after the retries; shown to the learner as failed, with "regenerate". */
+  /** Steps still broken after the retries: the lesson fails there, and is written again from them. */
   failed: { stepId: string; heading: string; issues: Issue[] }[];
   /** Steps kept without their broken drawings or media. */
   degraded: { stepId: string; issues: Issue[] }[];
@@ -79,16 +85,20 @@ type Settled =
 /**
  * The lesson pipeline (design §7.2): an outline checked against the term list, the whole lesson
  * written in one streamed call, each step validated as soon as it is complete. A broken step is
- * regenerated with its issues fed back; steps are released strictly in order.
+ * regenerated with its issues fed back; steps are released strictly in order. With `resume`, the
+ * outline is the one given and the writing starts after the steps already written.
  */
 export async function generateLesson(options: GenerateLessonOptions): Promise<LessonResult> {
   const retries = options.maxRetries ?? 2;
-  const outline = await writeOutline(options, retries);
-  await options.onOutline?.(outline);
+  const { resume } = options;
+  const outline = resume?.outline ?? (await writeOutline(options, retries));
+  if (!resume) await options.onOutline?.(outline);
   const planned: Planned = { outline, steps: placeChecks(outline) };
+  // The first step this call writes: the stream's pieces start there.
+  const first = resume?.written.length ?? 0;
 
   const settled: (Settled | undefined)[] = [];
-  let released = 0;
+  let released = first;
   const release = async () => {
     for (
       let entry = settled[released];
@@ -103,7 +113,9 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   const stream = streamText({
     model: options.model,
     system: options.system,
-    prompt: writePrompt(options.request, planned),
+    prompt: resume
+      ? resumePrompt(options.request, planned, resume.written)
+      : writePrompt(options.request, planned),
   });
   let buffer = "";
   let checked = 0;
@@ -115,17 +127,17 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     if (part.type !== "text-delta") continue;
     buffer += part.text;
     const pieces = splitLessonSteps(buffer);
-    for (; started < pieces.length; started++) await options.onStepStart?.(started, 0, []);
+    for (; started < pieces.length; started++) await options.onStepStart?.(first + started, 0, []);
     for (; checked < pieces.length - 1; checked++) {
-      settled[checked] = check(pieces[checked] ?? "", checked, planned, options);
+      settled[first + checked] = check(pieces[checked] ?? "", first + checked, planned, options);
       await release();
     }
   }
   const pieces = splitLessonSteps(buffer);
   for (; checked < pieces.length; checked++)
-    settled[checked] = check(pieces[checked] ?? "", checked, planned, options);
+    settled[first + checked] = check(pieces[checked] ?? "", first + checked, planned, options);
 
-  for (let index = 0; index < settled.length; index++) {
+  for (let index = first; index < settled.length; index++) {
     let entry = settled[index];
     for (let attempt = 0; entry?.kind === "retry" && attempt < retries; attempt++) {
       await options.onStepStart?.(index, attempt + 1, entry.issues);
@@ -302,6 +314,19 @@ function writePrompt(request: string, planned: Planned): string {
     .map((_, i) => `${String(i + 1)}. ${stepBrief(planned, i)}`)
     .join("\n");
   return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}`;
+}
+
+function resumePrompt(request: string, planned: Planned, written: readonly string[]): string {
+  const steps = planned.outline.steps
+    .map((_, i) => `${String(i + 1)}. ${stepBrief(planned, i)}`)
+    .join("\n");
+  const next = String(written.length + 1);
+  const done = written.length === 1 ? "step is" : `${String(written.length)} steps are`;
+  return [
+    `${request}\n\nThe lesson follows this outline:\n${steps}`,
+    `Its first ${done} written already:\n\n${written.join("\n\n")}`,
+    `Write the rest of the lesson now, from step ${next} to the end, following the outline step by step. Start with step ${next}'s heading.`,
+  ].join("\n\n");
 }
 
 function stepBrief(planned: Planned, index: number): string {

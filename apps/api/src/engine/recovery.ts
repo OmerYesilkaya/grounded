@@ -32,8 +32,7 @@ export interface RecoveredSession {
 }
 
 const INTERRUPTED = "The tutor was interrupted by a problem on our side. Try again.";
-const LESSON_INTERRUPTED =
-  "Writing the lesson was interrupted by a problem on our side, and it can't be finished.";
+const LESSON_INTERRUPTED = "Writing the lesson was interrupted by a problem on our side.";
 
 /**
  * Cleans up after jobs that died without finishing (a killed or crashed worker), in every open

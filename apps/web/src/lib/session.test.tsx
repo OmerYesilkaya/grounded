@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { StrictMode, type ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useSessionModel, type SessionSnapshot } from "./session";
+import { readableSteps, useSessionModel, type SessionSnapshot } from "./session";
 
 /** A stand-in for the browser's EventSource: the test plays the server. */
 class FakeEventSource {
@@ -239,5 +239,48 @@ describe("useSessionModel: what the tutor is doing", () => {
       source.emit("error", 8, { message: "Your OpenAI key was rejected." });
     });
     expect(result.current?.error).toBe("Your OpenAI key was rejected.");
+  });
+});
+
+describe("a failed lesson", () => {
+  const step = (id: string) => ({ id, heading: [], body: [], check: null });
+  const check = (id: string, stepId: string) => ({
+    id,
+    stepId,
+    role: "learner" as const,
+    text: "an answer",
+    blocks: null,
+    verdict: null,
+  });
+
+  it("can be read up to its first missing step", () => {
+    const lesson = { steps: [step("s1"), step("s3")], totalSteps: 3, failedSteps: [], notes: {} };
+    expect(readableSteps(lesson).map((s) => s.id)).toEqual(["s1"]);
+    expect(readableSteps(null)).toEqual([]);
+  });
+
+  it("drops the steps it writes again, with their threads and notes", async () => {
+    serve(
+      snapshot({
+        lesson: {
+          steps: [step("s1"), step("s3")],
+          totalSteps: 3,
+          failedSteps: [{ stepId: "s2", heading: "Two workers" }],
+          notes: { s1: "kept", s3: "dropped" },
+        },
+        checks: [check("c1", "s1"), check("c3", "s3")],
+      }),
+    );
+    const { result } = await renderModel();
+    act(() => {
+      openStream().emit("lesson-again", 8, { keep: ["s1"], totalSteps: 3 });
+    });
+    expect(result.current?.lesson).toEqual({
+      steps: [step("s1")],
+      totalSteps: 3,
+      failedSteps: [],
+      notes: { s1: "kept" },
+    });
+    expect(result.current?.checks.map((c) => c.id)).toEqual(["c1"]);
   });
 });

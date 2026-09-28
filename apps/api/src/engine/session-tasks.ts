@@ -534,6 +534,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     lesson: guarded(async ({ sessionId }) => {
       const { session, terms, messages, system } = await contextFor(sessionId, "lesson");
       await db.insert(lessons).values({ sessionId }).onConflictDoNothing();
+      // A failed lesson written again from where it stopped keeps its outline and the steps written
+      // before it (lesson-again.ts); one written from the start has no outline yet.
+      const row = await lessonRow(sessionId);
+      const resume =
+        row.outline && session.state.lesson.status === "ready"
+          ? { outline: row.outline, written: row.steps.map((s) => row.stepSources[s.id] ?? "") }
+          : undefined;
       const transcript = messages
         .map(
           (m) =>
@@ -546,17 +553,20 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "lesson",
         role: "strong",
       });
-      const outlining = await startActivity(db, sessionId, "Outlining the lesson");
+      const outlining = resume
+        ? undefined
+        : await startActivity(db, sessionId, "Outlining the lesson");
       let writing: Activity | undefined;
-      let totalSteps = 0;
+      let totalSteps = resume?.outline.steps.length ?? 0;
       try {
         const result = await generateLesson({
           model,
           system,
           request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}`,
           terms,
+          ...(resume ? { resume } : {}),
           onOutline: async (outline) => {
-            await outlining.done();
+            await outlining?.done();
             totalSteps = outline.steps.length;
             await db.update(lessons).set({ outline }).where(eq(lessons.sessionId, sessionId));
             // The steps are known from the outline, so the learner can start while later ones are written.
@@ -606,9 +616,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           await db.update(lessons).set({ failedSteps }).where(eq(lessons.sessionId, sessionId));
           for (const failed of failedSteps)
             await publish(db, sessionId, "lesson-step-failed", failed);
+          // The lesson can't go past a step that isn't there: it failed, and can be written again
+          // from that step (lesson-again.ts).
+          await applyEvent(db, sessionId, { type: "lesson-failed" });
         }
       } finally {
-        await outlining.done();
+        await outlining?.done();
         await writing?.done();
       }
     }, markLessonFailed),

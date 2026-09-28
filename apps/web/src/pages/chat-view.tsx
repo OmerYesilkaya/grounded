@@ -11,6 +11,7 @@ import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
 import { useStickToBottom } from "@/lib/stick-to-bottom";
 import { cn } from "@/lib/utils";
+import { LessonAgain } from "./lesson-again";
 
 const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
   plan: "The plan",
@@ -64,6 +65,8 @@ export function ChatView({
   const { phase, plan } = model.state;
   const writing = model.messages.some((m) => m.streaming);
   const hasSteps = (model.lesson?.steps.length ?? 0) > 0;
+  // A failed lesson says so here too, with its way back: the lesson's tab may have nothing to show.
+  const lessonFailed = phase === "lesson" && model.state.lesson.status === "failed";
   const waiting = !writing && model.messages.at(-1)?.role === "learner";
 
   const send = useMutation({
@@ -120,7 +123,8 @@ export function ChatView({
           }
         />
         {/* While the first step is written, the activity line above says so; the card is the way in. */}
-        {phase === "lesson" && hasSteps && (
+        {lessonFailed && <LessonAgain model={model} />}
+        {phase === "lesson" && hasSteps && !lessonFailed && (
           <div className="rounded-xl border bg-card px-5 py-4 text-sm">
             The lesson is on.{" "}
             <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
@@ -142,7 +146,7 @@ export function ChatView({
             </Button>
           </div>
         )}
-        {model.error && <p className="text-sm text-destructive">{model.error}</p>}
+        {model.error && !lessonFailed && <p className="text-sm text-destructive">{model.error}</p>}
       </div>
 
       {phase === "plan" && plan === "proposed" && !writing && (

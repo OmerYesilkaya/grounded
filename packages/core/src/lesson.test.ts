@@ -165,6 +165,30 @@ describe("generateLesson", () => {
     );
   });
 
+  it("writes the rest of a lesson on its outline, after the steps already written", async () => {
+    const model = new MockLanguageModelV4({ doStream: streamOf([S2, S3].join("\n\n")) });
+    const starts: number[] = [];
+    const { result, emitted } = await run(model, {
+      resume: { outline: OUTLINE, written: [S1] },
+      onOutline: () => {
+        throw new Error("the outline is the one given");
+      },
+      onStepStart: (index) => {
+        starts.push(index);
+      },
+    });
+
+    expect(model.doGenerateCalls).toHaveLength(0);
+    expect(emitted.map((s) => s.id)).toEqual(["s2", "s3"]);
+    expect(starts).toEqual([1, 2]);
+    expect(result.steps.map((s) => s.id)).toEqual(["s2", "s3"]);
+    expect(result.stepInfo.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    const writing = promptText(model.doStreamCalls[0]);
+    expect(writing).toContain("Its first step is written already:");
+    expect(writing).toContain("The value is copied out into a working copy.");
+    expect(writing).toContain("from step 2 to the end");
+  });
+
   it("regenerates a broken step with its issues, keeping later steps behind it", async () => {
     const order: string[] = [];
     const model = new MockLanguageModelV4({

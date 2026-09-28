@@ -1,5 +1,5 @@
 import type { LessonStep } from "@grounded/content";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
 import { scrollBehavior } from "@/lib/motion";
@@ -18,6 +18,8 @@ export interface LessonViewProps {
   onDontKnow: (stepId: string) => void;
   onPause: (stepId: string) => void;
   onContinue: (stepId: string) => void;
+  /** What follows the last step shown, in the reading column (a failed lesson's way back). */
+  after?: ReactNode;
 }
 
 const OPEN: StepProgress = { status: "open", thread: [] };
@@ -125,6 +127,7 @@ export function LessonView(props: LessonViewProps) {
             </section>
           );
         })}
+        {props.after}
       </article>
 
       {/* Right margin: aside cards (design §7.5). */}

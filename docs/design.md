@@ -155,8 +155,22 @@ about, test and debug.
   one is never reported twice.
   Nothing is re-run: jobs are attempted once. A check job grades only an answer still waiting, so
   one that starts late never contradicts recovery. Running recovery again changes nothing. Open
-  gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed (#20); a worker
-  that dies while others keep running is recovered at the next worker start, not sooner (#22).
+  gap: a worker that dies while others keep running is recovered at the next worker start, not
+  sooner (#22).
+- **A failed lesson can be written again** (`engine/lesson-again.ts`). A lesson fails when its job
+  dies or fails (above), and also when a step is still broken after its rewrites: the lesson can't
+  go past a step that isn't there, so it isn't left "ready" with a hole in it. The steps written
+  before the first missing one stay readable and their checks answerable (the web shows only those:
+  what comes after the gap rests on it). The learner then picks **Write the rest again**, which keeps
+  the outline and those steps and writes the rest on the same outline, from the first step missing
+  (the writing prompt carries the steps already written), or **Start the lesson over**, which writes
+  a new outline and every step. A lesson that failed with no step written offers only the second,
+  as "Write the lesson again". What the dropped steps had (their text, check threads, notes) goes
+  with them; a `lesson-again` event tells the browser which steps are kept. It is done only while no
+  job works on the session (the recovery lock), and the lesson job it queues starts once it is done;
+  the job writes the rest when the lesson has an outline and is `ready`, and the whole lesson
+  otherwise. A request that fails part-way is simply sent again: every write before the state change
+  can be made twice.
 - **Structured logs, through one logger** (pino, `apps/api/src/log.ts`): JSON lines on stdout in
   production (the message in `message` and the level's name in `level`, the fields Railway reads),
   one readable line per entry otherwise, at `LOG_LEVEL` (`trace`, `debug`, `info` (the default),
@@ -533,7 +547,8 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
 - A block is shown only once complete and validated; a quiet placeholder holds its place meanwhile.
 - Invalid content regenerates **only that step**, with the exact error fed back; after two failed
   retries it degrades (diagram → caption + "diagram unavailable"; media → link card). A structural
-  failure (missing check) cannot degrade: the step fails visibly with "regenerate".
+  failure (missing check) cannot degrade: the step fails, and with it the lesson, which the learner
+  writes again from that step ("Write the rest again", §4.2).
 - Every URL is resolved server-side before display; unverifiable media is dropped.
 - Failures are logged per model and feed the eval (parse-failure rate is a gate metric).
 - **Prefer top-to-bottom diagrams:** left-to-right Mermaid flowcharts shrink badly in a 68ch column

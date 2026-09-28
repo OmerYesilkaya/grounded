@@ -5,9 +5,10 @@ import { ActivityLine } from "@/components/activity-line";
 import { ContentProvider } from "@/content/environment";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
 import { api } from "@/lib/api";
-import { useSessionModel, type SessionModel } from "@/lib/session";
+import { readableSteps, useSessionModel, type SessionModel } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { ChatView } from "./chat-view";
+import { LessonAgain } from "./lesson-again";
 
 /** Each step's progress for LessonView, from the session's state, check threads and notes. */
 function stepProgress(model: SessionModel): Record<string, StepProgress> {
@@ -55,9 +56,11 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
     mutationFn: ({ path, body }: { path: string; body?: object }) =>
       api(path, { method: "POST", ...(body ? { body: JSON.stringify(body) } : {}) }),
   });
-  const hasLesson = (model?.lesson?.steps.length ?? 0) > 0;
+  const steps = readableSteps(model?.lesson ?? null);
+  const hasLesson = steps.length > 0;
 
   if (!model) return null;
+  const lessonFailed = model.state.phase === "lesson" && model.state.lesson.status === "failed";
   return (
     <ContentProvider>
       <div className="sticky top-0 z-10 flex h-13 items-center justify-center border-b bg-background/90 backdrop-blur">
@@ -80,32 +83,42 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           ))}
         </div>
       </div>
-      {tab === "chat" || !model.lesson ? (
+      {tab === "chat" || (!model.lesson && !lessonFailed) ? (
         <ChatView
           model={model}
           onOpenLesson={() => {
             setTab("lesson");
           }}
         />
-      ) : model.lesson.steps.length === 0 ? (
-        // The outline exists but no step is written yet: say so, rather than an empty timeline.
-        <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
-          <h2 className="font-serif text-2xl font-semibold tracking-tight">Writing your lesson</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            {model.lesson.totalSteps > 0
-              ? `${String(model.lesson.totalSteps)} steps are planned. The first one opens as soon as it's written.`
-              : "The first step opens as soon as it's written."}
-          </p>
-          <ActivityLine
-            activities={model.activities}
-            fallback="Getting started…"
-            className="mt-6"
-          />
-        </div>
+      ) : !hasLesson || !model.lesson ? (
+        lessonFailed ? (
+          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
+            <LessonAgain model={model} />
+          </div>
+        ) : (
+          // The outline exists but no step is written yet: say so, rather than an empty timeline.
+          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
+            <h2 className="font-serif text-2xl font-semibold tracking-tight">
+              Writing your lesson
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {model.lesson && model.lesson.totalSteps > 0
+                ? `${String(model.lesson.totalSteps)} steps are planned. The first one opens as soon as it's written.`
+                : "The first step opens as soon as it's written."}
+            </p>
+            <ActivityLine
+              activities={model.activities}
+              fallback="Getting started…"
+              className="mt-6"
+            />
+          </div>
+        )
       ) : (
         <LessonView
-          steps={model.lesson.steps}
-          totalSteps={model.lesson.totalSteps}
+          steps={steps}
+          // A failed lesson's missing steps aren't waiting on a check: the notice after the last
+          // step says why.
+          totalSteps={lessonFailed ? steps.length : model.lesson.totalSteps}
           progress={stepProgress(model)}
           onAnswer={(stepId, text) => {
             post.mutate({
@@ -125,9 +138,10 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           onContinue={(stepId) => {
             post.mutate({ path: `/api/sessions/${sessionId}/steps/${stepId}/continue` });
           }}
+          after={lessonFailed && <LessonAgain model={model} className="mt-10" />}
         />
       )}
-      {tab === "lesson" && (model.lesson?.steps.length ?? 0) > 0 && model.activities.length > 0 && (
+      {tab === "lesson" && hasLesson && model.activities.length > 0 && (
         // Later steps are still being written, or an answer is being checked.
         <div className="fixed bottom-4 left-4 rounded-lg border bg-card/95 px-3 py-2 shadow backdrop-blur md:left-[264px]">
           <ActivityLine activities={model.activities} />
