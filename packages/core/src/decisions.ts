@@ -28,7 +28,7 @@ export const planActionsSchema = z.object({
   actions: z
     .array(planActionSchema)
     .describe(
-      "Every planned term with what it rests on; this session's new planned terms placed in the plan's arcs (add-to-arc: the existing arc each belongs to, by its exact title, or a new arc only if none fits); misconceptions found in the probe as fix-list items; and anything you noted for later sessions (add-plan-notes).",
+      "Every planned term with what it rests on (one already in the term list keeps its status and only gains what it rests on); this session's new planned terms placed in the plan's arcs (add-to-arc: the existing arc each belongs to, by its exact title, or a new arc only if none fits); misconceptions found in the probe as fix-list items; and anything you noted for later sessions (add-plan-notes).",
     ),
 });
 

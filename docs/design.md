@@ -431,6 +431,13 @@ Research notes are not stored on the track yet; the first plan's notes go only i
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
 
+**`add-planned-term`** `{ term, restsOn }` adds a planned term resting on terms already in the list
+(or added earlier in the batch). For a term already in the list it is idempotent (decided
+2026-09-29, #19): the term keeps its status and gains the `restsOn` edges it lacks; nothing else
+changes and no event is recorded. Prompts show only part of the term list (§4.4), so a plan may
+plan a term that exists but wasn't shown; that used to reject the plan and cost a retry. The plan's
+record request says so. Everything it rests on must still be in the whole list.
+
 A rejected edit is never dropped silently (decided 2026-09-29, #16). `validateActions` checks a batch
 against the track as each edit leaves it and returns, per rejected edit, its index, a reason the
 model can act on and a code (`unknown-term`, `no-evidence`, `unknown-rests-on`, `no-open-fix-item`,

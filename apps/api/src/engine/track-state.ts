@@ -90,7 +90,6 @@ export function addToArc(
 export type RejectionCode =
   | "unknown-term"
   | "no-evidence"
-  | "term-exists"
   | "unknown-rests-on"
   | "no-open-fix-item"
   | "no-language"
@@ -144,13 +143,6 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
         break;
       }
       case "add-planned-term": {
-        if (known.has(key(action.term))) {
-          reject(
-            "term-exists",
-            `"${known.get(key(action.term))?.term ?? action.term}" is already in the term list.`,
-          );
-          break;
-        }
         const missing = action.restsOn.find((r) => !known.has(key(r)));
         if (missing) {
           reject(
@@ -159,7 +151,9 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
           );
           break;
         }
-        known.set(key(action.term), { id: null, term: action.term.trim(), status: "planned" });
+        // A term already in the list keeps its status; only what it rests on is added (#19).
+        if (!known.has(key(action.term)))
+          known.set(key(action.term), { id: null, term: action.term.trim(), status: "planned" });
         break;
       }
       case "close-fix-item":
@@ -331,44 +325,48 @@ async function writeBatch(
         .insert(termEvents)
         .values({ termId, fromStatus: from, toStatus: to, evidence, source });
     };
+    /** Adds a term to the list, with its first change recorded. */
+    const addTerm = async (term: string, status: TermStatus, evidence: string) => {
+      const [row] = await tx
+        .insert(terms)
+        .values({ trackId, term: term.trim(), status })
+        .returning();
+      if (!row) throw new Error("term insert returned nothing");
+      idOf.set(key(row.term), row.id);
+      statusOf.set(key(row.term), status);
+      await record(row.id, null, status, evidence);
+      return row.id;
+    };
 
     for (const action of actions) {
       switch (action.type) {
         case "add-planned-term": {
-          const [row] = await tx
-            .insert(terms)
-            .values({ trackId, term: action.term.trim(), status: "planned" })
-            .returning();
-          if (!row) throw new Error("term insert returned nothing");
-          idOf.set(key(row.term), row.id);
-          statusOf.set(key(row.term), "planned");
-          const restsOnIds = action.restsOn
-            .map((r) => idOf.get(key(r)))
-            .filter((id): id is string => Boolean(id));
-          if (restsOnIds.length > 0) {
+          // A term already in the list keeps its status and gains what it rests on (#19).
+          const termId =
+            idOf.get(key(action.term)) ?? (await addTerm(action.term, "planned", "In the plan."));
+          const restsOnIds = new Set(
+            action.restsOn
+              .map((r) => idOf.get(key(r)))
+              .filter((id): id is string => id !== undefined && id !== termId),
+          );
+          if (restsOnIds.size > 0) {
             await tx
               .insert(termDependencies)
-              .values(restsOnIds.map((restsOnTermId) => ({ termId: row.id, restsOnTermId })));
+              .values([...restsOnIds].map((restsOnTermId) => ({ termId, restsOnTermId })))
+              .onConflictDoNothing();
           }
-          await record(row.id, null, "planned", "In the plan.");
           break;
         }
         case "set-term-status": {
-          let termId = idOf.get(key(action.term));
-          const from = statusOf.get(key(action.term)) ?? null;
-          if (termId) {
-            await tx.update(terms).set({ status: action.status }).where(eq(terms.id, termId));
-          } else {
-            const [row] = await tx
-              .insert(terms)
-              .values({ trackId, term: action.term.trim(), status: action.status })
-              .returning();
-            if (!row) throw new Error("term insert returned nothing");
-            termId = row.id;
-            idOf.set(key(row.term), row.id);
+          const termId = idOf.get(key(action.term));
+          const evidence = action.evidence.trim();
+          if (!termId) {
+            await addTerm(action.term, action.status, evidence);
+            break;
           }
+          await tx.update(terms).set({ status: action.status }).where(eq(terms.id, termId));
+          await record(termId, statusOf.get(key(action.term)) ?? null, action.status, evidence);
           statusOf.set(key(action.term), action.status);
-          await record(termId, from, action.status, action.evidence.trim());
           break;
         }
         case "add-fix-item":

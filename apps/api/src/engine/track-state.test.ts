@@ -137,7 +137,6 @@ describe("applyActions", () => {
         { type: "add-fix-item", text: "Thinks adding one is one step" },
         { type: "set-term-status", term: "lock", status: "confirmed", evidence: "takes the lock" },
         { type: "set-term-status", term: "memory", status: "taught", evidence: "  " },
-        { type: "add-planned-term", term: "memory", restsOn: [] },
         { type: "add-planned-term", term: "mutex", restsOn: ["semaphore"] },
         { type: "close-fix-item", text: "Never recorded" },
       ],
@@ -149,7 +148,6 @@ describe("applyActions", () => {
       errors: [
         '"lock" isn\'t in the term list; add it as a planned term first (or as assumed, if the learner already knew it).',
         'Changing "memory" needs the learner\'s words as evidence.',
-        '"memory" is already in the term list.',
         '"mutex" rests on "semaphore", which isn\'t in the term list.',
         'There is no open fix-list item "Never recorded".',
       ],
@@ -157,6 +155,43 @@ describe("applyActions", () => {
     const context = await loadTrackContext(t.db, trackId);
     expect(context.terms).toEqual([{ term: "memory", status: "planned", restsOn: [] }]);
     expect(context.fixList).toEqual([]);
+  });
+
+  it("keeps a planned term already in the list as it is, adding only what it rests on", async () => {
+    const trackId = await newTrack();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "add-planned-term", term: "worker", restsOn: [] },
+        { type: "add-planned-term", term: "race condition", restsOn: ["memory"] },
+        { type: "set-term-status", term: "race condition", status: "taught", evidence: "both 5" },
+      ],
+      { source: "plan" },
+    );
+
+    // A plan that didn't see "race condition" in its prompt plans it again, resting on more.
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "Race condition", restsOn: ["worker", "memory"] },
+        { type: "add-planned-term", term: "lock", restsOn: ["race condition"] },
+      ],
+      { source: "plan" },
+    );
+
+    expect(result).toEqual({ ok: true });
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.terms).toEqual([
+      { term: "memory", status: "planned", restsOn: [] },
+      { term: "worker", status: "planned", restsOn: [] },
+      { term: "race condition", status: "taught", restsOn: ["memory", "worker"] },
+      { term: "lock", status: "planned", restsOn: ["race condition"] },
+    ]);
+    const events = await t.db.select().from(termEvents);
+    expect(events).toHaveLength(5);
   });
 
   it("keeps the fix-list and the plan", async () => {
