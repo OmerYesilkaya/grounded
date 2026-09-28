@@ -32,9 +32,10 @@ railway config apply   # apply after reviewing the plan
 ```
 
 Pushes to `main` deploy both services once CI passes; each API deploy runs the migrations first.
-Secrets live only on Railway (shared variables: `DATABASE_URL`, `KEY_VAULT_MASTER_KEYS`,
-`KEY_VAULT_ACTIVE_KID`, `BETTER_AUTH_SECRET`; on the API: `APP_URL`, `RESEND_API_KEY`, `EMAIL_FROM`) and
-appear in the file as `preserve()`. Keep a copy of `KEY_VAULT_MASTER_KEYS` outside Railway: without it,
+`DATABASE_URL` is a reference to the database, set on each service in the file (Railway leaves a
+reference to another service empty in a shared variable). Secrets live only on Railway (shared variables:
+`KEY_VAULT_MASTER_KEYS`, `KEY_VAULT_ACTIVE_KID`, `BETTER_AUTH_SECRET`; on the API: `APP_URL`,
+`RESEND_API_KEY`, `EMAIL_FROM`) and appear in the file as `preserve()`. Keep a copy of `KEY_VAULT_MASTER_KEYS` outside Railway: without it,
 stored API keys can't be decrypted.
 
 Invite people from a shell in the API service (`railway ssh -s @grounded/api`):
