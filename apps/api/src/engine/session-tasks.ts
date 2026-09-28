@@ -21,6 +21,7 @@ import {
   lessons,
   sessionMessages,
   sql,
+  tracks,
   type Db,
 } from "@grounded/db";
 import {
@@ -37,6 +38,12 @@ import { z } from "zod";
 import { systemMessages } from "./call-options.js";
 import { writeChatMessage } from "./chat.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
+import {
+  LEFT_OFF_CATCH_UP,
+  LEFT_OFF_CATCH_UP_PROMPT,
+  LEFT_OFF_PROMPT,
+  writeLeftOff,
+} from "./left-off.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
@@ -198,6 +205,42 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
   };
 
+  /**
+   * Writes "where you left off" for plan notes too long to carry that have none yet (an imported
+   * track). Returns whether it did; if the call fails, the notes are carried as written until the
+   * close writes one.
+   */
+  const catchUpLeftOff = async (session: { id: string; userId: string; trackId: string }) => {
+    const [track] = await db
+      .select({ leftOff: tracks.leftOff, plan: tracks.plan })
+      .from(tracks)
+      .where(eq(tracks.id, session.trackId));
+    if (track?.leftOff !== null || track.plan.notes.length <= LEFT_OFF_CATCH_UP) return false;
+    try {
+      const whole = await loadTrackContext(db, session.trackId, {
+        sessionId: session.id,
+        phase: "close",
+      });
+      await writeLeftOff({
+        db,
+        sessionId: session.id,
+        trackId: session.trackId,
+        model: await models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          purpose: "left-off",
+          role: "strong",
+        }),
+        system: systemFor("close", whole),
+        messages: [{ role: "user", content: LEFT_OFF_CATCH_UP_PROMPT }],
+        label: "Reading where you left off",
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   /** Runs a job; `onFailure` settles what it leaves behind before the error is reported. */
   const guarded =
     (
@@ -228,6 +271,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     "probe-turn": guarded(async ({ sessionId }) => {
       let context = await contextFor(sessionId, "probe");
       const { session } = context;
+      // Before the opening question, once: long notes with no summary yet get one (an import).
+      if (!context.learnerHasSpoken && (await catchUpLeftOff(session)))
+        context = await contextFor(sessionId, "probe");
       const modelFor = (purpose: "probe" | "probe-decision") =>
         models.model({ userId: session.userId, trackId: session.trackId, purpose, role: "strong" });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
@@ -521,11 +567,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             model,
             system,
             output: Output.object({ schema: z.object({ actions: z.array(trackActionSchema) }) }),
-            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list.${feedback}`,
+            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. A set-plan's notes replace the plan's notes in full: carry forward everything in them that still holds.${feedback}`,
           }),
         );
         const applied = output.actions.length
-          ? await applyActions(db, session.trackId, output.actions, { source: "close" })
+          ? await applyActions(db, session.trackId, output.actions, {
+              source: "close",
+              plan: "whole",
+            })
           : { ok: true as const };
         if (applied.ok) break;
         if (attempt + 1 < SWEEP_ATTEMPTS)
@@ -536,6 +585,28 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             "term sweep rejected every time; closing without it",
           );
         feedback = `\n\nThose edits were rejected:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nFix them.`;
+      }
+
+      // Then "where you left off", from the notes as the sweep left them and the whole session. A
+      // failure leaves none rather than one from before this session: prompts then carry the notes.
+      try {
+        const closed = await contextFor(sessionId, "close");
+        await writeLeftOff({
+          db,
+          sessionId,
+          trackId: session.trackId,
+          model: await models.model({
+            userId: session.userId,
+            trackId: session.trackId,
+            purpose: "left-off",
+            role: "strong",
+          }),
+          system: closed.system,
+          messages: [...closed.messages, { role: "user", content: LEFT_OFF_PROMPT }],
+          label: "Noting where you left off",
+        });
+      } catch {
+        await db.update(tracks).set({ leftOff: null }).where(eq(tracks.id, session.trackId));
       }
       await applyEvent(db, sessionId, { type: "recap-done" });
     }),
@@ -611,7 +682,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             }),
           );
           const applied = output.actions.length
-            ? await applyActions(db, session.trackId, output.actions, { source: "plan" })
+            ? await applyActions(db, session.trackId, output.actions, {
+                source: "plan",
+                plan: "arcs",
+              })
             : {
                 ok: false as const,
                 errors: ["Record the plan's planned terms and arcs."],

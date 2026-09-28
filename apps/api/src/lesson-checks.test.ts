@@ -1,4 +1,4 @@
-import { terms } from "@grounded/db";
+import { eq, terms, tracks as tracksTable } from "@grounded/db";
 import { APICallError } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -76,6 +76,8 @@ async function inLesson() {
   await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 3);
   return session;
 }
+
+const LEFT_OFF = "Owed: the homework on the counter. Re-check: lost update.";
 
 const answer = (cookie: string, sessionId: string, stepId: string, body: object) =>
   t.request(`/api/sessions/${sessionId}/steps/${stepId}/answer`, {
@@ -285,6 +287,7 @@ describe("closing the session", () => {
       ]),
       sweep([confirmLostUpdate]),
     );
+    models.script("left-off", { text: LEFT_OFF });
     for (const id of ["s1", "s2", "s3"]) {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
@@ -299,6 +302,33 @@ describe("closing the session", () => {
     expect(tracks[0]?.openSession).toBeNull();
     const stored = await t.db.select().from(terms);
     expect(stored.find((row) => row.term === "lost update")?.status).toBe("confirmed");
+
+    // Last, "where you left off", from the whole session, the recap and homework included.
+    const [track] = await t.db.select().from(tracksTable);
+    expect(track?.leftOff).toBe(LEFT_OFF);
+    const leftOff = models.used.find((u) => u.purpose === "left-off")?.model.doGenerateCalls[0];
+    expect(JSON.stringify(leftOff?.prompt)).toContain("Predict what a counter shows");
+    expect(JSON.stringify(leftOff?.prompt)).toContain("We built why a counter can lose an update");
+  });
+
+  it("leaves no summary from before the session when this one's can't be written", async () => {
+    const { cookie, sessionId, trackId } = await inLesson();
+    await t.db.update(tracksTable).set({ leftOff: "From an earlier session." });
+    models.script(
+      "check",
+      ...["s1", "s2", "s3"].map(() => verdict({ verdict: "landed", reply: "Yes." })),
+    );
+    models.script("homework", { text: "Explain it to a friend." });
+    models.script("close", { text: "We built it." });
+    models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
+    // No "left-off" model: the call fails.
+    for (const id of ["s1", "s2", "s3"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+    await until(cookie, sessionId, (s) => s.state.phase === "closed");
+    const [track] = await t.db.select().from(tracksTable).where(eq(tracksTable.id, trackId));
+    expect(track?.leftOff).toBeNull();
   });
 });
 

@@ -39,6 +39,7 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
  * - probe-decision, term-sweep: small structured records of what the conversation already showed.
  *   The thinking happened in the conversation; a long think here only delays the learner's next
  *   message (the probe's decision spent up to 2,400 tokens reasoning; #13).
+ * - left-off: "where you left off", a summary of notes and a conversation already written.
  * Everything else keeps the default, above all plans, lessons and check grading, where a weak plan
  * or a wrong verdict costs more than the wait.
  */
@@ -47,6 +48,7 @@ export const REASONING: Readonly<
 > = {
   "probe-decision": "low",
   "term-sweep": "low",
+  "left-off": "low",
 };
 
 /** What a call is for and about, as the middleware sees it (ModelRequest). */

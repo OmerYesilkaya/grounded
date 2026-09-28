@@ -1,6 +1,6 @@
 import { invite } from "./allowlist.js";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { asc, eq, sessionEvents, sessionMessages, terms, users } from "@grounded/db";
+import { asc, eq, sessionEvents, sessionMessages, terms, tracks, users } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { startActivity } from "./engine/events.js";
@@ -104,6 +104,54 @@ describe("starting a session", () => {
       "error",
     ]);
     expect((await snapshot(cookie, sessionId)).messages).toEqual([]);
+  });
+});
+
+describe("where you left off", () => {
+  const LEFT_OFF = "Open thread: why the counter lost updates. Owed: the counter homework.";
+  const withNotes = async (notes: string) => {
+    const { cookie, trackId } = await learner();
+    await t.db
+      .update(tracks)
+      .set({ plan: { arcs: [], notes } })
+      .where(eq(tracks.id, trackId));
+    return { cookie, trackId };
+  };
+  const open = async (cookie: string, trackId: string) => {
+    const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
+    const { id } = (await started.json()) as { id: string };
+    await until(cookie, id, storedMessages(1));
+    return models.used.find((u) => u.purpose === "probe")?.model.doStreamCalls[0]?.prompt;
+  };
+
+  it("is written from long notes that have none yet, before the opening question, which carries it instead", async () => {
+    const notes = `Imported notes. ${"A long session log line. ".repeat(400)}`;
+    const { cookie, trackId } = await withNotes(notes);
+    models.script("left-off", { text: LEFT_OFF });
+    models.script("probe", { text: FIRST_QUESTION });
+    const prompt = JSON.stringify(await open(cookie, trackId));
+
+    const reading = models.used.find((u) => u.purpose === "left-off")?.model.doGenerateCalls[0];
+    expect(JSON.stringify(reading?.prompt)).toContain("Imported notes.");
+    expect(prompt).toContain(`### Where you left off\\n\\n${LEFT_OFF}`);
+    expect(prompt).not.toContain("Imported notes.");
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    expect(track?.leftOff).toBe(LEFT_OFF);
+    expect(track?.plan.notes).toBe(notes);
+  });
+
+  it("isn't written for short notes: they are carried as written until the first close", async () => {
+    const { cookie, trackId } = await withNotes("Reordered: backend first.");
+    models.script("probe", { text: FIRST_QUESTION });
+    expect(JSON.stringify(await open(cookie, trackId))).toContain("Reordered: backend first.");
+    expect(models.used.map((u) => u.purpose)).toEqual(["probe"]);
+  });
+
+  it("falls back to the notes as written when it can't be written", async () => {
+    const { cookie, trackId } = await withNotes(`Imported notes. ${"A line. ".repeat(800)}`);
+    // No "left-off" model: the call fails.
+    models.script("probe", { text: FIRST_QUESTION });
+    expect(JSON.stringify(await open(cookie, trackId))).toContain("Imported notes.");
   });
 });
 

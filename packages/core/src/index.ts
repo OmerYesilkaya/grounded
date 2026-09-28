@@ -15,7 +15,7 @@ export type {
   TermRow,
   TermStatus,
 } from "./prompt.js";
-export { selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.js";
+export { NOTES_PHASES, selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.js";
 export type { TrackView, TrackViewInput } from "./track-view.js";
 export { initialSession, transition } from "./session.js";
 export type {

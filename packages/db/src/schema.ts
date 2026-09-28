@@ -164,6 +164,12 @@ export const tracks = pgTable("tracks", {
   /** The language lessons are taught in; null until the tutor infers it from the learner. */
   language: text("language"),
   plan: jsonb("plan").$type<TrackPlan>().notNull().default({ arcs: [], notes: "" }),
+  /**
+   * "Where you left off": a compact summary of the plan's notes and the last session (open
+   * threads, owed work, what to re-check), written at each close. Prompts carry it in place of the
+   * notes, which only the close reads (design §4.4). Null until the first is written.
+   */
+  leftOff: text("left_off"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -1,4 +1,5 @@
 import {
+  NOTES_PHASES,
   selectTrackView,
   WHOLE_PLAN_PHASES,
   type FixItem,
@@ -111,16 +112,18 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
  * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
  * on, and nothing is written.
  *
- * `plan` says what the call saw of the plan. "whole" (the default): every arc with its terms, so a
- * set-plan may replace the plan. "none": the arcs other than the current one only as tallies
- * (design §4.4), so a set-plan would drop what it didn't see; it is left out, and the rest of the
- * batch applies.
+ * `plan` says what the call saw of the plan (design §4.4). "whole" (the default): every arc with
+ * its terms and the notes as written, so a set-plan replaces the plan. "arcs": every arc, but only
+ * "where you left off" in place of the notes, so a set-plan replaces the arcs and its notes are
+ * added to the notes, for the close to fold in. "none": the arcs other than the current one only as
+ * tallies, so a set-plan would drop what it didn't see; it is left out, and the rest of the batch
+ * applies.
  */
 export async function applyActions(
   db: Db,
   trackId: string,
   batch: readonly TrackAction[],
-  options: { source: string; plan?: "whole" | "none" },
+  options: { source: string; plan?: "whole" | "arcs" | "none" },
 ): Promise<ApplyResult> {
   const actions =
     options.plan === "none" ? batch.filter((action) => action.type !== "set-plan") : batch;
@@ -226,16 +229,32 @@ export async function applyActions(
             .set({ language: action.language.trim() })
             .where(eq(tracks.id, trackId));
           break;
-        case "set-plan":
+        case "set-plan": {
+          let notes = action.notes;
+          if (options.plan === "arcs") {
+            const [track] = await tx
+              .select({ plan: tracks.plan })
+              .from(tracks)
+              .where(eq(tracks.id, trackId));
+            notes = addedNotes(track?.plan.notes ?? "", action.notes);
+          }
           await tx
             .update(tracks)
-            .set({ plan: { arcs: action.arcs, notes: action.notes } })
+            .set({ plan: { arcs: action.arcs, notes } })
             .where(eq(tracks.id, trackId));
           break;
+        }
       }
     }
   });
   return { ok: true };
+}
+
+/** Notes from a call that didn't see the notes as written: added after them, under a heading. */
+function addedNotes(notes: string, added: string): string {
+  if (!added.trim()) return notes;
+  if (!notes.trim()) return added.trim();
+  return `${notes.trimEnd()}\n\n### Noted while planning\n\n${added.trim()}`;
 }
 
 export interface TrackContext
@@ -367,17 +386,24 @@ export async function loadTrackContext(
   };
   if (!options.sessionId) return whole;
 
+  const { phase } = options;
   const view = selectTrackView({
     terms: listed,
     arcs: track.plan.arcs,
     touched: await touchedBefore(db, trackId, began),
-    wholePlan: options.phase !== undefined && WHOLE_PLAN_PHASES.includes(options.phase),
+    wholePlan: phase !== undefined && WHOLE_PLAN_PHASES.includes(phase),
   });
+  // Until the first close writes "where you left off", the notes as written (session-tasks.ts
+  // writes one first when they are long).
+  const notes =
+    (phase !== undefined && NOTES_PHASES.includes(phase)) || track.leftOff === null
+      ? { notes: track.plan.notes }
+      : { leftOff: track.leftOff };
   return {
     ...whole,
     terms: view.terms,
     termsNotListed: view.termsNotListed,
-    plan: { ...track.plan, arcs: view.arcs },
+    plan: { arcs: view.arcs, ...notes },
     changes,
   };
 }

@@ -210,6 +210,51 @@ describe("applyActions: from a call that saw only part of the plan", () => {
   });
 });
 
+describe("applyActions: from the plan's record, which saw where you left off, not the notes", () => {
+  it("replaces the arcs and adds its notes after the notes as written", async () => {
+    const trackId = await newTrack();
+    const arcs = [{ title: "Concurrency", terms: [] }];
+    await applyActions(t.db, trackId, [{ type: "set-plan", arcs, notes: "Imported notes." }], {
+      source: "import",
+    });
+    const next = [{ title: "Backend", terms: [] }];
+    await applyActions(t.db, trackId, [{ type: "set-plan", arcs: next, notes: "Backend first." }], {
+      source: "plan",
+      plan: "arcs",
+    });
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs: next,
+      notes: "Imported notes.\n\n### Noted while planning\n\nBackend first.",
+    });
+  });
+});
+
+describe("loadTrackContext: the plan's notes", () => {
+  it("carries where you left off in place of the notes, except for the close", async () => {
+    const trackId = await newTrack();
+    await t.db
+      .update(tracks)
+      .set({ plan: { arcs: [], notes: "Verbatim." }, leftOff: "Owed: homework 3." })
+      .where(eq(tracks.id, trackId));
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    const [session] = await t.db
+      .insert(learningSessions)
+      .values({ trackId, userId: track?.userId ?? "", state: initialSession() })
+      .returning();
+    const sessionId = session?.id ?? "";
+    for (const phase of ["probe", "plan", "lesson", "check", "homework"] as const) {
+      expect((await loadTrackContext(t.db, trackId, { sessionId, phase })).plan, phase).toEqual({
+        arcs: [],
+        leftOff: "Owed: homework 3.",
+      });
+    }
+    expect((await loadTrackContext(t.db, trackId, { sessionId, phase: "close" })).plan).toEqual({
+      arcs: [],
+      notes: "Verbatim.",
+    });
+  });
+});
+
 describe("applyActions: teaching language", () => {
   it("records the language the tutor inferred", async () => {
     const trackId = await newTrack();

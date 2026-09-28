@@ -7,6 +7,12 @@ import type { Phase, PlanArc, TermRow, TermStatus } from "./prompt.js";
  */
 export const WHOLE_PLAN_PHASES: readonly Phase[] = ["plan", "close", "final"];
 
+/**
+ * The phase that reads the plan's notes as written: the close, whose sweep updates them and which
+ * then writes "where you left off" from them. Every other call carries that summary instead.
+ */
+export const NOTES_PHASES: readonly Phase[] = ["close"];
+
 export interface TrackViewInput {
   /** Every term of the track, in the term list's order. */
   terms: readonly TermRow[];

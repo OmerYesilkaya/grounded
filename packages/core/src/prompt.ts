@@ -72,7 +72,11 @@ export interface PromptContext {
   /** The track's terms the term list leaves out (design §4.4), counted by status. */
   termsNotListed?: Partial<Record<TermStatus, number>>;
   borrowed?: readonly { term: string; fromTrack: string }[];
-  plan?: { arcs: readonly PlanArc[]; notes?: string };
+  /**
+   * notes: the plan's notes as written. leftOff: "where you left off", the close's compact summary
+   * of them, which a call carries in their place (design §4.4).
+   */
+  plan?: { arcs: readonly PlanArc[]; notes?: string; leftOff?: string };
   fixList?: readonly FixItem[];
   teachingNotes?: readonly string[];
   /**
@@ -147,7 +151,9 @@ function renderTrack(context: PromptContext): string {
   }
   if (plan) {
     const arcs = plan.arcs.map((arc, i) => `${String(i + 1)}. ${arcLine(arc)}`);
-    parts.push(["## Plan", "", ...arcs, ...(plan.notes ? ["", plan.notes] : [])].join("\n"));
+    const notes = plan.notes ? ["", plan.notes] : [];
+    const leftOff = plan.leftOff ? ["", "### Where you left off", "", plan.leftOff] : [];
+    parts.push(["## Plan", "", ...arcs, ...notes, ...leftOff].join("\n"));
   }
   const unlisted = counted(termsNotListed ?? {});
   if (terms?.length || unlisted.total > 0) {

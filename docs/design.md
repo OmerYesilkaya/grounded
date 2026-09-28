@@ -270,6 +270,21 @@ about, test and debug.
     `WHOLE_PLAN_PHASES`) see every arc's terms, since a `set-plan` replaces the whole plan. The
     other calls saw part of it, so a `set-plan` from them (the probe's decision, a check's verdict)
     is left out and the rest of the batch applies.
+- **"Where you left off" stands in for the plan's notes** (`tracks.left_off`, decided 2026-09-28,
+  #13; `apps/api/src/engine/left-off.ts`). The plan's notes as written (34 KB on the imported
+  track) stay in the database and go only to the close: the recap and the term sweep read them,
+  and a `set-plan` in the sweep replaces them in full (its request says to carry forward what still
+  holds). After the sweep, one more call (`left-off`, little reasoning) writes the summary from the
+  notes as the sweep left them and the whole session: open threads, owed work, what to re-check,
+  where the next session picks up, in about 300 words. Every other call carries it, under the
+  plan's arcs. The plan's record saw only the summary, so its `set-plan` replaces the arcs and its
+  notes are added after the notes under "Noted while planning", for the next close to fold in.
+  - If the close's summary fails, the track is left with none (not one from before the session),
+    and prompts carry the notes as written until one is written.
+  - Notes with no summary yet (the imported track, or any track before its first close): up to
+    4,000 characters (`LEFT_OFF_CATCH_UP`) they are carried as written; longer ones get a summary
+    written from the notes alone, once, before the session's opening question ("Reading where you
+    left off"). If that fails, the session carries the notes as written.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -282,8 +297,9 @@ about, test and debug.
   effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured
   records of what the conversation already showed think little (`low`): the probe's decision
   (`probe-decision`, its own purpose, apart from the probe's question) and the close's term sweep
-  (`term-sweep`, apart from the recap). Everything else keeps the provider's default, above all
-  plans, lessons and check grading.
+  (`term-sweep`, apart from the recap), and so does "where you left off" (`left-off`), a summary of
+  what is already written. Everything else keeps the provider's default, above all plans, lessons
+  and check grading.
 
 ## 5. Data model (sketch)
 
@@ -292,7 +308,7 @@ about, test and debug.
 | `users`, `allowlist`       | account; who may sign in                                                                              |
 | `credentials`              | provider, encrypted key, credential source                                                            |
 | `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
-| `tracks`                   | subject, teaching language, status, research notes                                                    |
+| `tracks`                   | subject, teaching language, status, research notes, plan and its notes, "where you left off"          |
 | `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
 | `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
 | `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
