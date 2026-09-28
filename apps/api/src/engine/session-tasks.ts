@@ -3,12 +3,14 @@ import {
   assembleSystemPrompt,
   checkVerdictSchema,
   generateLesson,
+  LessonOutlineError,
   planActionsSchema,
   probeDecisionSchema,
   placeChecks,
   sweepActionsSchema,
   trackActionsSchema,
   type Method,
+  type OutlineProblem,
   type Phase,
   type PromptContext,
   type SessionState,
@@ -64,7 +66,7 @@ import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-
 import type { FileStore } from "../files/store.js";
 import { createLessonMedia } from "../media/lesson-media.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
-import { addLogContext, log } from "../log.js";
+import { addLogContext, content, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import {
@@ -117,6 +119,25 @@ const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
     ...rejected.map((r) => `- ${JSON.stringify(r.action)}: ${r.reason}`),
     "Send these edits again, corrected, and only these. Leave out any that shouldn't be made after all.",
   ].join("\n");
+
+/** What the learner is told when no outline fitted the term list: the lesson can be written again. */
+export const OUTLINE_FAILED =
+  "The lesson's outline didn't fit your term list after three tries: it named terms the list doesn't have, or used them before teaching them.";
+
+/**
+ * An outline's problems for the log: how many, of which kinds, at which steps. Their messages quote
+ * term names, so they are logged only with LOG_CONTENT.
+ */
+function outlineProblemFields(problems: readonly OutlineProblem[]) {
+  const codes: Record<string, number> = {};
+  for (const { code } of problems) codes[code] = (codes[code] ?? 0) + 1;
+  return {
+    problems: problems.length,
+    codes,
+    steps: [...new Set(problems.map((p) => p.step))],
+    ...content({ reasons: problems.map((p) => p.message) }),
+  };
+}
 
 /** The tutor's reply when an answer couldn't be checked, so the learner can answer again. */
 export const checkFailedText = (reason = "") =>
@@ -447,10 +468,21 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         await run(job);
       } catch (error) {
         await onFailure?.(job);
-        const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
-        const message = known
-          ? error.message
-          : "Something went wrong on our side. Try again in a moment.";
+        if (error instanceof LessonOutlineError)
+          log.warn(
+            outlineProblemFields(error.problems),
+            "lesson outline didn't fit the term list in any attempt",
+          );
+        const known =
+          error instanceof ProviderCallError ||
+          error instanceof NoCredentialError ||
+          error instanceof LessonOutlineError;
+        const message =
+          error instanceof LessonOutlineError
+            ? OUTLINE_FAILED
+            : known
+              ? error.message
+              : "Something went wrong on our side. Try again in a moment.";
         await publish(db, job.sessionId, "error", { message });
         if (!known) throw error;
         reportHandledFailure(error);
@@ -606,7 +638,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           },
           onOutlineRejected: (attempt, problems) => {
             log.info(
-              { attempt, problems },
+              { attempt, ...outlineProblemFields(problems) },
               "lesson outline didn't fit the term list; asking again",
             );
           },

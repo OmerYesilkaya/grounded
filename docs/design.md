@@ -669,9 +669,27 @@ given to the plan's calls, research included; when the learner skips ahead to th
 ### 7.2 Lesson generation pipeline
 
 1. **Research + outline** (search on): steps, the motivation for each, the terms each introduces and
-   rests on, the drawings needed. Validated against the term list before any writing. The app then
-   places the checks from what each step rests on (`placeChecks`, §7.3), and the writing prompt says
-   which steps end with one and what it covers.
+   rests on, the drawings needed. Validated against the term list before any writing (`fitOutline`),
+   and written in the term list's spelling. The app then places the checks from what each step rests
+   on (`placeChecks`, §7.3), and the writing prompt says which steps end with one and what it covers.
+   - **Terms are found as a model names them**: by the full name, or, when it names no other term,
+     by a part of it (a semicolon-separated part, the words before a colon or a parenthesis), a
+     fragment of it, or the name with more run on after it; two names copied as one (joined by the
+     prompt's " · ") are two. A model shortens a long name, and a track imported from long notes has
+     many (#27: Omer's outline was rejected three times over "requests table row" for "requests
+     table row: one API request with api_key_id, tokens, and created_at").
+   - **What the outline plainly means is settled, not sent back**: a held term named as introduced
+     is what the step rests on; a `taught` term a step rests on before any step teaches it again is
+     taught again there (the method re-teaches a taught term before using it; the outline prompt
+     asks for this too); a name the term list doesn't have stays in `restsOn` as written, since
+     nothing can say whether the learner holds it and checks are placed only on the lesson's own
+     terms. The plan may build on a taught term, so the lesson must be able to.
+   - **What doesn't fit** is a step introducing a term that isn't planned (the feedback names the
+     planned terms it most likely meant), or resting on a planned term no step up to it introduces.
+     Such an outline is asked for again with the problems fed back, twice. The log carries each
+     rejection's problem codes (`outline/not-planned`, `outline/not-held`) and steps; the messages
+     quote terms, so only with `LOG_CONTENT`. After the third, the lesson fails with a message
+     saying so, and the learner writes it again from the start (§4.2).
 2. **Write** in one streamed call, rendered block by block — the learner reads step 1 while later
    steps are still being written (only unlocked steps are visible anyway).
 3. **Validate per step**, a check exactly where one was placed included; regenerate only a failing

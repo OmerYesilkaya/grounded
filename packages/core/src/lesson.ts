@@ -19,12 +19,20 @@ export const lessonOutlineSchema = z.object({
         /** What the step establishes, in a phrase. */
         establishes: z.string(),
         /** New terms this step names (each must be a planned term). */
-        introduces: z.array(z.string()),
+        introduces: z
+          .array(z.string())
+          .describe(
+            "The planned terms this step teaches, named as the term list spells them. Terms the learner already holds go in restsOn.",
+          ),
         /**
          * Terms this step builds on (held by the learner, or introduced by an earlier step). The app
          * places the lesson's checks from these (placeChecks).
          */
-        restsOn: z.array(z.string()),
+        restsOn: z
+          .array(z.string())
+          .describe(
+            "The terms this step builds on, named as the term list spells them: ones the learner holds, or ones an earlier step introduces.",
+          ),
       }),
     )
     .min(1),
@@ -51,6 +59,26 @@ export interface LessonMedia {
 /** Tool rounds the outline may take before it must answer. */
 const OUTLINE_TOOL_STEPS = 8;
 
+/**
+ * Why an outline doesn't fit the term list: a step introduces a term that isn't planned, or rests on
+ * a planned term that no step up to it introduces. `message` quotes the term, for the
+ * model; the code and step are what may be logged (design §4.2).
+ */
+export interface OutlineProblem {
+  code: "outline/not-planned" | "outline/not-held";
+  /** 1-based. */
+  step: number;
+  message: string;
+}
+
+/** Thrown when no outline fitted the term list, after the retries. */
+export class LessonOutlineError extends Error {
+  constructor(readonly problems: readonly OutlineProblem[]) {
+    super("The lesson outline could not be made consistent with the term list.");
+    this.name = "LessonOutlineError";
+  }
+}
+
 export interface GenerateLessonOptions {
   model: LanguageModelV4;
   /** The lesson phase's assembled prompt. */
@@ -68,8 +96,11 @@ export interface GenerateLessonOptions {
    * 0-indexed.
    */
   onStepStart?: (index: number, attempt: number, issues: readonly Issue[]) => void | Promise<void>;
-  /** Called when an outline is asked for again (attempt 1, 2…), with how many problems it had. */
-  onOutlineRejected?: (attempt: number, problems: number) => void | Promise<void>;
+  /** Called when an outline is asked for again (attempt 1, 2…), with the problems it had. */
+  onOutlineRejected?: (
+    attempt: number,
+    problems: readonly OutlineProblem[],
+  ) => void | Promise<void>;
   /** Retries per outline and per broken step (default 2). */
   maxRetries?: number;
   /**
@@ -194,6 +225,9 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   return { outline, steps, stepInfo: planned.steps, failed, degraded };
 }
 
+const OUTLINE_REQUEST =
+  "Write the lesson's outline first: its steps in order. Name every term as the term list spells it: a step introduces only planned terms (or taught ones it teaches again), and rests on terms the learner holds (confirmed, assumed or borrowed) or that it or an earlier step introduces. A taught term the lesson builds on is taught again first.";
+
 async function writeOutline(
   options: GenerateLessonOptions,
   retries: number,
@@ -203,12 +237,13 @@ async function writeOutline(
   const finding = tools
     ? " Where a step would be clearer with a real image or recording (the thing itself, a historical document, how it sounds), look for one with find_image or find_audio now: the lesson is written with what you find."
     : "";
+  let problems: OutlineProblem[] = [];
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { output } = await generateText({
       model: options.model,
       system: options.system,
       output: Output.object({ schema: lessonOutlineSchema }),
-      prompt: `${options.request}\n\nWrite the lesson's outline first: its steps in order.${finding}${feedback}`,
+      prompt: `${options.request}\n\n${OUTLINE_REQUEST}${finding}${feedback}`,
       ...(tools
         ? {
             tools,
@@ -219,35 +254,145 @@ async function writeOutline(
           }
         : {}),
     });
-    const errors = outlineErrors(output, options.terms);
-    if (errors.length === 0) return output;
-    if (attempt < retries) await options.onOutlineRejected?.(attempt + 1, errors.length);
-    feedback = `\n\nYour previous outline had these problems; fix them:\n${errors.map((e) => `- ${e}`).join("\n")}`;
+    const fitted = fitOutline(output, options.terms);
+    if (fitted.problems.length === 0) return fitted.outline;
+    problems = fitted.problems;
+    if (attempt < retries) await options.onOutlineRejected?.(attempt + 1, problems);
+    feedback = `\n\nYour previous outline had these problems; fix them:\n${problems.map((p) => `- ${p.message}`).join("\n")}`;
   }
-  throw new Error("The lesson outline could not be made consistent with the term list.");
+  throw new LessonOutlineError(problems);
 }
 
-function outlineErrors(outline: LessonOutline, terms: readonly TrackTerm[]): string[] {
-  const status = new Map(terms.map((t) => [norm(t.term), t.status]));
-  const have = new Set(terms.filter((t) => USABLE.has(t.status)).map((t) => norm(t.term)));
-  const errors: string[] = [];
-  outline.steps.forEach((step, i) => {
-    const n = String(i + 1);
-    for (const term of step.introduces) {
-      const s = status.get(norm(term));
-      if (s !== "planned" && s !== "taught")
-        errors.push(`Step ${n} introduces "${term}", which isn't a planned term.`);
+/**
+ * The outline checked against the term list (design §7.2), and written in the term list's spelling.
+ * Terms are found as a model tends to name them (termFinder). What the outline can be trusted to
+ * mean is settled here rather than sent back: a held term named as introduced is what the step rests
+ * on; a taught term a step rests on before any step teaches it again is taught again there (the
+ * method re-teaches a taught term before using it); and a name the term list doesn't have is kept in
+ * restsOn as written, since nothing can say whether the learner holds it and checks are placed only
+ * on the lesson's own terms. What doesn't fit is a step introducing a term that isn't planned, or
+ * resting on a planned term no step up to it introduces.
+ */
+export function fitOutline(
+  outline: LessonOutline,
+  terms: readonly TrackTerm[],
+): { outline: LessonOutline; problems: OutlineProblem[] } {
+  const find = termFinder(terms);
+  const teachable = terms.filter((t) => !USABLE.has(t.status));
+  const introduced = new Set<string>();
+  const problems: OutlineProblem[] = [];
+  const steps = outline.steps.map((step, i) => {
+    const n = i + 1;
+    const introduces: string[] = [];
+    const restsOn: string[] = [];
+    for (const name of step.introduces.flatMap(separate)) {
+      const term = find(name);
+      if (!term) {
+        problems.push({
+          code: "outline/not-planned",
+          step: n,
+          message: `Step ${String(n)} introduces "${name}", which isn't a planned term.${closest(name, teachable)}`,
+        });
+      } else if (USABLE.has(term.status)) restsOn.push(term.term);
+      else introduces.push(term.term);
     }
-    for (const term of step.restsOn) {
-      if (!have.has(norm(term)) && !step.introduces.some((t) => norm(t) === norm(term))) {
-        errors.push(
-          `Step ${n} rests on "${term}", which the learner doesn't have yet and no earlier step introduces.`,
-        );
-      }
+    for (const name of step.restsOn.flatMap(separate)) {
+      const term = find(name);
+      restsOn.push(term?.term ?? name);
+      if (!term || USABLE.has(term.status) || introduces.some((t) => norm(t) === norm(term.term)))
+        continue;
+      if (term.status === "taught" && !introduced.has(norm(term.term))) introduces.push(term.term);
+      else if (term.status === "planned" && !introduced.has(norm(term.term)))
+        problems.push({
+          code: "outline/not-held",
+          step: n,
+          message: `Step ${String(n)} rests on "${term.term}", which the learner doesn't have yet (planned): introduce it in this step or an earlier one, or don't rest on it.`,
+        });
     }
-    for (const term of step.introduces) have.add(norm(term));
+    for (const term of introduces) introduced.add(norm(term));
+    return { ...step, introduces: unique(introduces), restsOn: unique(restsOn) };
   });
-  return errors;
+  return { outline: { steps }, problems };
+}
+
+const unique = (names: readonly string[]) => [
+  ...new Map(names.map((name) => [norm(name), name])).values(),
+];
+
+/** The names in one entry: a model copying a line of the prompt may take two, set apart by " · ". */
+const separate = (name: string) =>
+  name
+    .split(" · ")
+    .map((n) => n.trim())
+    .filter(Boolean);
+
+/** A fragment shorter than this is a word or two, too little to find a term by. */
+const MIN_FRAGMENT = 12;
+
+/**
+ * Finds a term as a model names it: by its full name; by a part that names no other term (one of
+ * its semicolon-separated parts, or the words before a colon or a parenthesis: "requests table row"
+ * for "requests table row: one API request with…"); by a fragment of its name that is in no other
+ * term's; or by its name with more run on after it ("GROUP BY, then SUM"), the longest such.
+ * Case and spacing don't matter.
+ */
+function termFinder(terms: readonly TrackTerm[]): (name: string) => TrackTerm | undefined {
+  const key = (name: string) => norm(name).replace(/\s+/g, " ");
+  const keyed = terms.map((term) => ({ term, key: key(term.term) }));
+  const byName = new Map(keyed.map((t) => [t.key, t.term]));
+  const byPart = new Map<string, Set<TrackTerm>>();
+  for (const term of terms) {
+    const parts = [term.term, ...term.term.split(";")];
+    for (const part of parts.flatMap((p) => [p, p.split(":")[0] ?? "", p.split(" (")[0] ?? ""])) {
+      const k = key(part);
+      if (k) byPart.set(k, (byPart.get(k) ?? new Set()).add(term));
+    }
+  }
+  const only = (found: readonly TrackTerm[]) => (found.length === 1 ? found[0] : undefined);
+  return (name) => {
+    const k = key(name);
+    if (!k) return undefined;
+    const exact = byName.get(k);
+    if (exact) return exact;
+    const part = byPart.get(k);
+    if (part) return only([...part]);
+    if (k.length >= MIN_FRAGMENT) {
+      const within = only(keyed.filter((t) => t.key.includes(k)).map((t) => t.term));
+      if (within) return within;
+    }
+    // Its name, then a word boundary, then more.
+    return keyed
+      .filter((t) => k.startsWith(t.key) && /^[^\p{L}\p{N}]/u.test(k.slice(t.key.length)))
+      .sort((a, b) => b.key.length - a.key.length)[0]?.term;
+  };
+}
+
+const STOP_WORDS = new Set(["and", "the", "with", "for", "from", "into", "that", "this", "its"]);
+const words = (name: string) =>
+  new Set(
+    norm(name)
+      .split(/[^\p{L}\p{N}_]+/u)
+      .filter((w) => w.length >= 3 && !STOP_WORDS.has(w)),
+  );
+
+/**
+ * The planned terms a name most likely meant, for the feedback: those sharing the most words with
+ * it (at most three).
+ */
+function closest(name: string, candidates: readonly TrackTerm[]): string {
+  const mine = words(name);
+  const scored = candidates.map((t) => ({
+    term: t.term,
+    shared: [...words(t.term)].filter((w) => mine.has(w)).length,
+  }));
+  const best = Math.max(0, ...scored.map((c) => c.shared));
+  const ranked = scored
+    .filter((c) => best > 0 && c.shared === best)
+    .slice(0, 3)
+    .map((c) => `"${c.term}"`);
+  return ranked.length
+    ? ` Name the planned term it teaches exactly as the term list spells it (perhaps ${ranked.join(" or ")}), or leave it out.`
+    : " Name the planned term it teaches exactly as the term list spells it, or leave it out.";
 }
 
 /** The outline, with the checks the app placed on it. */

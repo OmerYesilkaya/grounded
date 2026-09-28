@@ -1,7 +1,9 @@
 import { asc, checkMessages, eq, sessionEvents } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { ProviderCallError } from "./engine/model-call.js";
+import { OUTLINE_FAILED } from "./engine/session-tasks.js";
+import { captureLogs } from "./log.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -139,6 +141,39 @@ describe("a lesson that failed", () => {
     expect(await rest.json()).toEqual({
       error: "The lesson has no outline yet: start it over instead.",
     });
+
+    models.script("lesson", {
+      text: [S1, S2, S3].join("\n\n"),
+      thenGenerate: [JSON.stringify(OUTLINE)],
+    });
+    expect((await post(cookie, sessionId, "lesson/start-over")).status).toBe(200);
+    await until(cookie, sessionId, (s) => s.lesson?.steps.length === 3);
+  });
+
+  it("says why when no outline fits the term list, logs what was wrong without the terms, and can start over", async () => {
+    const captured = captureLogs("info");
+    onTestFinished(captured.restore);
+    const { cookie, sessionId } = await planned();
+    // Three outlines that rest on "lost update" before any step introduces it.
+    const [first] = OUTLINE.steps;
+    const early = JSON.stringify({ steps: [{ ...first, restsOn: ["lost update"] }] });
+    models.script("lesson", { thenGenerate: [early, early, early] });
+    await post(cookie, sessionId, "approve-plan");
+    await until(cookie, sessionId, (s) => s.state.lesson.status === "failed");
+    await t.waitFor(async () => (await eventsOf(sessionId, "error")).length > 0);
+
+    expect(await eventsOf(sessionId, "error")).toEqual([{ message: OUTLINE_FAILED }]);
+    const lines = captured.lines.filter((l) => String(l.message).startsWith("lesson outline"));
+    expect(lines.map((l) => [l.message, l.codes, l.steps])).toEqual([
+      ["lesson outline didn't fit the term list; asking again", { "outline/not-held": 1 }, [1]],
+      ["lesson outline didn't fit the term list; asking again", { "outline/not-held": 1 }, [1]],
+      ["lesson outline didn't fit the term list in any attempt", { "outline/not-held": 1 }, [1]],
+    ]);
+    expect(captured.text()).not.toContain("lost update");
+    // The learner was told, so the job counts as done: nothing for the next worker to recover.
+    expect(captured.lines.filter((l) => l.message === "job failed")).toMatchObject([
+      { handled: true, level: "warn" },
+    ]);
 
     models.script("lesson", {
       text: [S1, S2, S3].join("\n\n"),

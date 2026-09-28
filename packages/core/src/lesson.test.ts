@@ -6,11 +6,13 @@ import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
   generateLesson,
+  LessonOutlineError,
   placeChecks,
   type GenerateLessonOptions,
   type LessonMedia,
   type LessonOutline,
 } from "./index.js";
+import { fitOutline } from "./lesson.js";
 
 const usage = {
   inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
@@ -153,20 +155,47 @@ describe("generateLesson", () => {
       doGenerate: [text(JSON.stringify(bad)), text(JSON.stringify(OUTLINE))],
       doStream: streamOf([S1, S2, S3].join("\n\n")),
     });
-    const rejected: [number, number][] = [];
+    const rejected: [number, string[]][] = [];
     const { emitted } = await run(model, {
       onOutlineRejected: (attempt, problems) => {
-        rejected.push([attempt, problems]);
+        rejected.push([attempt, problems.map((p) => p.code)]);
       },
     });
 
     expect(emitted).toHaveLength(3);
-    expect(rejected).toEqual([[1, 1]]);
+    expect(rejected).toEqual([[1, ["outline/not-planned"]]]);
     expect(promptText(model.doGenerateCalls[1])).toContain(
-      'Step 1 introduces "mutex", which isn\'t a planned term.',
+      'Step 1 introduces "mutex", which isn\'t a planned term. Name the planned term it teaches exactly as the term list spells it, or leave it out.',
     );
   });
 
+  it("gives up after three outlines that don't fit, with what was wrong with the last", async () => {
+    const [first] = OUTLINE.steps;
+    if (!first) throw new Error("fixture outline is empty");
+    // Rests on a planned term nothing before it introduces, every time.
+    const bad = JSON.stringify({ steps: [{ ...first, restsOn: ["race condition"] }] });
+    const model = new MockLanguageModelV4({ doGenerate: [text(bad), text(bad), text(bad)] });
+    const rejected: number[] = [];
+    const failure = run(model, {
+      onOutlineRejected: (attempt) => {
+        rejected.push(attempt);
+      },
+    });
+
+    await expect(failure).rejects.toBeInstanceOf(LessonOutlineError);
+    await expect(failure).rejects.toMatchObject({
+      problems: [
+        {
+          code: "outline/not-held",
+          step: 1,
+          message:
+            "Step 1 rests on \"race condition\", which the learner doesn't have yet (planned): introduce it in this step or an earlier one, or don't rest on it.",
+        },
+      ],
+    });
+    expect(rejected).toEqual([1, 2]);
+    expect(model.doGenerateCalls).toHaveLength(3);
+  });
   it("writes the rest of a lesson on its outline, after the steps already written", async () => {
     const model = new MockLanguageModelV4({ doStream: streamOf([S2, S3].join("\n\n")) });
     const starts: number[] = [];
@@ -446,5 +475,103 @@ describe("placeChecks", () => {
       null,
       { steps: ["s3"], terms: [], gates: false },
     ]);
+  });
+});
+
+describe("fitOutline", () => {
+  const outline = (...steps: [string[], string[]][]): LessonOutline => ({
+    steps: steps.map(([introduces, restsOn], i) => ({
+      heading: `Step ${String(i + 1)}`,
+      establishes: "",
+      introduces,
+      restsOn,
+    })),
+  });
+
+  // Names as a track imported from long notes has them (Omer's "How software works").
+  const LONG: TrackTerm[] = [
+    {
+      term: "index; B-tree (pages of ranges → leaf pages of keys → row location); measured 4 levels at 10M",
+      status: "confirmed",
+    },
+    {
+      term: "requests table row: one API request with api_key_id, tokens, and created_at",
+      status: "planned",
+    },
+    { term: "GROUP BY", status: "planned" },
+    { term: "ORDER BY aggregate and LIMIT", status: "planned" },
+  ];
+
+  it("reads a long term by a part of its name, and writes it as the term list spells it", () => {
+    const fitted = fitOutline(
+      outline(
+        [["requests table row"], []],
+        [["group by"], ["requests table row", "index", "B-tree"]],
+      ),
+      LONG,
+    );
+    expect(fitted.problems).toEqual([]);
+    expect(fitted.outline.steps.map((s) => [s.introduces, s.restsOn])).toEqual([
+      [[LONG[1]?.term], []],
+      [["GROUP BY"], [LONG[1]?.term, LONG[0]?.term]],
+    ]);
+  });
+
+  it("reads a part of a name only when it names one term", () => {
+    const terms: TrackTerm[] = [
+      { term: "latency: RAM", status: "planned" },
+      { term: "latency: disk", status: "planned" },
+    ];
+    const fitted = fitOutline(outline([["latency"], []]), terms);
+    expect(fitted.problems.map((p) => p.code)).toEqual(["outline/not-planned"]);
+    // What it most likely meant is named, so the next outline can spell it.
+    expect(fitted.problems[0]?.message).toContain('(perhaps "latency: RAM" or "latency: disk")');
+  });
+
+  it("moves a held term named as introduced to what the step rests on", () => {
+    const fitted = fitOutline(outline([["index", "GROUP BY"], []]), LONG);
+    expect(fitted.problems).toEqual([]);
+    expect(fitted.outline.steps[0]).toMatchObject({
+      introduces: ["GROUP BY"],
+      restsOn: [LONG[0]?.term],
+    });
+  });
+
+  it("keeps a rest-on the term list doesn't have: nothing says whether the learner holds it", () => {
+    const fitted = fitOutline(outline([[], ["One row records one API request"]]), LONG);
+    expect(fitted.problems).toEqual([]);
+    expect(fitted.outline.steps[0]?.restsOn).toEqual(["One row records one API request"]);
+  });
+
+  it("finds a term by a fragment of its name, by its name run on, and in two names copied as one", () => {
+    const fitted = fitOutline(
+      outline(
+        [["requests table row: one API request"], ["B-tree (pages of ranges → leaf pages"]],
+        [["GROUP BY, then SUM"], []],
+        [["ORDER BY aggregate and LIMIT · GROUP BY"], []],
+      ),
+      LONG,
+    );
+    expect(fitted.problems).toEqual([]);
+    expect(fitted.outline.steps.map((s) => [s.introduces, s.restsOn])).toEqual([
+      [[LONG[1]?.term], [LONG[0]?.term]],
+      [["GROUP BY"], []],
+      [["ORDER BY aggregate and LIMIT", "GROUP BY"], []],
+    ]);
+  });
+
+  it("teaches a taught term again where a step first rests on it", () => {
+    const shaky: TrackTerm[] = [...LONG, { term: "SUM", status: "taught" }];
+    const fitted = fitOutline(outline([[], ["SUM"]], [[], ["SUM"]]), shaky);
+    expect(fitted.problems).toEqual([]);
+    expect(fitted.outline.steps.map((s) => [s.introduces, s.restsOn])).toEqual([
+      [["SUM"], ["SUM"]],
+      [[], ["SUM"]],
+    ]);
+  });
+
+  it("rejects resting on a planned term before the step that introduces it", () => {
+    const fitted = fitOutline(outline([[], ["GROUP BY"]], [["GROUP BY"], ["GROUP BY"]]), LONG);
+    expect(fitted.problems.map((p) => [p.code, p.step])).toEqual([["outline/not-held", 1]]);
   });
 });
