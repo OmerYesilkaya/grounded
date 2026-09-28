@@ -296,6 +296,17 @@ about, test and debug.
   rolls the conversation's start stays the same from call to call. If the call fails, the
   conversation is carried in full and the next call tries again. Check threads and asides are not
   part of it: each is short and carried whole where it belongs.
+- **A budget per phase** (`PROMPT_BUDGETS` in `apps/api/src/engine/prompt-budget.ts`): the most
+  one call may send, system prompt and conversation, in estimated tokens (characters / 4), on a
+  track built like the imported one (204 terms with names as long as the real ones, 12 arcs, 14
+  fix-list items, 34 KB of notes, three earlier sessions) with a normal session's chat.
+  `prompt-budget.test.ts` runs every phase's job on it with scripted models and fails when a call
+  goes over. Measured when set (#13), per call, before → after: probe and its decision ~30,000 →
+  ~10,000; plan ~30,000 → ~14,000 (every arc's terms); lesson and homework ~30,500 → ~10,500;
+  check ~28,300 → ~8,300; close (recap, sweep, where you left off) ~29,000 → ~21,000 (the whole plan and
+  the notes as written). Budgets sit about a fifth above: probe 12,000, plan 17,000, lesson and
+  homework 12,500, check 10,000, close 25,000. The method's sections are now the largest part
+  (18–24 KB per phase), and they are the part every call reuses from the cache.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
