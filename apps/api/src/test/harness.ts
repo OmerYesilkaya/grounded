@@ -57,7 +57,7 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
   beforeAll(async () => {
     const tasks = {
       ...(options.models
-        ? createTasks({ db, queue, method: loadMethod(), models: options.models })
+        ? createTasks({ db, queue, files, method: loadMethod(), models: options.models })
         : {}),
       ...options.tasks,
     };

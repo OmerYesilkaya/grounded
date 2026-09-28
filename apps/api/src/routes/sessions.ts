@@ -113,6 +113,7 @@ export function registerSessionRoutes(
     );
     addLogContext({ trackId: track.id });
     if (naming) await queue.enqueue("name-track", { trackId: track.id });
+    if (read.attachments.length) await queue.enqueue("track-brief", { trackId: track.id });
     return c.json(
       { id: track.id, title: track.title, naming: track.titlePending, language: track.language },
       201,

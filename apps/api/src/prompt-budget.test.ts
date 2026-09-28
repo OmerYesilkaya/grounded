@@ -28,6 +28,7 @@ const tasks = createSessionTasks({
   models: models.access,
   method: loadMethod(),
   queue: { enqueue: () => Promise.resolve(), close: () => Promise.resolve() },
+  files: t.files,
 });
 const run = async (job: string, payload: object) => {
   // A job may fail after its calls (a state it doesn't expect); only its prompts are measured here.

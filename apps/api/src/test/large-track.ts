@@ -4,6 +4,7 @@ import {
   learningSessions,
   lessons,
   sessionMessages,
+  trackFiles,
   tracks,
   users,
   type Db,
@@ -133,6 +134,13 @@ export const STEP_SOURCE = `## Step 3: why the read waits\n\n${"The row is being
  * Creates the learner, the imported track and its sessions: three closed ones that touched TOUCHED
  * and an open one (its lesson written, one step), with `conversation` as its chat.
  */
+/** "What you brought" for a CV, at the length the summary is asked to keep to. */
+const BRIEF = Array.from(
+  { length: 30 },
+  (_, i) =>
+    `Line ${String(i + 1)}: built and ran a Node.js service on Postgres for a logistics company, with Redis caching.`,
+).join("\n");
+
 export async function createLargeTrack(
   db: Db,
   options: {
@@ -189,6 +197,18 @@ export async function createLargeTrack(
 
   if (options.leftOff !== undefined)
     await db.update(tracks).set({ leftOff: options.leftOff }).where(eq(tracks.id, track.id));
+  // Files attached at the start, and their summary, which every call of a later session carries
+  // (design §4.5): about the 300 words the summary is asked to keep to.
+  await db.insert(trackFiles).values({
+    trackId: track.id,
+    name: "cv.pdf",
+    kind: "pdf",
+    mediaType: "application/pdf",
+    sizeBytes: 180_000,
+    pages: 2,
+    storageKey: `tracks/${track.id}/cv`,
+  });
+  await db.update(tracks).set({ brief: BRIEF }).where(eq(tracks.id, track.id));
   const [session] = await db
     .insert(learningSessions)
     .values({ trackId: track.id, userId: user.id, state })

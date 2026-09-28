@@ -3,13 +3,16 @@ import { eq, tracks, type Db } from "@grounded/db";
 import { generateText, Output } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
+import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
+import { briefTrack } from "./brought.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { reportHandledFailure } from "./queue.js";
 
 export interface TrackTaskDependencies {
   db: Db;
   models: ModelAccess;
+  files: FileStore;
 }
 
 interface TrackJob {
@@ -20,7 +23,7 @@ const NAME_SYSTEM = `You name a learner's track in a tutoring app: the few words
 
 /** The track's jobs, which belong to no session: a failure leaves the track as it was, and is logged. */
 export function createTrackTasks(deps: TrackTaskDependencies): TaskList {
-  const { db, models } = deps;
+  const { db, models, files } = deps;
 
   const loadTrack = async (trackId: string) => {
     const [track] = await db.select().from(tracks).where(eq(tracks.id, trackId));
@@ -66,6 +69,14 @@ export function createTrackTasks(deps: TrackTaskDependencies): TaskList {
       } finally {
         await db.update(tracks).set({ titlePending: false }).where(eq(tracks.id, trackId));
       }
+    }),
+
+    // Files came with the track: "what you brought" is written now, while the first session reads
+    // the files themselves, so later calls have it (design §4.5). A later session's opening writes
+    // it if this fails.
+    "track-brief": guarded(async ({ trackId }) => {
+      await loadTrack(trackId);
+      await briefTrack({ db, store: files, models, trackId });
     }),
   };
 }

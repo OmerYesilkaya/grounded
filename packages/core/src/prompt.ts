@@ -68,6 +68,11 @@ export interface PlanArc {
 export interface PromptContext {
   /** language is null until the tutor has inferred it from the learner's messages. */
   track?: { title: string; language: string | null };
+  /**
+   * The files the learner attached to the track, and "what you brought", their summary (null
+   * until written). Left out where a call reads the files themselves (design §4.5).
+   */
+  brought?: { files: readonly string[]; summary: string | null };
   terms?: readonly TermRow[];
   /** The track's terms the term list leaves out (design §4.4), counted by status. */
   termsNotListed?: Partial<Record<TermStatus, number>>;
@@ -154,12 +159,18 @@ export function assemblePrompt(method: Method, phase: Phase, context: PromptCont
  */
 function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
-  const { track, terms, termsNotListed, borrowed, plan, fixList, teachingNotes } = context;
+  const { track, brought, terms, termsNotListed, borrowed, plan, fixList, teachingNotes } = context;
   if (track) {
     const language =
       track.language ??
       "not known yet. Teach in the language the learner writes in, and record it with set-language.";
     parts.push(`## Track\n\nSubject: ${track.title}\nTeaching language: ${language}`);
+  }
+  if (brought) {
+    const files = `Files they attached when they started the track: ${brought.files.join(", ")}.`;
+    const summary =
+      brought.summary ?? "(Not summarized: what is in them isn't known in this call.)";
+    parts.push(["## What the learner brought", "", files, "", summary].join("\n"));
   }
   if (plan) {
     const arcs = plan.arcs.map((arc, i) => `${String(i + 1)}. ${arcLine(arc)}`);

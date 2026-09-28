@@ -155,6 +155,33 @@ describe("assemblePrompt", () => {
     );
   });
 
+  it("gives what the learner brought in the track's part, after the subject", () => {
+    const prompt = assembleSystemPrompt(method, "lesson", {
+      track: { title: "Backend interviews", language: "English" },
+      brought: { files: ["cv.pdf", "notes.docx"], summary: "A CV: four years of Node.js APIs." },
+      plan: { arcs: [] },
+    });
+    expect(prompt.track).toContain(
+      [
+        "Teaching language: English",
+        "",
+        "## What the learner brought",
+        "",
+        "Files they attached when they started the track: cv.pdf, notes.docx.",
+        "",
+        "A CV: four years of Node.js APIs.",
+        "",
+        "## Plan",
+      ].join("\n"),
+    );
+    const unread = assemblePrompt(method, "lesson", {
+      brought: { files: ["cv.pdf"], summary: null },
+    });
+    expect(unread).toContain(
+      "cv.pdf.\n\n(Not summarized: what is in them isn't known in this call.)",
+    );
+  });
+
   it("gives the session's changes in the call's part, so the track's part stays the same", () => {
     const changes = {
       terms: [{ term: "memory", status: "taught" as const, restsOn: [] }],

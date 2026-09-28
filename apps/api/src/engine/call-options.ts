@@ -57,8 +57,8 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
  * - probe-decision, term-sweep: small structured records of what the conversation already showed.
  *   The thinking happened in the conversation; a long think here only delays the learner's next
  *   message (the probe's decision spent up to 2,400 tokens reasoning; #13).
- * - left-off, conversation-summary: summaries of what is already written ("where you left off",
- *   a long session's older turns).
+ * - left-off, conversation-summary, track-brief: summaries of what is already written ("where you
+ *   left off", a long session's older turns, the files the learner attached).
  * Everything else keeps the default, above all plans, lessons and check grading, where a weak plan
  * or a wrong verdict costs more than the wait.
  */
@@ -69,6 +69,7 @@ export const REASONING: Readonly<
   "term-sweep": "low",
   "left-off": "low",
   "conversation-summary": "low",
+  "track-brief": "low",
 };
 
 /** What a call is for and about, as the middleware sees it (ModelRequest). */

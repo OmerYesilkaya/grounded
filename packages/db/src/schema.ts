@@ -169,6 +169,12 @@ export const tracks = pgTable("tracks", {
   goal: text("goal").notNull(),
   /** The tutor is still naming the track; `title` is the stand-in until it is done. */
   titlePending: boolean("title_pending").notNull().default(false),
+  /**
+   * "What you brought": the attached files (track_files) summarized for the tutor, written once.
+   * Prompts carry it in place of the files after the first session's probe and plan (design §4.5).
+   * Null while the track has no files, or until it is written.
+   */
+  brief: text("brief"),
   /** The language lessons are taught in; null until the tutor infers it from the learner. */
   language: text("language"),
   plan: jsonb("plan").$type<TrackPlan>().notNull().default({ arcs: [], notes: "" }),

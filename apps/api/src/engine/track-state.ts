@@ -19,6 +19,7 @@ import {
   termDependencies,
   termEvents,
   terms,
+  trackFiles,
   tracks,
   type Db,
   type TermStatus,
@@ -334,7 +335,7 @@ function addedNotes(notes: string, added: string): string {
 export interface TrackContext
   extends
     Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
-    Pick<PromptContext, "termsNotListed"> {
+    Pick<PromptContext, "termsNotListed" | "brought"> {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
   /** What the learner wrote they want to learn, as typed (the session's opening turn). */
@@ -453,8 +454,15 @@ export async function loadTrackContext(
   }
 
   const current = rows.map((r) => ({ term: r.term, status: r.status }));
+  const files = await db
+    .select({ name: trackFiles.name })
+    .from(trackFiles)
+    .where(eq(trackFiles.trackId, trackId))
+    .orderBy(trackFiles.createdAt, trackFiles.id);
   const whole = {
     track: { title: track.title, language: track.language },
+    // What the learner brought, summarized (design §4.5); a call that reads the files leaves it out.
+    ...(files.length ? { brought: { files: files.map((f) => f.name), summary: track.brief } } : {}),
     goal: track.goal,
     terms: listed,
     plan: track.plan,

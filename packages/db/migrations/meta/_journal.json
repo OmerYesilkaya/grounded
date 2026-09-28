@@ -92,6 +92,13 @@
       "when": 1790599086177,
       "tag": "0012_slim_star_brand",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1790599696467,
+      "tag": "0013_easy_ricochet",
+      "breakpoints": true
     }
   ]
 }

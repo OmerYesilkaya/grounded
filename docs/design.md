@@ -362,6 +362,17 @@ about, test and debug.
   JSON `{ goal }` without files), bounded by a body limit. The bytes are stored first, then the track
   and its `track_files` rows in one transaction; if anything fails, the bytes already stored are
   deleted again. Files can only be added when the track is created, for now.
+- **How the tutor reads them** (`apps/api/src/engine/brought.ts`). The first session's probe and
+  plan (research included) read the files themselves: the opening turn carries them after the
+  learner's words, images and PDFs as file parts, Word and text files as their text. Every other call
+  carries "what you brought" in the track's part of the prompt (after the subject): the files' names
+  and a summary of about 300 words (`tracks.brief`) of what each file is and what it shows the learner
+  knows, has done and wants to reach, with the specifics to build on. The summary is written once,
+  by a job queued when the track is created (`track-brief`, the strong model with little reasoning),
+  while the first session is reading the files anyway. If it fails, a later session's opening writes
+  it first ("Reading what you brought"); if that fails too, calls carry the names and say the
+  contents aren't known. The first session's lesson and later calls carry it without its files, so
+  the phase budgets (§4.4) hold: the budget fixture carries a summary of about 3,300 characters.
 - **A learner can download their own files** (`GET /api/tracks/:id/files/:fileId`), always as an
   attachment with `nosniff`, never shown inline. Deleting a track (v2) must delete its files from the
   store too; the rows go with the track by cascade, the bytes don't.
@@ -373,7 +384,7 @@ about, test and debug.
 | `users`, `allowlist`       | account; who may sign in                                                                              |
 | `credentials`              | provider, encrypted key, credential source                                                            |
 | `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
-| `tracks`                   | name, the learner's words (goal), teaching language, status, research notes, plan and notes, left off |
+| `tracks`                   | name, learner's words, "what you brought", language, status, research notes, plan, notes, left off    |
 | `track_files`              | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key          |
 | `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
 | `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
@@ -480,7 +491,7 @@ notes go into the plan's prompt.
 
 **The probe decides first, then writes.** The session opens with the first probe question, written
 from what the learner said they want to learn (their words as typed when they created the track,
-`tracks.goal`, given in the opening turn). Every
+`tracks.goal`, given in the opening turn with any files they attached, §4.5). Every
 later probe turn starts with the structured call: what the answers showed (term evidence, fix-list
 items, the teaching language) and whether probing is finished. If not, the next question is written
 with those records in its prompt. If it is, no probe message is written: the session moves to planning,

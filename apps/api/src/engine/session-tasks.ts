@@ -43,6 +43,13 @@ import {
   summarizeEarlier,
   type EarlierSummary,
 } from "./conversation.js";
+import {
+  briefTrack,
+  broughtFiles,
+  filesLine,
+  isFirstSession,
+  ORIGINALS_PHASES,
+} from "./brought.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import {
   LEFT_OFF_CATCH_UP,
@@ -51,16 +58,19 @@ import {
   writeLeftOff,
 } from "./left-off.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
+import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
-import { applyActions, loadTrackContext } from "./track-state.js";
+import { applyActions, loadTrackContext, type TrackContext } from "./track-state.js";
 
 export interface SessionTaskDependencies {
   db: Db;
   models: ModelAccess;
   method: Method;
   queue: JobQueue;
+  /** Learners' files (design §4.5). */
+  files: FileStore;
 }
 
 interface SessionJob {
@@ -109,14 +119,23 @@ export async function recordCheckMessage(
 
 /** The session's jobs. A failure the learner can act on is published as an error event. */
 export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
-  const { db, models, method, queue } = deps;
+  const { db, models, method, queue, files } = deps;
   /** A phase's system prompt, in the parts that let the provider cache its stable start. */
   const systemFor = (phase: Phase, context: PromptContext) =>
     systemMessages(assembleSystemPrompt(method, phase, context));
 
   const contextFor = async (sessionId: string, phase: Phase) => {
     const session = await loadSession(db, sessionId);
-    const track = await loadTrackContext(db, session.trackId, { sessionId, phase });
+    const loaded = await loadTrackContext(db, session.trackId, { sessionId, phase });
+    // The first session's probe and plan read the files themselves, in the opening turn; every
+    // other call carries what the learner brought, summarized (design §4.5).
+    const originals =
+      loaded.brought &&
+      ORIGINALS_PHASES.includes(phase) &&
+      (await isFirstSession(db, sessionId, session.trackId))
+        ? await broughtFiles(db, files, session.trackId)
+        : null;
+    const track = originals ? withoutBrought(loaded) : loaded;
     const terms: TrackTerm[] = track.current;
     const history = await db
       .select()
@@ -148,12 +167,20 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
     const messages = conversationFor(history, summary);
     // A conversation starts with the learner; the app opens it on their behalf, with what they said
-    // they want to learn (their words as typed), so the first question builds on it.
-    if (messages[0]?.role !== "user")
+    // they want to learn (their words as typed) and any files they read here, so the first question
+    // builds on them.
+    if (messages[0]?.role !== "user") {
+      const opening = `(The learner started a session. They said they want to learn: ${track.goal})`;
       messages.unshift({
         role: "user",
-        content: `(The learner started a session. They said they want to learn: ${track.goal})`,
+        content: originals
+          ? [
+              { type: "text", text: `${opening}\n\n${filesLine(originals.names)}` },
+              ...originals.parts,
+            ]
+          : opening,
       });
+    }
     const learnerHasSpoken = history.some((m) => m.role === "learner");
     return { session, track, terms, messages, learnerHasSpoken, system };
   };
@@ -259,6 +286,28 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
   };
 
+  /**
+   * Writes "what you brought" before a later session's opening question, for a track with files and
+   * none yet (the job at the track's creation failed). The first session reads the files themselves.
+   * Returns whether it did; if the call fails, the session carries the files' names only.
+   */
+  const catchUpBrief = async (session: { id: string; trackId: string }) => {
+    const [track] = await db
+      .select({ brief: tracks.brief })
+      .from(tracks)
+      .where(eq(tracks.id, session.trackId));
+    if (track?.brief !== null || (await isFirstSession(db, session.id, session.trackId)))
+      return false;
+    try {
+      const brief = await withActivity(db, session.id, "Reading what you brought", () =>
+        briefTrack({ db, store: files, models, trackId: session.trackId }),
+      );
+      return brief !== null;
+    } catch {
+      return false;
+    }
+  };
+
   /** Runs a job; `onFailure` settles what it leaves behind before the error is reported. */
   const guarded =
     (
@@ -289,9 +338,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     "probe-turn": guarded(async ({ sessionId }) => {
       let context = await contextFor(sessionId, "probe");
       const { session } = context;
-      // Before the opening question, once: long notes with no summary yet get one (an import).
-      if (!context.learnerHasSpoken && (await catchUpLeftOff(session)))
-        context = await contextFor(sessionId, "probe");
+      // Before the opening question, once: long notes with no summary yet get one (an import), and
+      // files with no summary yet get one.
+      if (!context.learnerHasSpoken) {
+        const leftOff = await catchUpLeftOff(session);
+        const brief = await catchUpBrief(session);
+        if (leftOff || brief) context = await contextFor(sessionId, "probe");
+      }
       const modelFor = (purpose: "probe" | "probe-decision") =>
         models.model({ userId: session.userId, trackId: session.trackId, purpose, role: "strong" });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
@@ -795,4 +848,11 @@ function searchQuery(value: unknown): string | undefined {
   if ("query" in value && typeof value.query === "string") return value.query;
   if ("action" in value) return searchQuery(value.action);
   return undefined;
+}
+
+/** The track's context without what the learner brought, for a call that reads the files themselves. */
+function withoutBrought(track: TrackContext): TrackContext {
+  const rest = { ...track };
+  delete rest.brought;
+  return rest;
 }

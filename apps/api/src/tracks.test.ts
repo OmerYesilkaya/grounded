@@ -1,14 +1,21 @@
-import { ATTACHMENT_LIMITS } from "@grounded/core";
-import { eq, trackFiles, tracks } from "@grounded/db";
+import { ATTACHMENT_LIMITS, initialSession } from "@grounded/core";
+import { eq, learningSessions, trackFiles, tracks } from "@grounded/db";
+import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
 import { readAttachments } from "./files/attachments.js";
 import { createMemoryFileStore } from "./files/store.js";
 import { createTrack } from "./files/track-files.js";
 import { createTestHarness } from "./test/harness.js";
-import { scriptedModels } from "./test/scripted-models.js";
+import { scriptedModel, scriptedModels } from "./test/scripted-models.js";
 import { DOCX, PNG, pdf, text } from "./test/files.js";
-import { FIRST_QUESTION } from "./test/flows.js";
+import {
+  createFlows,
+  FIRST_QUESTION,
+  PLAN_TEXT,
+  planAttempt,
+  probeFinished,
+} from "./test/flows.js";
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access });
@@ -16,6 +23,8 @@ const t = createTestHarness({ models: models.access });
 beforeEach(() => {
   models.reset();
 });
+
+const { activities } = createFlows(t, models);
 
 const GOAL =
   "I want to learn how to pass backend and fullstack interviews.\n\nI've built APIs for a few years but never studied the theory.";
@@ -197,5 +206,152 @@ describe("creating a track with files", () => {
       ),
     ).rejects.toThrow();
     expect(store.keys()).toEqual([]);
+  });
+});
+
+describe("the tutor reading what the learner brought", () => {
+  const BRIEF =
+    "A CV: four years of Node.js APIs on Postgres; Redis caching. Wants backend interviews.";
+
+  /**
+   * A track with a PDF and a Word document, once the job that summarizes them has run: writing
+   * `brief`, or failing when it is null.
+   */
+  const trackWithFiles = async (brief: string | null = BRIEF) => {
+    const cookie = await signedIn();
+    const summarizer = brief
+      ? scriptedModel({ text: brief })
+      : new MockLanguageModelV4({ doGenerate: () => Promise.reject(new Error("provider down")) });
+    models.script("track-brief", summarizer);
+    const body = new FormData();
+    body.set("goal", "Everything my CV says I know");
+    body.append("files", new File([(await pdf(1)).slice()], "cv.pdf"));
+    body.append("files", new File([DOCX.slice()], "notes.docx"));
+    const response = await t.request("/api/tracks", { method: "POST", cookie, body });
+    const { id } = (await response.json()) as TrackRow;
+    const briefOf = async () =>
+      (await t.db.select().from(tracks).where(eq(tracks.id, id)))[0]?.brief ?? null;
+    await t.waitFor(async () =>
+      brief ? (await briefOf()) === brief : summarizer.doGenerateCalls.length > 0,
+    );
+    return { cookie, trackId: id, briefOf };
+  };
+
+  const startSession = async (cookie: string, trackId: string) => {
+    models.script("probe", { text: FIRST_QUESTION });
+    const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
+    expect(started.status).toBe(201);
+    return ((await started.json()) as { id: string }).id;
+  };
+
+  const probeCall = async () => {
+    await t.waitFor(() =>
+      Promise.resolve(
+        (models.used.find((u) => u.purpose === "probe")?.model.doStreamCalls.length ?? 0) > 0,
+      ),
+    );
+    const call = models.used.find((u) => u.purpose === "probe")?.model.doStreamCalls[0];
+    if (!call) throw new Error("no probe call");
+    const system = call.prompt
+      .filter((m) => m.role === "system")
+      .map((m) => m.content)
+      .join("\n\n");
+    const opening = call.prompt.find((m) => m.role === "user");
+    return { system, opening };
+  };
+
+  /** A session of the track that began, and closed, before any other. */
+  const earlierSession = async (trackId: string) => {
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    await t.db.insert(learningSessions).values({
+      trackId,
+      userId: track?.userId ?? "",
+      state: { ...initialSession(), phase: "closed" },
+      createdAt: new Date(Date.now() - 86_400_000),
+      closedAt: new Date(Date.now() - 80_000_000),
+    });
+  };
+
+  it("summarizes the files once the track is created, reading them as they are", async () => {
+    const { briefOf } = await trackWithFiles();
+    expect(await briefOf()).toBe(BRIEF);
+    const call = models.used.find((u) => u.purpose === "track-brief")?.model.doGenerateCalls[0];
+    const content = call?.prompt.find((m) => m.role === "user")?.content;
+    expect(content).toContainEqual(
+      expect.objectContaining({ type: "file", mediaType: "application/pdf", filename: "cv.pdf" }),
+    );
+    expect(JSON.stringify(content)).toContain("Redis caching");
+  });
+
+  it("gives the first session's probe the files themselves, not their summary", async () => {
+    const { cookie, trackId } = await trackWithFiles();
+    await startSession(cookie, trackId);
+    const { system, opening } = await probeCall();
+    expect(system).not.toContain("What the learner brought");
+    expect(opening?.content).toEqual([
+      {
+        type: "text",
+        text: "(The learner started a session. They said they want to learn: Everything my CV says I know)\n\nThey attached these 2 files, which follow: cv.pdf, notes.docx.",
+      },
+      expect.objectContaining({ type: "file", mediaType: "application/pdf", filename: "cv.pdf" }),
+      {
+        type: "text",
+        text: "notes.docx:\n\nAda Lovelace\n\nBackend engineer: Node.js, Postgres, Redis caching.",
+      },
+    ]);
+  });
+
+  it("gives the first session's plan the files too", async () => {
+    const { cookie, trackId } = await trackWithFiles();
+    const sessionId = await startSession(cookie, trackId);
+    await probeCall();
+    models.script("probe-decision", probeFinished());
+    models.script("plan", planAttempt(PLAN_TEXT));
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "APIs, mostly" }),
+    });
+    await t.waitFor(() =>
+      Promise.resolve(
+        (models.used.find((u) => u.purpose === "plan")?.model.doStreamCalls.length ?? 0) > 0,
+      ),
+    );
+    const plan = models.used.find((u) => u.purpose === "plan")?.model.doStreamCalls[0];
+    expect(JSON.stringify(plan?.prompt)).toContain('"mediaType":"application/pdf"');
+    const decision = models.used.find((u) => u.purpose === "probe-decision")?.model
+      .doGenerateCalls[0];
+    expect(JSON.stringify(decision?.prompt)).toContain('"filename":"cv.pdf"');
+  });
+
+  it("gives later sessions the summary in place of the files", async () => {
+    const { cookie, trackId } = await trackWithFiles();
+    await earlierSession(trackId);
+    await startSession(cookie, trackId);
+    const { system, opening } = await probeCall();
+    expect(system).toContain(
+      `## What the learner brought\n\nFiles they attached when they started the track: cv.pdf, notes.docx.\n\n${BRIEF}`,
+    );
+    expect(opening?.content).toEqual([
+      {
+        type: "text",
+        text: "(The learner started a session. They said they want to learn: Everything my CV says I know)",
+      },
+    ]);
+  });
+
+  it("writes a missing summary before a later session's first question", async () => {
+    const { cookie, trackId, briefOf } = await trackWithFiles(null);
+    expect(await briefOf()).toBeNull();
+    await earlierSession(trackId);
+    models.script("track-brief", { text: BRIEF });
+    const sessionId = await startSession(cookie, trackId);
+    const { system } = await probeCall();
+    expect(system).toContain(BRIEF);
+    expect(await briefOf()).toBe(BRIEF);
+    const reading = (await activities(sessionId)).find(
+      (a) => a.label === "Reading what you brought",
+    );
+    expect(reading?.state).toBe("done");
   });
 });

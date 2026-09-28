@@ -149,6 +149,7 @@ export function createDemoModels(): ModelAccess {
         "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
       ),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
+    "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
     "term-sweep": () =>
       model("", [
         JSON.stringify({
