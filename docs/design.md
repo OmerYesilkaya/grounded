@@ -98,8 +98,10 @@ pnpm workspaces, TypeScript end to end.
 ```
 apps/
   web/          Vite + React SPA, shadcn/ui (Tailwind + Radix), Tiptap, TanStack Router/Query
-  api/          Hono on Node: HTTP + SSE, auth, job enqueueing
-  worker/       job runners (lesson generation, grading, reviews, profile refresh) — same code base as api, separate process
+  api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
+                (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
+                worker process (`src/worker.ts`); the CLI (`src/cli.ts`: `pnpm invite`, `pnpm revoke`)
+                and the track import (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
   content/      block-tree types, markdown→tree parser, per-surface allowlists, validation (shared by web, api, worker, eval)
@@ -107,8 +109,7 @@ packages/
   db/           Drizzle schema and migrations
   crypto/       envelope encryption behind a KeyVault interface
 tools/
-  eval/         eval harness (personas, runner, reports)
-  cli/          `pnpm invite`, `pnpm revoke`, `pnpm import-tracks` (Omer's existing tracks)
+  eval/         eval harness (personas, runner, reports; §11, not built yet: #48)
 method.md
 ```
 
@@ -154,8 +155,8 @@ about, test and debug.
   one is never reported twice.
   Nothing is re-run: jobs are attempted once. A check job grades only an answer still waiting, so
   one that starts late never contradicts recovery. Running recovery again changes nothing. Open
-  gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed; a worker
-  that dies while others keep running is recovered at the next worker start, not sooner.
+  gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed (#20); a worker
+  that dies while others keep running is recovered at the next worker start, not sooner (#22).
 - **Structured logs, through one logger** (pino, `apps/api/src/log.ts`): JSON lines on stdout in
   production (the message in `message` and the level's name in `level`, the fields Railway reads),
   one readable line per entry otherwise, at `LOG_LEVEL` (`trace`, `debug`, `info` (the default),
@@ -230,7 +231,7 @@ about, test and debug.
 
 - **Vercel AI SDK** (the library only) hides provider differences for streaming, structured output,
   token usage and each provider's own web search tool. v1: Anthropic, OpenAI, Gemini.
-- **Model list in code** (`packages/providers/models.config.ts`), each entry next to its eval results.
+- **Model list in code** (`packages/providers/src/models.ts`), each entry next to its eval results.
   Adding a model is a reviewed change. Learners pick from the list for their provider; no free-form
   model ids.
 - Roles per provider: a **strong** model for planning, lessons, check grading and homework review
@@ -387,33 +388,45 @@ about, test and debug.
   contents aren't known. The first session's lesson and later calls carry it without its files, so
   the phase budgets (§4.4) hold: the budget fixture carries a summary of about 3,300 characters.
 - **A learner can download their own files** (`GET /api/tracks/:id/files/:fileId`), always as an
-  attachment with `nosniff`, never shown inline. Deleting a track (v2) must delete its files from the
+  attachment with `nosniff`, never shown inline. Deleting a track (#26) must delete its files from the
   store too; the rows go with the track by cascade, the bytes don't.
 
-## 5. Data model (sketch)
+## 5. Data model
 
-| Table                      | Holds                                                                                                 |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `users`, `allowlist`       | account; who may sign in                                                                              |
-| `credentials`              | provider, encrypted key, credential source                                                            |
-| `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
-| `tracks`                   | name, learner's words, "what you brought", language, status, research notes, plan, notes, left off    |
-| `track_files`              | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key          |
-| `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
-| `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
-| `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
-| `borrowed_terms`           | term used in this track, confirmed in another                                                         |
-| `arcs`, `fix_list_items`   | the plan's arcs and which session closes each; the audit's misconceptions and their status            |
-| `sessions`                 | track, kind (normal / final), phase, open/closed, paused-at, a long chat's older turns summarized     |
-| `messages`                 | chat messages of a session (probe, plan, recap) as block trees                                        |
-| `lessons`, `lesson_steps`  | the lesson's block tree per step, outline, validation results                                         |
-| `check_attempts`           | per step: answers, verdicts, repair threads, fresh questions, flags                                   |
-| `asides`, `aside_messages` | anchor (block id + quote selector), thread, saved-for-later flag                                      |
-| `assignments`              | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until |
-| `submissions`              | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    |
-| `reviews`                  | margin comments on a submission, checklist outcome (held / leaked / missing)                          |
-| `usage_events`             | per model call                                                                                        |
-| `imported_lessons`         | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)        |
+The schema is `packages/db/src/schema.ts`. Tables that exist:
+
+| Table                                            | Holds                                                                                                                                    |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                              |
+| `allowlist`                                      | who may sign in                                                                                                                          |
+| `credentials`                                    | provider, encrypted key, credential source                                                                                               |
+| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off   |
+| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                             |
+| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                                                                |
+| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                             |
+| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                            |
+| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                              |
+| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized |
+| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees                                             |
+| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
+| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes                                     |
+| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
+| `usage_events`                                   | per model call                                                                                                                           |
+| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
+
+Planned for v1, not built yet:
+
+| Table                      | Holds                                                                                                 | Issue    |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
+| `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      | #44      |
+| `borrowed_terms`           | term used in this track, confirmed in another                                                         | #52      |
+| `asides`, `aside_messages` | anchor (block id + quote selector), thread, saved-for-later flag                                      | #37      |
+| `assignments`              | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
+| `submissions`              | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
+| `reviews`                  | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
+
+Research notes are not stored on the track yet; the first plan's notes go only into that plan's calls
+(#51). Which session closes each arc isn't recorded yet (#42).
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -701,7 +714,7 @@ A refined "typographic index":
 ## 10. Operating without an admin page
 
 - Allowlist: `pnpm invite a@b.com`, `pnpm revoke a@b.com`.
-- Model list: `models.config.ts` in the repo, reviewed with its eval results.
+- Model list: `packages/providers/src/models.ts` in the repo, reviewed with its eval results.
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:
   it prints the track, term counts per status, dependencies, arcs, fix-list, the open threads, the owed
@@ -755,16 +768,24 @@ and whenever `method.md` changes. Built after the first working session.
 
 ## 14. Order of work
 
+Steps 1–5 are built, with the gaps listed after them; 6–10 are not built yet. Every piece of v1
+still owed has an issue labelled `high priority`, listed with its step; the issues are what track
+progress, so a step is done when its issues are closed.
+
 1. `method.md` at the repo root: the tested chat-app version adapted to the app (phase tags, the §3.2
    changes, what the app provides in context and what the model returns).
 2. Repo setup: git, pnpm workspaces, lint/format/test tooling, CI, Docker, Postgres locally.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
-   components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict.
+   components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict. Owed:
+   server-side media (#49), the cheap model's review (#50), the theme choice (#54).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
-   checks with repair and the gate, close with structured state edits.
-6. Asides in the margin.
-7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final.
-8. Learner profile, per-track stats, usage display.
-9. Eval harness; fill the model list.
-10. Phone pass; deploy; invite the first people.
+   checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),
+   the pictures of what rests on what (#47), research for the lesson (#51), borrowed terms (#52).
+6. Asides in the margin (#37).
+7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
+   (#38, #39, #41, #42, #43).
+8. Learner profile, per-track stats, usage display (#44, #45, #46).
+9. Eval harness; fill the model list (#48).
+10. Phone pass (#53); the track list's search (#55) and the sign-up sentence (#56); deploy; invite
+    the first people.
