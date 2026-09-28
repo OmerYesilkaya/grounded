@@ -120,7 +120,13 @@ export function createAsideTasks(deps: AsideTaskDependencies): TaskList {
     let prompt: Awaited<ReturnType<typeof promptFor>>;
     try {
       prompt = await promptFor(sessionId, current, all.slice(0, index));
-      const model = await models.model({ userId, trackId, purpose: "aside", role: "cheap" });
+      const model = await models.model({
+        userId,
+        trackId,
+        sessionId,
+        purpose: "aside",
+        role: "cheap",
+      });
       answer = await composeReply({
         db,
         sessionId,
@@ -153,7 +159,13 @@ export function createAsideTasks(deps: AsideTaskDependencies): TaskList {
     // The record comes after the answer, so the answer never waits for it; if it fails, the aside
     // simply has none.
     try {
-      const model = await models.model({ userId, trackId, purpose: "aside-record", role: "cheap" });
+      const model = await models.model({
+        userId,
+        trackId,
+        sessionId,
+        purpose: "aside-record",
+        role: "cheap",
+      });
       const { output } = await generateText({
         model,
         system: prompt.system,
