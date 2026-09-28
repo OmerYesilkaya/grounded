@@ -1,7 +1,8 @@
 import { eq, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { invite, revoke } from "./allowlist.js";
-import { createTestHarness } from "./test/harness.js";
+import { createAuth } from "./auth.js";
+import { BASE_URL, createTestHarness } from "./test/harness.js";
 
 const t = createTestHarness();
 
@@ -66,5 +67,39 @@ describe("the health check", () => {
     const res = await t.request("/healthz");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
+  });
+});
+
+describe("rate limiting behind the host's proxy", () => {
+  const auth = createAuth({
+    db: t.db,
+    baseURL: BASE_URL,
+    secret: "test-secret-that-is-long-enough-for-better-auth",
+    trustedOrigins: [BASE_URL],
+    sendMagicLink: () => undefined,
+    trustedProxies: ["100.0.0.0/8"],
+    rateLimit: true,
+  });
+  // What the proxy sends: anything the client claimed, then the client, then the proxy's own hop.
+  const askForLink = (forwardedFor: string) =>
+    auth.handler(
+      new Request(`${BASE_URL}/api/auth/sign-in/magic-link`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: BASE_URL,
+          "x-forwarded-for": forwardedFor,
+        },
+        body: JSON.stringify({ email: "ada@example.com", callbackURL: "/" }),
+      }),
+    );
+
+  it("limits each client by its own address, whatever it claims to be", async () => {
+    // The magic-link rule allows 5 a minute.
+    for (let i = 0; i < 5; i++) {
+      expect((await askForLink(`9.9.9.${String(i)}, 203.0.113.7, 100.64.0.2`)).status).toBe(200);
+    }
+    expect((await askForLink("203.0.113.7, 100.64.0.3")).status).toBe(429);
+    expect((await askForLink("198.51.100.4, 100.64.0.2")).status).toBe(200);
   });
 });

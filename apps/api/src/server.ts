@@ -23,6 +23,7 @@ const auth = createAuth({
   baseURL: env.APP_URL,
   secret: env.BETTER_AUTH_SECRET,
   trustedOrigins: [env.APP_URL],
+  trustedProxies: env.TRUSTED_PROXIES,
   sendMagicLink: createMagicLinkDelivery({
     email: env.RESEND_API_KEY
       ? createResendSender({ apiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM })

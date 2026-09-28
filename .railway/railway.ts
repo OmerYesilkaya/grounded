@@ -62,6 +62,8 @@ export default defineRailway(() => {
     networking: { privateNetworkEndpoint: "groundedapi" },
     env: {
       ...common,
+      // Railway's own proxies; the client is the X-Forwarded-For hop before them.
+      TRUSTED_PROXIES: "100.0.0.0/8",
       APP_URL: preserve(),
       RESEND_API_KEY: preserve(),
       EMAIL_FROM: preserve(),

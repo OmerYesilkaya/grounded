@@ -12,6 +12,13 @@ export interface AuthOptions {
   trustedOrigins: string[];
   /** Delivers the link. Console in development; an email provider when deployed. */
   sendMagicLink: (email: string, url: string) => void | Promise<void>;
+  /**
+   * The host's proxies (IPs or CIDR ranges). The client's address is the last X-Forwarded-For hop
+   * before them; without it, every client shares one rate-limit bucket.
+   */
+  trustedProxies?: string[];
+  /** Rate limiting is on in production by default; tests turn it on to check it. */
+  rateLimit?: boolean;
 }
 
 /**
@@ -28,7 +35,11 @@ export function createAuth(options: AuthOptions) {
       provider: "pg",
       schema: { user: users, session: sessions, account: accounts, verification: verifications },
     }),
-    advanced: { database: { generateId: () => uuidv7() } },
+    advanced: {
+      database: { generateId: () => uuidv7() },
+      ipAddress: { trustedProxies: options.trustedProxies ?? [] },
+    },
+    ...(options.rateLimit === undefined ? {} : { rateLimit: { enabled: options.rateLimit } }),
     emailAndPassword: { enabled: false },
     databaseHooks: {
       user: {

@@ -10,6 +10,17 @@ const schema = z
     APP_URL: z.url().default("http://localhost:5173"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().default(8787),
+    /** The host's proxies (comma-separated IPs or CIDR ranges), so rate limits see each client. */
+    TRUSTED_PROXIES: z
+      .string()
+      .optional()
+      .transform(
+        (value) =>
+          value
+            ?.split(",")
+            .map((p) => p.trim())
+            .filter(Boolean) ?? [],
+      ),
     /** Production: the built web app, served by the API on the same origin. Vite serves it otherwise. */
     WEB_DIST_DIR: z.string().min(1).optional(),
     /** Magic links go by email when set; to the console otherwise. */

@@ -206,6 +206,9 @@ about, test and debug.
 
 - **Better Auth** (or equivalent that grows): email magic link, gated by an allowlist Omer manages with
   the CLI. Google sign-in and open sign-up later, behind configuration.
+- **Rate limits per client:** Better Auth's limits (5 magic links a minute) key on the client's
+  address, the last `X-Forwarded-For` hop before the host's proxies (`TRUSTED_PROXIES`; Railway's are
+  `100.0.0.0/8`). Without it every client shares one bucket, so one person could lock out everyone.
 - **Email: Resend**, called through its REST API. With `RESEND_API_KEY` unset (development, tests), the
   link is printed to the API console. Until a domain is verified in Resend, only
   `onboarding@resend.dev` can send, and only to the Resend account's own address (`EMAIL_FROM`).
