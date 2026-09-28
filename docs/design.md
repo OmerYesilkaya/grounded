@@ -138,6 +138,21 @@ about, test and debug.
   summary as `activity-reasoning`. The web shows them as a compact live status line, so a long job
   never looks stuck; the session snapshot lists the ones still running. The contract is documented
   in `apps/api/src/engine/events.ts`.
+- **A worker that dies mid-job is cleaned up after.** A graceful failure cleans up itself (a message
+  that fails is retracted, an activity always ends, a check answer that can't be graded is told so);
+  a killed or crashed worker leaves its work half-done. graphile-worker can't tell a dead worker's
+  job from a running one (it stays locked until a four-hour timeout), so each job holds its session's
+  **work lock** while it runs: a shared Postgres advisory lock on a connection its process keeps for
+  life, released by Postgres the moment the process is gone. When a worker starts, before taking
+  jobs, it recovers every open session whose work lock it can take (exclusively, so no job can start
+  there meanwhile): a tutor message still being written is retracted, running activities are ended,
+  a check answer still waiting for a verdict gets the tutor's "That didn't go through… Answer again"
+  (unless its check job is still queued), and a lesson that stopped being written, outlined or not,
+  is marked failed (unless its job is still queued); each such session gets an `error` event.
+  Nothing is re-run: jobs are attempted once. A check job grades only an answer still waiting, so
+  one that starts late never contradicts recovery. Running recovery again changes nothing. Open
+  gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed; a worker
+  that dies while others keep running is recovered at the next worker start, not sooner.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite.
 - **Every row is owned by a user; ids are UUIDv7.**

@@ -4,7 +4,8 @@ import { createDb } from "@grounded/db";
 import { createLanguageModel } from "@grounded/providers";
 import { createDemoModels } from "./dev/demo-models.js";
 import { createModelCaller } from "./engine/model-call.js";
-import { createJobQueue, startWorker } from "./engine/queue.js";
+import { createJobQueue, migrateQueue, startWorker } from "./engine/queue.js";
+import { describeRecovery, recoverAbandonedWork } from "./engine/recovery.js";
 import { createTasks } from "./engine/tasks.js";
 import { readEnv } from "./env.js";
 
@@ -16,6 +17,11 @@ const vault = createKeyVault({
   activeKid: env.KEY_VAULT_ACTIVE_KID,
 });
 const queue = createJobQueue(env.DATABASE_URL);
+
+// Before taking jobs, clean up after workers that died mid-job.
+await migrateQueue(env.DATABASE_URL);
+for (const recovered of await recoverAbandonedWork(db)) console.log(describeRecovery(recovered));
+
 const runner = await startWorker(
   env.DATABASE_URL,
   createTasks({
@@ -27,7 +33,14 @@ const runner = await startWorker(
         ? createDemoModels()
         : createModelCaller({ db, vault, createLanguageModel }),
   }),
-  { concurrency: 4 },
+  {
+    concurrency: 4,
+    // Without its work locks, this worker's running jobs look dead to recovery: exit, and be recovered.
+    onLocksLost: () => {
+      console.error("worker lost the connection holding its work locks; exiting");
+      process.exit(1);
+    },
+  },
 );
 console.log(
   env.DEMO_MODELS === "true" ? "worker running with DEMO models (no real calls)" : "worker running",

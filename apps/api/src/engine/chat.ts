@@ -7,7 +7,17 @@ import {
   type Surface,
   type TrackTerm,
 } from "@grounded/content";
-import { sessionMessages, type Db } from "@grounded/db";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  lte,
+  sessionEvents,
+  sessionMessages,
+  sql,
+  type Db,
+} from "@grounded/db";
 import { generateText, streamText, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
 import { batcher, publish, startActivity, withActivity } from "./events.js";
@@ -169,4 +179,55 @@ async function rewritten(
     rewrite = result.text;
   }
   return rewrite;
+}
+
+interface MessageMark {
+  id: string;
+  role: "learner" | "tutor";
+  kind: "message" | "plan" | "homework" | "recap";
+}
+
+/**
+ * Tutor messages being written at the cursor: started, but neither stored nor retracted. The stream
+ * resumes after the cursor, so their start and the text so far must come with the snapshot. A message
+ * whose job died is one of these until recovery retracts it (recovery.ts).
+ */
+export async function messagesBeingWritten(
+  db: Db,
+  sessionId: string,
+  cursor: number,
+  stored: ReadonlySet<string>,
+) {
+  const upToCursor = and(eq(sessionEvents.sessionId, sessionId), lte(sessionEvents.id, cursor));
+  const marks = await db
+    .select({ type: sessionEvents.type, data: sessionEvents.data })
+    .from(sessionEvents)
+    .where(and(upToCursor, inArray(sessionEvents.type, ["message-start", "message-retracted"])))
+    .orderBy(asc(sessionEvents.id));
+  const open = new Map<string, MessageMark & { text: string }>();
+  for (const { type, data } of marks) {
+    const mark = data as MessageMark;
+    if (type === "message-retracted") open.delete(mark.id);
+    else if (!stored.has(mark.id))
+      open.set(mark.id, { id: mark.id, role: mark.role, kind: mark.kind, text: "" });
+  }
+  if (open.size === 0) return [];
+
+  const deltas = await db
+    .select({ data: sessionEvents.data })
+    .from(sessionEvents)
+    .where(
+      and(
+        upToCursor,
+        eq(sessionEvents.type, "message-delta"),
+        inArray(sql<string>`${sessionEvents.data}->>'id'`, [...open.keys()]),
+      ),
+    )
+    .orderBy(asc(sessionEvents.id));
+  for (const { data } of deltas) {
+    const delta = data as { id: string; text: string };
+    const message = open.get(delta.id);
+    if (message) message.text += delta.text;
+  }
+  return [...open.values()].map((m) => ({ ...m, blocks: null, streaming: true }));
 }

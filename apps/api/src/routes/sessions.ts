@@ -10,15 +10,14 @@ import {
   isNull,
   learningSessions,
   lessons,
-  lte,
   sessionEvents,
   sessionMessages,
-  sql,
   tracks,
   type Db,
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
@@ -30,56 +29,6 @@ interface Env {
 // No language: the tutor infers it from the learner's messages and records it (set-language).
 const trackInput = z.object({ title: z.string().trim().min(1).max(120) });
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
-
-interface MessageMark {
-  id: string;
-  role: "learner" | "tutor";
-  kind: "message" | "plan" | "homework" | "recap";
-}
-
-/**
- * Tutor messages being written at the cursor: started, but neither stored nor retracted. The stream
- * resumes after the cursor, so their start and the text so far must come with the snapshot.
- */
-async function messagesBeingWritten(
-  db: Db,
-  sessionId: string,
-  cursor: number,
-  stored: ReadonlySet<string>,
-) {
-  const upToCursor = and(eq(sessionEvents.sessionId, sessionId), lte(sessionEvents.id, cursor));
-  const marks = await db
-    .select({ type: sessionEvents.type, data: sessionEvents.data })
-    .from(sessionEvents)
-    .where(and(upToCursor, inArray(sessionEvents.type, ["message-start", "message-retracted"])))
-    .orderBy(asc(sessionEvents.id));
-  const open = new Map<string, MessageMark & { text: string }>();
-  for (const { type, data } of marks) {
-    const mark = data as MessageMark;
-    if (type === "message-retracted") open.delete(mark.id);
-    else if (!stored.has(mark.id))
-      open.set(mark.id, { id: mark.id, role: mark.role, kind: mark.kind, text: "" });
-  }
-  if (open.size === 0) return [];
-
-  const deltas = await db
-    .select({ data: sessionEvents.data })
-    .from(sessionEvents)
-    .where(
-      and(
-        upToCursor,
-        eq(sessionEvents.type, "message-delta"),
-        inArray(sql<string>`${sessionEvents.data}->>'id'`, [...open.keys()]),
-      ),
-    )
-    .orderBy(asc(sessionEvents.id));
-  for (const { data } of deltas) {
-    const delta = data as { id: string; text: string };
-    const message = open.get(delta.id);
-    if (message) message.text += delta.text;
-  }
-  return [...open.values()].map((m) => ({ ...m, blocks: null, streaming: true }));
-}
 
 /** Tracks and sessions (design §7): the session HTTP API. Jobs do the model work. */
 export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQueue }) {

@@ -3,13 +3,13 @@ import { loadMethod } from "@grounded/core";
 import { createKeyVault } from "@grounded/crypto";
 import { createDb } from "@grounded/db";
 import type { KeyCheck } from "@grounded/providers";
-import type { Runner, TaskList } from "graphile-worker";
+import type { TaskList } from "graphile-worker";
 import { afterAll, beforeAll, beforeEach } from "vitest";
 import { createApp } from "../app.js";
 import { createAuth } from "../auth.js";
 import { createEventHub } from "../engine/events.js";
 import type { ModelAccess } from "../engine/model-call.js";
-import { createJobQueue, startWorker } from "../engine/queue.js";
+import { createJobQueue, startWorker, type Worker } from "../engine/queue.js";
 import { createTasks } from "../engine/tasks.js";
 import { TEST_DATABASE_URL } from "./global-setup.js";
 
@@ -20,7 +20,7 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
   const { db, client, close } = createDb(TEST_DATABASE_URL);
   const events = createEventHub(client);
   const queue = createJobQueue(TEST_DATABASE_URL);
-  let runner: Runner | undefined;
+  let runner: Worker | undefined;
   const vault = createKeyVault({ masterKeys: { t1: randomBytes(32) }, activeKid: "t1" });
   const sent: { email: string; url: string }[] = [];
   let keyCheck: KeyCheck = { ok: true };

@@ -56,6 +56,33 @@ const PLAN_RECORD_PROMPT =
 const RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
+/** The tutor's reply when an answer couldn't be checked, so the learner can answer again. */
+export const checkFailedText = (reason = "") =>
+  `That didn't go through.${reason} Answer again when you're ready.`;
+
+/** Adds a tutor message to a step's check thread and publishes it. */
+export async function recordCheckMessage(
+  db: Db,
+  sessionId: string,
+  stepId: string,
+  text: string,
+  verdict: "landed" | "missed" | null,
+): Promise<void> {
+  const blocks = parseBlocks(text).blocks;
+  const [row] = await db
+    .insert(checkMessages)
+    .values({ sessionId, stepId, role: "tutor", text, blocks, verdict })
+    .returning();
+  if (!row) throw new Error("check message insert returned nothing");
+  await publish(db, sessionId, "check-message", {
+    id: row.id,
+    stepId,
+    role: "tutor",
+    blocks,
+    verdict,
+  });
+}
+
 /** The session's jobs. A failure the learner can act on is published as an error event. */
 export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   const { db, models, method, queue } = deps;
@@ -141,27 +168,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     });
     const terms: TrackTerm[] = track.terms.map((t) => ({ term: t.term, status: t.status }));
     return { session, system, thread, terms, introduced };
-  };
-
-  const recordCheckMessage = async (
-    sessionId: string,
-    stepId: string,
-    text: string,
-    verdict: "landed" | "missed" | null,
-  ) => {
-    const blocks = parseBlocks(text).blocks;
-    const [row] = await db
-      .insert(checkMessages)
-      .values({ sessionId, stepId, role: "tutor", text, blocks, verdict })
-      .returning();
-    if (!row) throw new Error("check message insert returned nothing");
-    await publish(db, sessionId, "check-message", {
-      id: row.id,
-      stepId,
-      role: "tutor",
-      blocks,
-      verdict,
-    });
   };
 
   const guarded =
@@ -307,7 +313,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           stepId,
           state,
         );
-        const answer = thread.filter((m) => m.role === "learner").at(-1)?.text ?? "";
+        // Only an answer still waiting is graded: recovery may have answered it already (recovery.ts).
+        const answer = thread.at(-1);
+        if (answer?.role !== "learner") return;
         const model = await models.model({
           userId: session.userId,
           purpose: "check",
@@ -320,7 +328,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               model,
               system,
               output: Output.object({ schema: checkVerdictSchema }),
-              prompt: `The learner's answer to this step's check: ${answer}${feedback}`,
+              prompt: `The learner's answer to this step's check: ${answer.text ?? ""}${feedback}`,
             });
             return output;
           });
@@ -347,12 +355,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           stepId,
           verdict: verdict.verdict,
         });
-        await recordCheckMessage(sessionId, stepId, verdict.reply, verdict.verdict);
+        await recordCheckMessage(db, sessionId, stepId, verdict.reply, verdict.verdict);
 
         const step = next.steps[stepId];
         if (verdict.verdict === "missed") {
           if (step?.status === "open" && !step.offerGate && verdict.freshQuestion) {
-            await recordCheckMessage(sessionId, stepId, verdict.freshQuestion, null);
+            await recordCheckMessage(db, sessionId, stepId, verdict.freshQuestion, null);
           }
           if (verdict.note) {
             await db
@@ -372,12 +380,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           error instanceof ProviderCallError || error instanceof NoCredentialError
             ? ` ${error.message}`
             : "";
-        await recordCheckMessage(
-          sessionId,
-          stepId,
-          `That didn't go through.${reason} Answer again when you're ready.`,
-          null,
-        );
+        await recordCheckMessage(db, sessionId, stepId, checkFailedText(reason), null);
         throw error;
       }
     }),
@@ -399,7 +402,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             "The learner paused on this step last time and is back. Ask one fresh check question on the same idea, answerable in one or two lines. Reply with the question only.",
         }),
       );
-      await recordCheckMessage(sessionId, stepId, text, null);
+      await recordCheckMessage(db, sessionId, stepId, text, null);
     }),
 
     homework: guarded(async ({ sessionId }) => {
