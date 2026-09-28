@@ -4,12 +4,17 @@ import { prefersReducedMotion, usePrefersReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /**
- * The small animated mark beside a label for work in progress: layers stacking up, looping while
- * it shows. Its outlines take the text colour and its faces the surface behind it (`--mark-surface`,
+ * The small animated mark beside a label for work in progress: layers stacking up, again and again
+ * while it shows, a little slower than drawn and with a rest between passes so it stays quiet. Its outlines take the text colour and its faces the surface behind it (`--mark-surface`,
  * the page background unless a container sets it), so it reads in both themes; the outlines are as
  * thick as a lucide icon's at the same size. The player and the animation load on first use, off the
  * main bundle. Under reduced motion it holds its first frame.
  */
+/** Playback rate: 1 is the animation as drawn, one pass in 0.6 s. */
+const SPEED = 0.75;
+/** How long the mark rests, on the frame a pass ends on, before the next pass. */
+const REST_MS = 800;
+
 export function WorkingMark({ className }: { className?: string }) {
   const box = useRef<HTMLSpanElement>(null);
   const animation = useRef<AnimationItem | null>(null);
@@ -19,34 +24,45 @@ export function WorkingMark({ className }: { className?: string }) {
     const container = box.current;
     if (!container) return;
     let cancelled = false;
+    let rest: ReturnType<typeof setTimeout> | undefined;
 
     void Promise.all([
       import("lottie-web/build/player/lottie_light"),
       import("@/assets/layers.json"),
     ]).then(([{ default: lottie }, { default: animationData }]) => {
       if (cancelled) return;
-      animation.current = lottie.loadAnimation({
+      const item = lottie.loadAnimation({
         container,
         renderer: "svg",
-        loop: true,
+        loop: false,
         autoplay: !prefersReducedMotion(),
         animationData,
         // The layers only ever move within the middle third of the 256-unit canvas: crop to that
         // square (plus half a stroke), so the mark fills the box it is given.
         rendererSettings: { viewBoxSize: "84 84 88 88" },
       });
+      item.setSpeed(SPEED);
+      item.addEventListener("complete", () => {
+        rest = setTimeout(() => {
+          if (!prefersReducedMotion()) item.goToAndPlay(0, true);
+        }, REST_MS);
+      });
+      animation.current = item;
     });
 
     return () => {
       cancelled = true;
+      clearTimeout(rest);
       animation.current?.destroy();
       animation.current = null;
     };
   }, []);
 
   useEffect(() => {
+    // A restart pending when motion is reduced sees it and stays put; motion allowed again, the mark
+    // starts a fresh pass, since a finished pass has nothing left to play.
     if (still) animation.current?.goToAndStop(0, true);
-    else animation.current?.play();
+    else animation.current?.goToAndPlay(0, true);
   }, [still]);
 
   return (

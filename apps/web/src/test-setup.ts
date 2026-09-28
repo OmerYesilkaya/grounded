@@ -7,8 +7,11 @@ import { afterEach, vi } from "vitest";
 vi.mock("lottie-web/build/player/lottie_light", () => ({
   default: {
     loadAnimation: () => ({
+      addEventListener: () => undefined,
       destroy: () => undefined,
       play: () => undefined,
+      setSpeed: () => undefined,
+      goToAndPlay: () => undefined,
       goToAndStop: () => undefined,
     }),
   },
