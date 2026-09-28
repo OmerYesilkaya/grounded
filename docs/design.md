@@ -637,7 +637,8 @@ A refined "typographic index":
   finished items fold ("3 done ▸").
 - **At scale (15+):** ordered by recent activity, six shown, the rest under "N more tracks"; search
   filters tracks and lessons live.
-- Account at the bottom.
+- **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
+  key, sign out).
 
 ### 9.3 Look
 
