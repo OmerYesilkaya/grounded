@@ -2,6 +2,7 @@ import type { LessonStep } from "@grounded/content";
 import { useEffect, useRef, useState } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
+import { scrollBehavior } from "@/lib/motion";
 import { CheckCard } from "./check-card";
 import { StepTimeline } from "./step-timeline";
 import type { StepProgress } from "./types";
@@ -51,7 +52,7 @@ export function LessonView(props: LessonViewProps) {
   const jump = (stepId: string) => {
     document
       .getElementById(stepAnchor(stepId))
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+      ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
   };
 
   return (
@@ -165,7 +166,7 @@ function useScrollToNewStep(shown: readonly LessonStep[]): void {
     const timer = window.setTimeout(() => {
       document
         .getElementById(stepAnchor(newest))
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
     }, 1400);
     return () => {
       window.clearTimeout(timer);
