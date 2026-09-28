@@ -1,5 +1,5 @@
 import type { KeyVault } from "@grounded/crypto";
-import { and, credentials, eq, learningSessions, type Db } from "@grounded/db";
+import { and, credentials, eq, learningSessions, sql, type Db } from "@grounded/db";
 import { offeredModels, type KeyCheck, type ProviderId } from "@grounded/providers";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
@@ -35,6 +35,12 @@ const credentialInput = z.object({
 export function createApp(deps: AppDependencies) {
   const { db, auth, vault } = deps;
   const app = new Hono<{ Variables: Variables }>();
+
+  /** For the host's deploy check: the process is up and reaches the database. */
+  app.get("/healthz", async (c) => {
+    await db.execute(sql`select 1`);
+    return c.text("ok");
+  });
 
   app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
 

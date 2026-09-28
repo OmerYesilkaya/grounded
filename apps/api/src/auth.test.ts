@@ -60,3 +60,11 @@ describe("invite and revoke", () => {
     expect(t.sent).toHaveLength(1);
   });
 });
+
+describe("the health check", () => {
+  it("answers without a session once the database is reachable", async () => {
+    const res = await t.request("/healthz");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe("ok");
+  });
+});
