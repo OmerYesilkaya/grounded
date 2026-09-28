@@ -11,7 +11,9 @@ import { readEnv } from "./env.js";
 import { serveWeb } from "./web.js";
 
 const env = readEnv();
-const { db, client } = createDb(env.DATABASE_URL);
+const { db, client, close } = createDb(env.DATABASE_URL);
+const events = createEventHub(client);
+const queue = createJobQueue(env.DATABASE_URL);
 
 const auth = createAuth({
   db,
@@ -29,8 +31,8 @@ const auth = createAuth({
 const app = createApp({
   db,
   auth,
-  events: createEventHub(client),
-  queue: createJobQueue(env.DATABASE_URL),
+  events,
+  queue,
   vault: createKeyVault({
     masterKeys: parseMasterKeys(env.KEY_VAULT_MASTER_KEYS),
     activeKid: env.KEY_VAULT_ACTIVE_KID,
@@ -41,7 +43,7 @@ const app = createApp({
 
 if (env.WEB_DIST_DIR) serveWeb(app, env.WEB_DIST_DIR);
 
-serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
+const server = serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   console.log(`api listening on http://localhost:${String(port)}`);
   const email = env.RESEND_API_KEY ? `by email from ${env.EMAIL_FROM}` : "";
   const printed = env.NODE_ENV === "production" ? "" : "printed here";
@@ -50,3 +52,15 @@ serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
   );
 });
 
+// On a deploy or restart: stop taking requests and end the open streams (browsers reconnect to
+// another process and replay from their last event id), then let go of the database.
+const stop = () => {
+  server.close(() => {
+    void Promise.all([events.close(), queue.close()])
+      .then(close)
+      .finally(() => process.exit(0));
+  });
+  if ("closeAllConnections" in server) server.closeAllConnections();
+};
+process.on("SIGINT", stop);
+process.on("SIGTERM", stop);
