@@ -26,11 +26,8 @@ pnpm-debug.log*
 .env.*
 !.env.example
 
-# Local tool state
-.claude/settings.local.json
-
-# Agent worktrees
-.claude/worktrees/
+# Claude Code: local settings, agent worktrees and skills
+.claude/
 
 # Import dry runs (learner data)
 .imports/
