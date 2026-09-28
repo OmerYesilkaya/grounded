@@ -5,6 +5,7 @@ import { ActivityLine } from "@/components/activity-line";
 import { ContentProvider } from "@/content/environment";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
 import { api } from "@/lib/api";
+import { asideActions } from "@/lib/asides";
 import { readableSteps, useSessionModel, type SessionModel } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { ChatView } from "./chat-view";
@@ -140,6 +141,12 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
             post.mutate({ path: `/api/sessions/${sessionId}/steps/${stepId}/continue` });
           }}
           after={lessonFailed && <LessonAgain model={model} className="mt-10" />}
+          asides={{
+            items: model.asides,
+            hint: !model.hasAskedAside,
+            canAsk: model.state.phase !== "closed",
+            ...asideActions(sessionId),
+          }}
         />
       )}
       {tab === "lesson" && hasLesson && model.activities.length > 0 && (

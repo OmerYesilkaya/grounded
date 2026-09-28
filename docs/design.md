@@ -830,6 +830,26 @@ Three structurally different variants were explored
   it disappears after the first aside. A paragraph hover button was tried and dropped as not useful.
 - Rejected along the way: a progress rail in the header (confusing while scrolling), page-per-step.
 
+As built (#37, `apps/web/src/lesson/aside-*.tsx`, `passages.ts`):
+
+- **Selecting and asking.** A selection inside one step's lesson text (the blocks with the step's ids;
+  not a check's thread, a note or the page's labels) shows an "Ask about this" button in the margin,
+  level with it; it opens a draft card there with the question box focused. Enter asks; Esc or
+  Cancel drops it. The card that arrives takes the draft's place, open.
+- **Marks without markup.** Passages are marked with the CSS Custom Highlight API (`::highlight`),
+  so the lesson's elements are never touched: a faint wash and underline, stronger for the open
+  card's passage. A card finds its passage again from the anchor on every layout: its block first,
+  then its whole step, the occurrence whose text around it matches best; a passage that is gone
+  leaves its card at its step's top, quoting it. Clicking a marked passage opens its card.
+- **Cards.** Level with their passages, never overlapping; the open card sits exactly by its passage
+  and the others move out of its way (`placeCards`). A closed card shows the first question and the
+  start of its answer; the open one the whole thread, a tangent to save, and a follow-up box. The
+  answer is revealed as it streams, like a chat message; "Thinking…" until its first words. Cards
+  are re-measured whenever the page reflows or a card grows.
+- **The hint is per learner:** it shows until they have asked in any session
+  (`hasAskedAside` in the session's snapshot), not in every lesson.
+- A closed session's lesson shows its asides but takes no new ones (§7.5).
+
 ### 9.2 Track list
 
 A "typographic index" of parents and children (redesigned 2026-09-29, #57: the first version drew a
@@ -916,7 +936,14 @@ and marked the current track with bolder text):
 
 - Sidebar becomes a drawer.
 - The gutter timeline disappears; a compact "step 2 of 5" jump menu goes in the top bar.
-- Margin cards become highlights you tap, opening a bottom sheet.
+- Margin cards become highlights you tap, opening a bottom sheet. Built with asides (#37), below
+  1100px, where the margin is gone: a selection shows an "Ask about this passage" button at the
+  bottom of the screen, which opens the sheet with the passage quoted and the question box; tapping
+  a marked passage opens its card as the sheet; a tap outside closes it (and drops an unsent
+  question). The hint is one line above the lesson. Left for the phone pass (#49): the sheet under
+  the on-screen keyboard (iOS `visualViewport`), dragging the sheet down to close, the button's place
+  against the phone's own selection menu, a way to see how many questions a step has without
+  tapping each passage, and trying all of it on real phones.
 - The check card stacks vertically below ~600px, with full-width touch targets (the prototype's check
   card is not responsive — fix in the real component).
 - Building homework is a desktop activity; reading, checks and asides must be good on a phone.
@@ -1021,7 +1048,7 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 
 ## 14. Order of work
 
-Steps 1–5 are built, with the gaps listed after them; 6–10 are not built yet. Every piece of v1
+Steps 1–6 are built, with the gaps listed after them; 7–10 are not built yet. Every piece of v1
 still owed has an issue labelled `high priority`, listed with its step; the issues are what track
 progress, so a step is done when its issues are closed.
 
@@ -1035,7 +1062,7 @@ progress, so a step is done when its issues are closed.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),
    the pictures of what rests on what (#47), research for the lesson (#51), borrowed terms (#52).
-6. Asides in the margin (#37).
+6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).
 8. Learner profile, per-track stats, usage display (#44, #45, #46).

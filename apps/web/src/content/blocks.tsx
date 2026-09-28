@@ -54,9 +54,9 @@ function BlockView({ block }: { block: Block }) {
         </blockquote>
       );
     case "code":
-      return <CodeBlock code={block.value} lang={block.lang} />;
+      return <CodeBlock code={block.value} lang={block.lang} blockId={block.id} />;
     case "math":
-      return <Tex tex={block.value} display />;
+      return <Tex tex={block.value} display blockId={block.id} />;
     case "table":
       return (
         <div className="my-5 overflow-x-auto">

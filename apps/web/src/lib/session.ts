@@ -2,7 +2,9 @@ import type { Block, LessonStep } from "@grounded/content";
 import type { SessionState } from "@grounded/core";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useReducer } from "react";
+import type { Aside } from "@/lesson/types";
 import { api } from "./api";
+import { ASIDE_EVENT_TYPES, reduceAsides } from "./asides";
 
 export interface ChatMessage {
   id: string;
@@ -35,6 +37,10 @@ export interface SessionModel {
     notes: Record<string, string>;
   } | null;
   checks: CheckEntry[];
+  /** Questions asked in the margin of the lesson, oldest first. */
+  asides: Aside[];
+  /** Whether the learner has ever asked one (until then the lesson shows how). */
+  hasAskedAside: boolean;
   /** What the tutor is doing right now, oldest first; the last one is the one to show. */
   activities: Activity[];
   lastEventId: number;
@@ -204,8 +210,11 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
       };
     case "error":
       return { ...next, error: data.message as string };
-    default:
-      return next;
+    default: {
+      const asides = reduceAsides(model.asides, event.type, event.data);
+      if (!asides) return next;
+      return { ...next, asides, hasAskedAside: model.hasAskedAside || asides.length > 0 };
+    }
   }
 }
 
@@ -224,6 +233,7 @@ const EVENT_TYPES = [
   "note",
   "activity",
   "activity-reasoning",
+  ...ASIDE_EVENT_TYPES,
   // Also the name of EventSource's own connection error; the listener tells them apart by data.
   "error",
 ];

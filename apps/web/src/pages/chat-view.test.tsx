@@ -28,6 +28,8 @@ function model(messages: ChatMessage[]): SessionModel {
     messages,
     lesson: null,
     checks: [],
+    asides: [],
+    hasAskedAside: false,
     activities: [],
     lastEventId: 0,
     error: null,

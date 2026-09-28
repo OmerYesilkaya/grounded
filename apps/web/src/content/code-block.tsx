@@ -4,7 +4,16 @@ import { useEffect, useState } from "react";
  * Plain code first, highlighted once Shiki has loaded (it lives in its own chunk). Shiki escapes the
  * code it highlights, so its HTML carries no model-written markup.
  */
-export function CodeBlock({ code, lang }: { code: string; lang: string | null }) {
+/** `blockId` marks the code as a passage of the lesson one can ask about (lesson/passages.ts). */
+export function CodeBlock({
+  code,
+  lang,
+  blockId,
+}: {
+  code: string;
+  lang: string | null;
+  blockId?: string;
+}) {
   const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
@@ -37,11 +46,12 @@ export function CodeBlock({ code, lang }: { code: string; lang: string | null })
       )}
       {html ? (
         <div
+          data-block={blockId}
           className="shiki-wrap overflow-x-auto p-4 text-sm"
           dangerouslySetInnerHTML={{ __html: html }}
         />
       ) : (
-        <pre className="overflow-x-auto p-4 text-sm">
+        <pre data-block={blockId} className="overflow-x-auto p-4 text-sm">
           <code>{code}</code>
         </pre>
       )}

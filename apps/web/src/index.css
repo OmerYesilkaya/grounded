@@ -102,6 +102,57 @@
   }
 }
 
+/* The hint in the empty margin (aside-hint.tsx): a passage is selected, then asked about. */
+@theme {
+  --animate-hint-select: hint-select 5s ease-in-out infinite;
+  --animate-hint-ask: hint-ask 5s ease-in-out infinite;
+  @keyframes hint-select {
+    0%,
+    12% {
+      transform: scaleX(0);
+    }
+    40%,
+    86% {
+      transform: scaleX(1);
+      opacity: 1;
+    }
+    96%,
+    100% {
+      transform: scaleX(1);
+      opacity: 0;
+    }
+  }
+  @keyframes hint-ask {
+    0%,
+    44% {
+      opacity: 0;
+      transform: translateY(2px);
+    }
+    52%,
+    86% {
+      opacity: 1;
+      transform: none;
+    }
+    96%,
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+/* Passages asked about in the margin (passages.ts), marked without touching the lesson's markup:
+   a faint wash with an underline, and a stronger wash for the one whose card is open. */
+::highlight(aside) {
+  background-color: var(--highlight);
+  text-decoration: underline 1.5px color-mix(in srgb, var(--primary) 55%, transparent);
+  text-underline-offset: 4px;
+}
+::highlight(aside-active) {
+  background-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  text-decoration: underline 1.5px var(--primary);
+  text-underline-offset: 4px;
+}
+
 /* In-progress labels ("Thinking…", "Checking your answer…"): a band of light sweeps through the
    glyphs themselves. The gradient runs from the element's own text colour (currentColor, since only
    the fill is made transparent) to --foreground and back, clipped to the text, so nothing paints

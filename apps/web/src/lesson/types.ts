@@ -1,4 +1,41 @@
 import type { Block } from "@grounded/content";
+import type { AsideAnchor } from "@grounded/core/aside-anchor";
+
+export type { AsideAnchor };
+
+/** A message of an aside's thread: the learner's words, or the tutor's validated blocks. */
+export interface AsideMessage {
+  id: string;
+  role: "learner" | "tutor";
+  text: string | null;
+  blocks: Block[] | null;
+}
+
+/** A question asked on a passage of the lesson, answered in the margin (design §7.5). */
+export interface Aside {
+  id: string;
+  stepId: string;
+  anchor: AsideAnchor;
+  messages: AsideMessage[];
+  /** The answer so far, while the last question is being answered; null otherwise. */
+  draft: string | null;
+  /** A tangent the tutor offered to save for a future session; null if none. */
+  tangent: string | null;
+  saved: boolean;
+}
+
+/** What the lesson view needs for asides; without it, the lesson takes no questions. */
+export interface LessonAsides {
+  items: readonly Aside[];
+  /** The learner has never asked: the empty margin shows how (design §9.1). */
+  hint: boolean;
+  /** Questions can be asked (the session is open). */
+  canAsk: boolean;
+  /** Asks on a passage; resolves with the new aside's id. */
+  onAsk: (anchor: AsideAnchor, text: string) => Promise<string>;
+  onFollowUp: (asideId: string, text: string) => Promise<void>;
+  onSave: (asideId: string) => void;
+}
 
 export type CheckMessage =
   | { from: "learner"; text: string }

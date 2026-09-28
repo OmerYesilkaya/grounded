@@ -2,12 +2,21 @@ import type { LessonStep } from "@grounded/content";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
+import { useMediaQuery } from "@/lib/media-query";
 import { scrollBehavior } from "@/lib/motion";
+import { AsideLayer } from "./aside-layer";
 import { CheckCard } from "./check-card";
 import { StepTimeline } from "./step-timeline";
-import type { StepProgress } from "./types";
+import type { LessonAsides, StepProgress } from "./types";
 
-export type { CheckMessage, StepProgress, StepStatus } from "./types";
+export type {
+  Aside,
+  AsideMessage,
+  CheckMessage,
+  LessonAsides,
+  StepProgress,
+  StepStatus,
+} from "./types";
 
 export interface LessonViewProps {
   steps: readonly LessonStep[];
@@ -20,7 +29,12 @@ export interface LessonViewProps {
   onContinue: (stepId: string) => void;
   /** What follows the last step shown, in the reading column (a failed lesson's way back). */
   after?: ReactNode;
+  /** Questions in the margin (design §7.5); without them the lesson takes none. */
+  asides?: LessonAsides;
 }
+
+/** Wide enough for the margin cards; below it they open as a sheet (design §9.4). */
+const WIDE = "(min-width: 1100px)";
 
 const OPEN: StepProgress = { status: "open", thread: [] };
 const stepAnchor = (stepId: string) => `step-${stepId}`;
@@ -44,15 +58,20 @@ function unlockedSteps(
 
 /**
  * The lesson reading view: steps unlock as the checks before them land, a timeline in the left gutter, the
- * reading column centred, and the right margin reserved for aside cards. Controlled: the server
- * decides verdicts; this only shows state and reports what the learner does.
+ * reading column centred, and the right margin for aside cards. Controlled: the server decides
+ * verdicts and answers; this only shows state and reports what the learner does.
  */
 export function LessonView(props: LessonViewProps) {
-  const { steps, totalSteps, progress } = props;
+  const { steps, totalSteps, progress, asides } = props;
   const shown = unlockedSteps(steps, progress);
   const lockedCount = Math.max(0, totalSteps - shown.length);
   const currentStepId = useCurrentStep(shown);
   useScrollToNewStep(shown);
+  const grid = useRef<HTMLDivElement>(null);
+  const article = useRef<HTMLElement>(null);
+  const margin = useRef<HTMLElement>(null);
+  // Where the browser can't tell (tests), the margin is there.
+  const wide = useMediaQuery(WIDE, true);
 
   const jump = (stepId: string) => {
     document
@@ -61,7 +80,10 @@ export function LessonView(props: LessonViewProps) {
   };
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(340px,1fr)] pt-10 pb-24 max-[1100px]:grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)]">
+    <div
+      ref={grid}
+      className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(340px,1fr)] pt-10 pb-24 max-[1100px]:grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)]"
+    >
       <div className="flex justify-end pr-10 max-[1100px]:hidden">
         <div className="sticky top-24 w-[210px] self-start">
           <StepTimeline
@@ -74,16 +96,25 @@ export function LessonView(props: LessonViewProps) {
         </div>
       </div>
 
-      <article className="col-start-2 px-2 font-serif text-[19px] leading-[1.65] max-sm:text-[17.5px]">
+      <article
+        ref={article}
+        className="col-start-2 px-2 font-serif text-[19px] leading-[1.65] max-sm:text-[17.5px]"
+      >
         {shown.map((step, index) => {
           const stepProgress = progress[step.id] ?? OPEN;
           return (
             <section
               key={step.id}
               id={stepAnchor(step.id)}
+              // Passages are found by their step and block (passages.ts); the heading is the step's
+              // first block.
+              data-step={step.id}
               className="scroll-mt-20 [&+&]:mt-8 [&+&]:border-t [&+&]:pt-10"
             >
-              <h2 className="mb-[0.6em] text-[28px] leading-tight font-semibold tracking-tight">
+              <h2
+                data-block={`${step.id}.b1`}
+                className="mb-[0.6em] text-[28px] leading-tight font-semibold tracking-tight"
+              >
                 <Inlines inlines={step.heading} />
               </h2>
               {stepProgress.status === "settling" && (
@@ -130,11 +161,15 @@ export function LessonView(props: LessonViewProps) {
         {props.after}
       </article>
 
-      {/* Right margin: aside cards (design §7.5). */}
+      {/* Right margin: aside cards (design §7.5), laid over it by the aside layer. */}
       <aside
+        ref={margin}
         aria-label="Questions"
         className="col-start-3 ml-10 max-w-[300px] max-[1100px]:hidden"
       />
+      {asides && (
+        <AsideLayer {...asides} grid={grid} lesson={article} margin={margin} wide={wide} />
+      )}
     </div>
   );
 }
