@@ -800,9 +800,10 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - HTTPS; least-privilege database roles; backups.
 - Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
   are content too (§4.5): only their owner can download them, and never inline.
-- A plain sentence at sign-up: what is stored (answers, progress, questions, attached files, the
-  encrypted key), that nothing is shared, and that the operator can technically access the database
-  but does not read it.
+- A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
+  what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
+  shared (the tutor's calls go to the provider whose key the learner brings), and that the operator
+  can technically access the database but does not read it.
 - Model output is never rendered as HTML or run as code; every URL is verified before display.
 
 ## 13. Settled since the grilling
