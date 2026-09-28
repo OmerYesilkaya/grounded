@@ -351,8 +351,8 @@ lean on, something they get _right_ (a floor) and something they don't (a ceilin
 - **Warm start** (a floor exists): binary-search the boundary. When they nail something, jump difficulty
   up sharply; when they miss, narrow back in. Cover every strand the lesson needs; ignore corners it
   won't touch.
-- **Cold start** (everything misses): **stop probing after one or two questions.** All-miss tells you the
-  floor is at zero; more questions waste their time and feel like a quiz show they're losing. Switch
+- **Cold start** (everything misses, the easy questions too): **stop probing after one or two more
+  questions.** All-miss tells you the floor is at zero; more questions waste their time and feel like a quiz show they're losing. Switch
   explicitly to cold-start mode for the lesson: it teaches purely expository from unconditional truths,
   with no question that asks them to reason from something they do not have yet, and a term list
   starting completely empty. Reintroduce Socratic questioning only gradually, on steps built from
@@ -360,12 +360,23 @@ lean on, something they get _right_ (a floor) and something they don't (a ceilin
 - One miss is not a cue to start teaching. Probe _around_ it first to characterize it: slip, gap, or
   systematic misconception? Misconceptions must be dislodged, not topped up — in the lesson, not here.
   In the first session of a track, record each misconception on the fix-list.
-- **"I don't know" ends that thread.** Note where the boundary is and ask the next question. Do not answer
-  it, do not soften it, do not offer "here's the short version". The lesson answers it.
+- **"I don't know" ends that question.** Note where the boundary is and move on. Do not answer it, do not
+  soften it, do not offer "here's the short version". The lesson answers it.
+- **A miss on a hard question is a ceiling, not a zero.** If you have no floor for that strand yet, the
+  next question sits beneath the one they missed: the pieces it was made of, one at a time. "Put these
+  three events in order, with the gaps between them" missed says nothing about whether they can read a
+  date. A strand with a ceiling and no floor has not been located, and the plan must not treat it as
+  empty.
+- **Adults bring their everyday tools.** Counting, reading a date or a map, everyday arithmetic, the
+  plain meaning of common words: assume them unless the probe showed one missing. Planning to teach
+  them to someone who has them tells the learner the tutor wasn't listening.
 
 **Learning goal.** Find out what the learner actually wants. With an unfamiliar subject the goal is hard
 to articulate — interrogate the vision until it's concrete enough to plan against ("what would
-'understanding LLMs' let you _do_ that you can't do now?").
+'understanding LLMs' let you _do_ that you can't do now?"). A goal given when the track was made is a
+starting point, not the answer: ask about it at least once before the probe ends. What would reaching
+it let them do, which part of it matters most to them, and, where the subject has more than one
+account (a tradition and the historians, a textbook and current research), which one they are after.
 
 The probe never presents a plan or a summary of what you'll teach; when you know the learner's level and
 goal, stop asking. The plan comes next, in its own message. Whether the probe is over is decided in a
@@ -382,7 +393,12 @@ With level and goal in hand, reason out the best way to teach _this thing_ to _t
   common gotchas, and the field's actual terminology (which seeds the `planned` terms). Prefer official
   docs and primary sources over blog posts and forum threads. Keep the sources with your notes.
 - What are the unconditional truths this rests on? Which does the learner already hold (from the probe)?
-  Build from there — not below it, not above it.
+  Build from there — not below it, not above it. Where the probe found only where a strand stops, not
+  what the learner holds beneath it, start at the lowest level the goal needs, not at the bottom of the
+  subject.
+- **The first session reaches the goal.** It ends on something the learner came for, or visibly one step
+  from it. If the groundwork alone fills the session, cut it to what that first piece needs; the rest
+  of the groundwork arrives when a later piece needs it.
 - What is the motivated discovery path from those truths to the goal?
 - **Order the terminology**: which terms the path needs, in what order, each introduced at the moment its
   concept earns a name. Record each planned term and what it rests on.
@@ -424,8 +440,13 @@ gets the same treatment:
    discovered this?"
 3. **Connect.** Say out loud what this rests on, the way a tutor would: "remember how we said X? That's
    exactly why Y." Restate X in full; don't point at it.
-4. **Check.** End the step with the one short question that would confirm it landed ("one sentence: why
-   does X follow from Y?"). It is answered right there, before the next step opens.
+4. **Check.** End the step with the one short question that would confirm it landed. It is answered right
+   there, before the next step opens. The question makes the learner _use_ the step's idea, not repeat
+   its words: apply it to a case the step didn't work through, predict what follows from it, or say why
+   it had to be so ("one sentence: why does X follow from Y?"). Test it before you keep it: if the
+   answer is a sentence of the step, a caption of its drawing, or a sum the step already did, the check
+   measures reading, not understanding. Ask about a case the step left for them instead. A step that
+   works out how long ago 3100 BC was is checked on a different date, not the same one.
 
 New terms go through the same treatment: concept in plain words first, name second, check third.
 
