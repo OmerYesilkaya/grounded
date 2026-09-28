@@ -20,7 +20,7 @@ describe("model list", () => {
     }
     expect(offeredModels("anthropic", { includeUngated: false }).map((m) => m.id)).toEqual([
       "claude-opus-5-5",
-      "claude-sonnet-5",
+      "claude-sonnet-5-5",
     ]);
     expect(offeredModels("openai", { includeUngated: false }).map((m) => m.id)).toContain(
       "gpt-6-luna",

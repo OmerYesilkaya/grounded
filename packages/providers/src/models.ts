@@ -28,9 +28,9 @@ export const MODELS: readonly ModelEntry[] = [
   },
   {
     // Passed Omer's quality test (2026-09-28).
-    id: "claude-sonnet-5",
+    id: "claude-sonnet-5-5",
     provider: "anthropic",
-    label: "Claude Sonnet 5",
+    label: "Claude Sonnet 5.5",
     roles: ["strong"],
     price: { input: 2, cachedInput: 0.2, output: 10 },
     gate: "manual",
