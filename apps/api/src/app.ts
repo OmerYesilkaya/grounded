@@ -13,6 +13,7 @@ import { requestLogging, unexpectedError } from "./request-log.js";
 import { registerAsideRoutes } from "./routes/asides.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerTrackRoutes } from "./routes/tracks.js";
+import { registerUsageRoutes } from "./routes/usage.js";
 
 export interface AppDependencies {
   db: Db;
@@ -177,6 +178,7 @@ export function createApp(deps: AppDependencies) {
   registerTrackRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerSessionRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerAsideRoutes(app, { db, queue: deps.queue });
+  registerUsageRoutes(app, { db });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

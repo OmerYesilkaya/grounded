@@ -115,7 +115,10 @@ export const credentials = pgTable("credentials", {
   updatedAt: updatedAt(),
 });
 
-/** One row per model call (design §4.4). Costs are computed from the model list's prices. */
+/**
+ * One row per model call (design §4.4). Costs are estimated from the model list's prices and shown
+ * per session and per month (the usage page).
+ */
 export const usageEvents = pgTable(
   "usage_events",
   {
@@ -123,12 +126,23 @@ export const usageEvents = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    /**
+     * The track and session the call was made for, where it had them (naming a track has no
+     * session, an import neither). Null for calls recorded before they were kept. No foreign keys:
+     * the calls outlive a deleted track (they record what was spent, design §4.5), and a job's call
+     * still in flight when its track is deleted is recorded all the same.
+     */
+    trackId: uuid("track_id"),
+    sessionId: uuid("session_id"),
     provider: text("provider").$type<ProviderId>().notNull(),
     model: text("model").notNull(),
     /** What the call was for, e.g. "lesson", "check", "aside". */
     purpose: text("purpose").notNull(),
+    /** Every input token, those read from and written to the provider's cache included. */
     inputTokens: integer("input_tokens").notNull(),
     cachedInputTokens: integer("cached_input_tokens").notNull().default(0),
+    /** Input written to the provider's cache: Anthropic bills it above the base rate. */
+    cacheWriteTokens: integer("cache_write_tokens").notNull().default(0),
     outputTokens: integer("output_tokens").notNull(),
     /** Failed calls are recorded too, with the kind of failure the learner was shown. */
     status: text("status").$type<"ok" | "error">().notNull().default("ok"),
@@ -140,7 +154,10 @@ export const usageEvents = pgTable(
     durationMs: integer("duration_ms"),
     createdAt: createdAt(),
   },
-  (table) => [index("usage_events_user_time").on(table.userId, table.createdAt)],
+  (table) => [
+    index("usage_events_user_time").on(table.userId, table.createdAt),
+    index("usage_events_session").on(table.sessionId),
+  ],
 );
 
 // ---------------------------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  ChartNoAxesColumn,
   ChevronsUpDown,
   KeyRound,
   LogOut,
@@ -56,6 +57,12 @@ export function AccountMenu({ email }: { email: string }) {
           <Link to="/settings/key">
             <KeyRound />
             API key
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/usage">
+            <ChartNoAxesColumn />
+            Usage
           </Link>
         </DropdownMenuItem>
         {/* The theme (design §9.3) as three icons in a row. Choosing one leaves the menu open, so

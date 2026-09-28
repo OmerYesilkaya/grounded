@@ -36,6 +36,15 @@ describe("model list", () => {
         outputTokens: 100_000,
       }),
     ).toBeCloseTo(0.5 * 4 + 0.5 * 0.2 + 0.1 * 20);
+    // Written to the cache: $8 per million, twice the base input rate.
+    expect(
+      estimateCost("claude-opus-5-5", {
+        inputTokens: 1_000_000,
+        cachedInputTokens: 200_000,
+        cacheWriteTokens: 300_000,
+        outputTokens: 0,
+      }),
+    ).toBeCloseTo(0.5 * 4 + 0.2 * 0.2 + 0.3 * 8);
     expect(
       estimateCost("gpt-6-luna", { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 }),
     ).toBeNull();

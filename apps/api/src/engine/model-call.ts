@@ -84,6 +84,8 @@ export interface ModelRequest {
   role: "strong" | "cheap";
   /** The track the call is about, if any: a track's calls share a provider cache (call-options.ts). */
   trackId?: string;
+  /** The session the call is made in, if any: its usage is shown per session. */
+  sessionId?: string;
 }
 
 /**
@@ -133,6 +135,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
         const tokens = {
           inputTokens: usage?.inputTokens.total ?? 0,
           cachedInputTokens: usage?.inputTokens.cacheRead ?? 0,
+          cacheWriteTokens: usage?.inputTokens.cacheWrite ?? 0,
           outputTokens: usage?.outputTokens.total ?? 0,
         };
         const line = {
@@ -157,6 +160,8 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           );
         await db.insert(usageEvents).values({
           userId: request.userId,
+          trackId: request.trackId ?? null,
+          sessionId: request.sessionId ?? null,
           provider,
           model: modelId,
           purpose: request.purpose,

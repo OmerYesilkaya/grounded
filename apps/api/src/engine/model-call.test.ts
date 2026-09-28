@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { joinSystemPrompt, type SystemPrompt } from "@grounded/core";
-import { credentials, usageEvents, users } from "@grounded/db";
+import { initialSession, joinSystemPrompt, type SystemPrompt } from "@grounded/core";
+import { credentials, learningSessions, tracks, usageEvents, users } from "@grounded/db";
 import { generateText, Output, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
@@ -42,6 +42,16 @@ async function userWithKey(provider: "openai" | "anthropic", model: string) {
     keyHint: "1234",
   });
   return user.id;
+}
+
+/** A track of the learner's, for calls made about one. */
+async function trackOf(userId: string) {
+  const [track] = await t.db
+    .insert(tracks)
+    .values({ userId, title: "Concurrency", goal: "Concurrency" })
+    .returning();
+  if (!track) throw new Error("no track");
+  return track.id;
 }
 
 function callerWith(model: MockLanguageModelV4, limits?: CallLimits) {
@@ -126,6 +136,43 @@ describe("callModel", () => {
       outputTokens: 80,
       status: "ok",
     });
+  });
+
+  it("records the track and session a call was made for, and what it wrote to the cache", async () => {
+    const userId = await userWithKey("anthropic", "claude-opus-5-5");
+    const trackId = await trackOf(userId);
+    const [session] = await t.db
+      .insert(learningSessions)
+      .values({ trackId, userId, state: initialSession() })
+      .returning();
+    const written = {
+      ...usage,
+      inputTokens: { total: 1500, noCache: 200, cacheRead: 1000, cacheWrite: 300 },
+    };
+    const { caller } = callerWith(
+      new MockLanguageModelV4({ doGenerate: { ...reply("Next."), usage: written } }),
+    );
+
+    const model = await caller.model({
+      userId,
+      trackId,
+      sessionId: session?.id ?? "",
+      purpose: "check",
+      role: "strong",
+    });
+    await generateText({ model, prompt: "grade" });
+    await generateText({
+      model: await caller.model({ userId, purpose: "import", role: "strong" }),
+      prompt: "import",
+    });
+
+    const events = await t.db.select().from(usageEvents).orderBy(usageEvents.purpose);
+    expect(
+      events.map((e) => [e.purpose, e.trackId, e.sessionId, e.inputTokens, e.cacheWriteTokens]),
+    ).toEqual([
+      ["check", trackId, session?.id, 1500, 300],
+      ["import", null, null, 1500, 300],
+    ]);
   });
 
   it("turns a provider failure into the plain message, records it and logs its cause", async () => {
@@ -565,7 +612,12 @@ describe("reasoning effort per purpose", () => {
     ]) {
       const mock = new MockLanguageModelV4({ doGenerate: reply("{}") });
       const { caller } = callerWith(mock);
-      const model = await caller.model({ userId, purpose, role: "strong", trackId: "t-1" });
+      const model = await caller.model({
+        userId,
+        purpose,
+        role: "strong",
+        trackId: await trackOf(userId),
+      });
       await generateText({ model, prompt: "decide" });
       efforts[purpose] = mock.doGenerateCalls[0]?.reasoning;
     }
@@ -617,12 +669,13 @@ describe("provider cache hints", () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
     const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
     const { caller } = callerWith(mock);
-    const model = await caller.model({ userId, purpose: "check", role: "strong", trackId: "t-1" });
+    const trackId = await trackOf(userId);
+    const model = await caller.model({ userId, purpose: "check", role: "strong", trackId });
 
     await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
 
     const [call] = mock.doGenerateCalls;
-    expect(call?.providerOptions).toEqual({ openai: { promptCacheKey: "t-1" } });
+    expect(call?.providerOptions).toEqual({ openai: { promptCacheKey: trackId } });
     expect(call?.prompt.filter((m) => m.role === "system")).toEqual([
       { role: "system", content: joinSystemPrompt(prompt) },
     ]);
@@ -643,7 +696,12 @@ describe("provider cache hints", () => {
     const userId = await userWithKey("anthropic", "claude-opus-5-5");
     const mock = streamed();
     const { caller } = callerWith(mock);
-    const model = await caller.model({ userId, purpose: "probe", role: "strong", trackId: "t-1" });
+    const model = await caller.model({
+      userId,
+      purpose: "probe",
+      role: "strong",
+      trackId: await trackOf(userId),
+    });
 
     await streamText({ model, system: systemMessages(prompt), prompt: "hi" }).text;
 
@@ -710,7 +768,7 @@ describe("provider cache hints", () => {
         userId,
         purpose: "check",
         role: "strong",
-        trackId: "t-1",
+        trackId: await trackOf(userId),
       });
       const cases: [SystemPrompt, number][] = [
         [prompt, 4],
@@ -737,7 +795,7 @@ describe("provider cache hints", () => {
         userId,
         purpose: "check",
         role: "strong",
-        trackId: "t-1",
+        trackId: await trackOf(userId),
       });
 
       await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
@@ -754,7 +812,7 @@ describe("provider cache hints", () => {
         userId,
         purpose: "check",
         role: "strong",
-        trackId: "t-1",
+        trackId: await trackOf(userId),
       });
       const marked = { anthropic: { cacheControl: { type: "ephemeral" } } };
 
@@ -777,7 +835,12 @@ describe("provider cache hints", () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
     const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
     const { caller } = callerWith(mock);
-    const model = await caller.model({ userId, purpose: "check", role: "strong", trackId: "t-1" });
+    const model = await caller.model({
+      userId,
+      purpose: "check",
+      role: "strong",
+      trackId: await trackOf(userId),
+    });
 
     await generateText({
       model,

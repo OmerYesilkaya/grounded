@@ -11,7 +11,8 @@ export interface ModelEntry {
   label: string;
   /** strong: planning, lessons, grading, reviews · cheap: asides and small jobs. */
   roles: readonly ("strong" | "cheap")[];
-  price: { input: number; cachedInput: number; output: number } | null;
+  /** cacheWrite: input written to the provider cache (Anthropic: 2x input at the 1-hour lifetime). */
+  price: { input: number; cachedInput: number; cacheWrite: number; output: number } | null;
   /** passed: eval harness · manual: tested by hand · pending: not evaluated (development only). */
   gate: "passed" | "manual" | "pending";
 }
@@ -23,7 +24,7 @@ export const MODELS: readonly ModelEntry[] = [
     provider: "anthropic",
     label: "Claude Opus 5.5",
     roles: ["strong"],
-    price: { input: 4, cachedInput: 0.2, output: 20 },
+    price: { input: 4, cachedInput: 0.2, cacheWrite: 8, output: 20 },
     gate: "manual",
   },
   {
@@ -32,7 +33,7 @@ export const MODELS: readonly ModelEntry[] = [
     provider: "anthropic",
     label: "Claude Sonnet 5.5",
     roles: ["strong"],
-    price: { input: 2, cachedInput: 0.2, output: 10 },
+    price: { input: 2, cachedInput: 0.2, cacheWrite: 4, output: 10 },
     gate: "manual",
   },
   {
@@ -41,7 +42,7 @@ export const MODELS: readonly ModelEntry[] = [
     provider: "anthropic",
     label: "Claude Haiku 4.5",
     roles: ["cheap"],
-    price: { input: 1, cachedInput: 0.1, output: 5 },
+    price: { input: 1, cachedInput: 0.1, cacheWrite: 2, output: 5 },
     gate: "manual",
   },
   {
@@ -79,17 +80,24 @@ export function cheapModelFor(provider: ProviderId): ModelEntry | undefined {
 export interface TokenUsage {
   inputTokens: number;
   cachedInputTokens: number;
+  /** Input written to the provider's cache; 0 where it isn't reported. */
+  cacheWriteTokens?: number;
   outputTokens: number;
 }
 
-/** USD; cached input tokens are billed at the cached rate and are part of inputTokens. */
+/**
+ * USD. Input read from the cache is billed at the cached rate, input written to it at the cache
+ * write rate; both are part of inputTokens.
+ */
 export function estimateCost(modelId: string, usage: TokenUsage): number | null {
   const price = findModel(modelId)?.price;
   if (!price) return null;
-  const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens);
+  const written = usage.cacheWriteTokens ?? 0;
+  const uncached = Math.max(0, usage.inputTokens - usage.cachedInputTokens - written);
   return (
     (uncached * price.input +
       usage.cachedInputTokens * price.cachedInput +
+      written * price.cacheWrite +
       usage.outputTokens * price.output) /
     1e6
   );

@@ -268,6 +268,16 @@ about, test and debug.
   shown simply per session and per month. Each attempt also records its duration (`duration_ms`,
   from the request to a stream's finish or the failure), so the effect of caching and reasoning
   effort shows per purpose.
+- **The usage page** (`/usage`, from the account menu; `GET /api/usage`, `apps/api/src/routes/usage.ts`;
+  decided 2026-09-29, #46) shows an **estimated cost** first, tokens second: a learner pays in money,
+  and a token count means little to them. Cost is computed at read time from the model list's prices
+  (`estimateCost`), so a price fixed later corrects the past too; a model with no price yet is
+  counted as "not counted: N calls" rather than guessed. Each call records its track and session
+  (`ModelRequest.sessionId`) and its cache writes (`cache_write_tokens`, billed by Anthropic at 2x
+  input for the 1-hour lifetime, so the model list carries a `cacheWrite` price). The page shows this
+  month so far (in the browser's time zone), the earlier months (the last 12) and the 30 most recent
+  sessions, each linking to the session; failed calls count, as providers bill them. It says the
+  figure is an estimate and the provider's bill is exact.
 - **Prompts are ordered stable-first** (`assembleSystemPrompt` in `packages/core/src/prompt.ts`), so
   a provider can reuse the cached start of the previous call: the method's `all` sections (the same
   for every phase; `method.md` keeps them all at its top, so they are one leading run), then the
@@ -448,7 +458,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
 | `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                         |
-| `usage_events`                                   | per model call                                                                                                                           |
+| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                         |
 | `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
 
 Planned for v1, not built yet:

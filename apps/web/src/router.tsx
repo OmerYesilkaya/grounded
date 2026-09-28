@@ -16,6 +16,7 @@ import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
 import { SignInPage } from "./pages/sign-in";
 import { TrackPage } from "./pages/track";
+import { UsagePage } from "./pages/usage";
 
 export const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, staleTime: 30_000 } },
@@ -76,6 +77,12 @@ const trackRoute = createRoute({
   },
 });
 
+const usageRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/usage",
+  component: UsagePage,
+});
+
 const importedLessonRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tracks/$trackId/last-lesson",
@@ -111,7 +118,14 @@ const keySettingsRoute = createRoute({
 
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
-    appRoute.addChildren([homeRoute, newTrackRoute, trackRoute, importedLessonRoute, sessionRoute]),
+    appRoute.addChildren([
+      homeRoute,
+      newTrackRoute,
+      trackRoute,
+      importedLessonRoute,
+      sessionRoute,
+      usageRoute,
+    ]),
     signInRoute,
     keySettingsRoute,
   ]),

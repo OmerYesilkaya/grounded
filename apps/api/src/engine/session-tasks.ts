@@ -222,6 +222,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           models.model({
             userId: session.userId,
             trackId: session.trackId,
+            sessionId: session.id,
             purpose: "conversation-summary",
             role: "strong",
           }),
@@ -382,6 +383,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         model: await models.model({
           userId: session.userId,
           trackId: session.trackId,
+          sessionId: session.id,
           purpose: "left-off",
           role: "strong",
         }),
@@ -503,7 +505,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         if (leftOff || brief) context = await contextFor(sessionId, "probe");
       }
       const modelFor = (purpose: "probe" | "probe-decision" | "probe-summary") =>
-        models.model({ userId: session.userId, trackId: session.trackId, purpose, role: "strong" });
+        models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          sessionId: session.id,
+          purpose,
+          role: "strong",
+        });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
       if (context.learnerHasSpoken) {
         // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
@@ -599,6 +607,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const model = await models.model({
         userId: session.userId,
         trackId: session.trackId,
+        sessionId: session.id,
         purpose: "lesson",
         role: "strong",
       });
@@ -694,6 +703,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const model = await models.model({
           userId: session.userId,
           trackId: session.trackId,
+          sessionId: session.id,
           purpose: "check",
           role: "strong",
         });
@@ -809,6 +819,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const model = await models.model({
         userId: session.userId,
         trackId: session.trackId,
+        sessionId: session.id,
         purpose: "check",
         role: "strong",
       });
@@ -828,6 +839,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const model = await models.model({
         userId: session.userId,
         trackId: session.trackId,
+        sessionId: session.id,
         purpose: "homework",
         role: "strong",
       });
@@ -858,6 +870,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         model: await models.model({
           userId: session.userId,
           trackId: session.trackId,
+          sessionId: session.id,
           purpose: "close",
           role: "strong",
         }),
@@ -881,6 +894,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const model = await models.model({
           userId: session.userId,
           trackId: session.trackId,
+          sessionId: session.id,
           purpose: "term-sweep",
           role: "strong",
         });
@@ -932,6 +946,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           model: await models.model({
             userId: session.userId,
             trackId: session.trackId,
+            sessionId: session.id,
             purpose: "left-off",
             role: "strong",
           }),
@@ -951,6 +966,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         models.model({
           userId: session.userId,
           trackId: session.trackId,
+          sessionId: session.id,
           purpose: "plan",
           role: "strong",
         });
