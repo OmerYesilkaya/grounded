@@ -37,6 +37,12 @@ import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
 import { systemMessages } from "./call-options.js";
 import { writeChatMessage } from "./chat.js";
+import {
+  conversationFor,
+  dueForSummary,
+  summarizeEarlier,
+  type EarlierSummary,
+} from "./conversation.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import {
   LEFT_OFF_CATCH_UP,
@@ -117,11 +123,30 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .from(sessionMessages)
       .where(eq(sessionMessages.sessionId, sessionId))
       .orderBy(asc(sessionMessages.createdAt), asc(sessionMessages.id));
-    const messages: ModelMessage[] = history.map((m) =>
-      m.role === "learner"
-        ? { role: "user", content: m.text ?? "" }
-        : { role: "assistant", content: m.text ?? "" },
-    );
+    const system = systemFor(phase, track);
+    // A long conversation's older turns are carried as a summary (conversation.ts).
+    let summary: EarlierSummary | null =
+      session.earlierSummary !== null && session.summarizedThrough !== null
+        ? { text: session.earlierSummary, through: session.summarizedThrough }
+        : null;
+    const due = dueForSummary(history, summary);
+    if (due.length > 0) {
+      summary = await summarizeEarlier({
+        db,
+        sessionId,
+        model: () =>
+          models.model({
+            userId: session.userId,
+            trackId: session.trackId,
+            purpose: "conversation-summary",
+            role: "strong",
+          }),
+        system,
+        summary,
+        turns: due,
+      });
+    }
+    const messages = conversationFor(history, summary);
     // A conversation starts with the learner; the app opens it on their behalf, with what they said
     // they want to learn (the track's title), so the first question builds on it.
     if (messages[0]?.role !== "user")
@@ -130,14 +155,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         content: `(The learner started a session. They said they want to learn: ${track.track.title})`,
       });
     const learnerHasSpoken = history.some((m) => m.role === "learner");
-    return {
-      session,
-      track,
-      terms,
-      messages,
-      learnerHasSpoken,
-      system: systemFor(phase, track),
-    };
+    return { session, track, terms, messages, learnerHasSpoken, system };
   };
 
   const lessonRow = async (sessionId: string) => {

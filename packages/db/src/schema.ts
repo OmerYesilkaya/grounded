@@ -268,6 +268,13 @@ export const learningSessions = pgTable(
      * want to reach. Null until the probe finishes on its own (not when the learner skips to the plan).
      */
     probeSummary: text("probe_summary"),
+    /**
+     * A long session's older turns, summarized (design §4.4): prompts carry this in place of the
+     * session's messages up to and including `summarized_through`, and the rest in full. Null
+     * until the conversation first grows past the limit.
+     */
+    earlierSummary: text("earlier_summary"),
+    summarizedThrough: uuid("summarized_through"),
     closedAt: timestamp("closed_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

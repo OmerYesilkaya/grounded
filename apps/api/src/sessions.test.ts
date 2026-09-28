@@ -155,6 +155,42 @@ describe("where you left off", () => {
   });
 });
 
+describe("a long session", () => {
+  it("carries its older turns as a summary, and the last ones in full", async () => {
+    const { cookie, sessionId } = await startedSession();
+    // A long probe: 50 more exchanges of about 500 characters each.
+    for (let i = 0; i < 100; i++) {
+      await t.db.insert(sessionMessages).values({
+        sessionId,
+        role: i % 2 === 0 ? "learner" : "tutor",
+        text: `Turn ${String(i)}. ${"Some words about counters and memory. ".repeat(13)}`,
+      });
+    }
+    const SUMMARY = "Asked what adding one does; the learner said 'it copies, adds, puts back'.";
+    models.script("conversation-summary", { text: SUMMARY });
+    models.script("probe-decision", probeGoesOn());
+    models.script("probe", { text: "What is in memory meanwhile?" });
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "the last answer" }),
+    });
+    await until(cookie, sessionId, storedMessages(103));
+
+    const summarizing = models.used.find((u) => u.purpose === "conversation-summary")?.model
+      .doGenerateCalls[0];
+    expect(JSON.stringify(summarizing?.prompt)).toContain(`Tutor: ${FIRST_QUESTION}`);
+    const question = models.used.filter((u) => u.purpose === "probe")[1]?.model.doStreamCalls[0];
+    const conversation = question?.prompt.filter((m) => m.role !== "system") ?? [];
+    expect(JSON.stringify(conversation[0])).toContain(SUMMARY);
+    expect(conversation).toHaveLength(1 + 10);
+    expect(JSON.stringify(conversation.at(-1))).toContain("the last answer");
+    expect(JSON.stringify(conversation)).not.toContain("Turn 0.");
+    // Summarized once: the next calls reuse it until the rest grows past the limit again.
+    expect(models.used.filter((u) => u.purpose === "conversation-summary")).toHaveLength(1);
+  });
+});
+
 describe("probe and plan", () => {
   it("moves to the plan when the tutor finishes probing, and records the plan's terms", async () => {
     const { cookie, sessionId } = await planned();

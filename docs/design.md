@@ -285,6 +285,17 @@ about, test and debug.
     4,000 characters (`LEFT_OFF_CATCH_UP`) they are carried as written; longer ones get a summary
     written from the notes alone, once, before the session's opening question ("Reading where you
     left off"). If that fails, the session carries the notes as written.
+- **A long session's older turns are carried as a summary** (`apps/api/src/engine/conversation.ts`;
+  decided 2026-09-28, #13). While the session's messages after the summary total at most 40,000
+  characters (`CONVERSATION_LIMIT`, about 10,000 tokens: several times a normal session's whole
+  chat), they are carried in full. Past it, a call (`conversation-summary`, little reasoning) folds
+  all but the last 10 messages (`KEEP_RECENT`) into the running summary, quoting the learner's own
+  words where they are evidence; it is stored on the session (`earlier_summary`, up to the message
+  `summarized_through`). Prompts then carry the summary as the conversation's first message and
+  the messages after it in full. The summary changes only when it rolls forward again, so between
+  rolls the conversation's start stays the same from call to call. If the call fails, the
+  conversation is carried in full and the next call tries again. Check threads and asides are not
+  part of it: each is short and carried whole where it belongs.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -297,9 +308,9 @@ about, test and debug.
   effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured
   records of what the conversation already showed think little (`low`): the probe's decision
   (`probe-decision`, its own purpose, apart from the probe's question) and the close's term sweep
-  (`term-sweep`, apart from the recap), and so does "where you left off" (`left-off`), a summary of
-  what is already written. Everything else keeps the provider's default, above all plans, lessons
-  and check grading.
+  (`term-sweep`, apart from the recap), and so do the summaries of what is already written ("where
+  you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
+  keeps the provider's default, above all plans, lessons and check grading.
 
 ## 5. Data model (sketch)
 
@@ -314,7 +325,7 @@ about, test and debug.
 | `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
 | `borrowed_terms`           | term used in this track, confirmed in another                                                         |
 | `arcs`, `fix_list_items`   | the plan's arcs and which session closes each; the audit's misconceptions and their status            |
-| `sessions`                 | track, kind (normal / final), phase, open/closed, paused-at                                           |
+| `sessions`                 | track, kind (normal / final), phase, open/closed, paused-at, a long chat's older turns summarized     |
 | `messages`                 | chat messages of a session (probe, plan, recap) as block trees                                        |
 | `lessons`, `lesson_steps`  | the lesson's block tree per step, outline, validation results                                         |
 | `check_attempts`           | per step: answers, verdicts, repair threads, fresh questions, flags                                   |
