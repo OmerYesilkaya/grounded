@@ -9,10 +9,11 @@ const page = vi.hoisted((): { params: { trackId?: string; sessionId?: string } }
   params: {},
 }));
 const tracks = vi.hoisted(() => ({ data: [] as TrackSummary[] }));
+const navigate = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => page.params,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigate,
   Link: (props: {
     to: string;
     params?: Record<string, string>;
@@ -127,5 +128,75 @@ describe("the track list", () => {
     expect(
       within(screen.getByRole("list", { name: "In Backend interviews" })).getByRole("link"),
     ).toHaveTextContent("Finding where you startSession 1");
+  });
+});
+
+describe("searching the track list", () => {
+  const searchBox = () => screen.getByRole("searchbox", { name: "Search tracks and lessons" });
+
+  it("is reached with /, filters live, opens the first find with Enter, and clears with Escape", async () => {
+    const user = userEvent.setup();
+    tracks.data = [software(), track("t2", "Backend interviews")];
+    render(<TrackSidebar email="ada@example.com" />);
+
+    await user.keyboard("/");
+    expect(searchBox()).toHaveFocus();
+    await user.keyboard("memory");
+    expect(screen.queryByRole("link", { name: "Backend interviews" })).not.toBeInTheDocument();
+    // A lesson found in a closed track shows under it, even though it is finished.
+    const found = within(screen.getByRole("list", { name: "In How software works" }));
+    expect(found.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Memory addressSession 2",
+    ]);
+
+    await user.keyboard("{Enter}");
+    expect(navigate).toHaveBeenCalledWith({
+      to: "/sessions/$sessionId",
+      params: { sessionId: "s2" },
+    });
+    expect(searchBox()).toHaveValue("");
+
+    await user.type(searchBox(), "nothing like it");
+    expect(screen.getByText("Nothing matches “nothing like it”.")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(searchBox()).toHaveValue("");
+    expect(screen.getByRole("link", { name: "Backend interviews" })).toBeInTheDocument();
+  });
+
+  it("leaves a / typed in a text box alone", async () => {
+    const user = userEvent.setup();
+    render(
+      <>
+        <textarea aria-label="Answer" />
+        <TrackSidebar email="ada@example.com" />
+      </>,
+    );
+    await user.type(screen.getByRole("textbox", { name: "Answer" }), "a/b");
+    expect(screen.getByRole("textbox", { name: "Answer" })).toHaveValue("a/b");
+    expect(searchBox()).not.toHaveFocus();
+  });
+});
+
+describe("many tracks", () => {
+  it("shows the six most recently active and the rest under “N more tracks”", async () => {
+    const user = userEvent.setup();
+    tracks.data = Array.from({ length: 16 }, (_, i) =>
+      track(`t${String(i)}`, `Track ${String(i)}`),
+    );
+    render(<TrackSidebar email="ada@example.com" />);
+    const names = () =>
+      within(screen.getByRole("navigation", { name: "Tracks" }))
+        .getAllByRole("link")
+        .map((link) => link.textContent);
+
+    expect(names()).toEqual(["Track 0", "Track 1", "Track 2", "Track 3", "Track 4", "Track 5"]);
+    await user.click(screen.getByRole("button", { name: "10 more tracks" }));
+    expect(names()).toHaveLength(16);
+    await user.click(screen.getByRole("button", { name: "Fewer tracks" }));
+    expect(names()).toHaveLength(6);
+
+    // A search looks through all of them.
+    await user.type(screen.getByRole("searchbox"), "track 12");
+    expect(names()).toEqual(["Track 12"]);
   });
 });

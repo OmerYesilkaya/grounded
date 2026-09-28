@@ -799,8 +799,22 @@ and marked the current track with bolder text):
 - **Other tracks** start closed, one line each with what is waiting ("1 open", later "1 due"); the
   chevron opens them in place. Finished items fold into one line ("3 done ›") above the rest; the
   item on the page is never folded away.
-- **At scale (15+):** ordered by recent activity, six shown, the rest under "N more tracks"; search
-  filters tracks and lessons live.
+- **Ordered by recent activity** (always): the latest change to the track or to anything in it
+  (`activeAt` in `GET /api/tracks`, from `apps/api/src/track-list.ts`). **At scale (15+):** the six
+  most recently active shown, plus the page's track wherever it falls, the rest under "N more
+  tracks" (which turns into "Fewer tracks").
+- **Search** (`/` from anywhere but a text box; built 2026-09-29, #55) filters tracks and lessons
+  live, over all tracks: every word must appear, in any order, ignoring case and accents ("misir"
+  finds "Mısır"). A track whose name holds them is shown as usual; otherwise a track shows open with
+  only its items that hold them (finished ones included, unfolded), its name counting towards each
+  ("sql joins"). Enter opens the first find, Escape clears. It runs in the browser on the list it
+  already has.
+- **Items are one shape, whatever their kind** (`kind`, `id`, `done`, `activeAt`, plus what the
+  kind's row says), so ordering, folding, counting and search don't depend on the kind. Sessions are
+  the only kind yet. Homework and arc exams (#38, #42) join as kinds: each adds its row's words
+  (what it asks, over "Homework · session 4" or "Arc exam · Arc 2") and a `due` (snoozed until, for
+  the "tonight" / "tomorrow" tag, §7.4); a due item counts as "1 due" on a closed track and sorts
+  the track by its due time too.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
   key, theme, sign out).
 

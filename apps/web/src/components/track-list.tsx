@@ -1,13 +1,15 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import type { SessionItem, TrackItem, TrackSummary } from "@/lib/tracks";
+import { describeItem } from "@/lib/track-list";
+import type { TrackItem, TrackSummary } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
 
 /**
  * One track in the track list (design §9.2): its name as the parent line, and when expanded its
  * items below it, hung from a thread line that marks where they belong. The current session is where
- * the thread turns to the accent colour; finished items fold into one line.
+ * the thread turns to the accent colour; finished items fold into one line. While searching, the
+ * items found are shown, unfolded.
  */
 export function TrackGroup(props: {
   track: TrackSummary;
@@ -17,6 +19,8 @@ export function TrackGroup(props: {
   currentItemId: string | undefined;
   expanded: boolean;
   onToggle: () => void;
+  /** Searching, and these are the track's items that match (its name didn't). */
+  found?: TrackItem[] | undefined;
   /** Shown at the end of the track's line: its menu. */
   actions?: ReactNode;
 }) {
@@ -60,7 +64,15 @@ export function TrackGroup(props: {
         )}
         {props.actions}
       </div>
-      {expanded && <TrackItems track={track} currentItemId={currentItemId} />}
+      {props.found ? (
+        <ItemList track={track}>
+          {props.found.map((item) => (
+            <ItemRow key={item.id} item={item} currentItemId={currentItemId} />
+          ))}
+        </ItemList>
+      ) : (
+        expanded && <TrackItems track={track} currentItemId={currentItemId} />
+      )}
     </li>
   );
 }
@@ -79,8 +91,7 @@ function TrackItems({
   const doneShown = showDone || done.some((item) => item.id === currentItemId);
 
   return (
-    // The thread line sits under the chevron's centre, tying the items to their track.
-    <ul className="mt-0.5 mb-2 ml-3.5 border-l" aria-label={`In ${track.title}`}>
+    <ItemList track={track}>
       {done.length > 0 && (
         <li>
           <button
@@ -109,13 +120,22 @@ function TrackItems({
       {track.items.length === 0 && (
         <li className="py-1 pl-3 text-[12.5px] text-subtle-foreground">Nothing here yet</li>
       )}
+    </ItemList>
+  );
+}
+
+/** The thread line sits under the chevron's centre, tying the items to their track. */
+function ItemList({ track, children }: { track: TrackSummary; children: ReactNode }) {
+  return (
+    <ul className="mt-0.5 mb-2 ml-3.5 border-l" aria-label={`In ${track.title}`}>
+      {children}
     </ul>
   );
 }
 
 function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: string | undefined }) {
   const current = item.id === currentItemId;
-  const { title, meta } = describeSession(item);
+  const { title, meta } = describeItem(item);
   return (
     <li>
       <Link
@@ -140,37 +160,4 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
       </Link>
     </li>
   );
-}
-
-/** Where an open session stands, when its lesson's terms can't say what it is about yet. */
-const UNDER_WAY: Record<SessionItem["phase"], string> = {
-  probe: "Finding where you start",
-  plan: "Choosing what comes next",
-  lesson: "The lesson is being written",
-  homework: "Homework",
-  close: "Wrapping up",
-  closed: "Finished",
-};
-
-const PHASE: Record<SessionItem["phase"], string> = {
-  probe: "getting started",
-  plan: "planning",
-  lesson: "lesson",
-  homework: "homework",
-  close: "wrapping up",
-  closed: "done",
-};
-
-/**
- * What a session's row says: what its lesson teaches (its new terms), over the session's number and
- * phase. Before there is a lesson, what is under way stands in for the terms.
- */
-export function describeSession(item: SessionItem): { title: string; meta: string } {
-  const number = `Session ${String(item.number)}`;
-  if (item.terms.length === 0) return { title: UNDER_WAY[item.phase], meta: number };
-  const terms = item.terms.join(", ");
-  return {
-    title: terms.charAt(0).toLocaleUpperCase() + terms.slice(1),
-    meta: item.done ? number : `${number} · ${PHASE[item.phase]}`,
-  };
 }
