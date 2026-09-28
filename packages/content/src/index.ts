@@ -8,6 +8,7 @@ export type {
   Block,
   BlockType,
   CheckBlock,
+  CommonsFile,
   DiagramFrame,
   DiagramSyntax,
   Inline,

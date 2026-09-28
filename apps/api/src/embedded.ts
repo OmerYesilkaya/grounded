@@ -12,6 +12,8 @@ import type { ModelAccess } from "./engine/model-call.js";
 import { createJobQueue, startWorker, type JobQueue, type Worker } from "./engine/queue.js";
 import { createTasks } from "./engine/tasks.js";
 import { createMemoryFileStore } from "./files/store.js";
+import type { VerifierOptions } from "./media/verify.js";
+import { offlineWeb } from "./media/web.js";
 
 /*
  * The whole backend in one process, for the test harness and the eval harness (tools/eval): the API
@@ -25,6 +27,7 @@ export const BASE_URL = "http://localhost:3000";
 export { invite } from "./allowlist.js";
 export { createDemoModels } from "./dev/demo-models.js";
 export { createModelCaller, type ModelAccess } from "./engine/model-call.js";
+export { createWebAccess } from "./media/web.js";
 
 /** A new, migrated database on the server `serverUrl` points at, named after it plus `suffix`. */
 export async function createFreshDatabase(
@@ -72,6 +75,8 @@ export interface EmbeddedOptions {
   /** How stored keys are checked (default: every key is fine). */
   validateKey?: (provider: ProviderId, apiKey: string) => Promise<KeyCheck>;
   workerConcurrency?: number;
+  /** Where lesson media is found and verified (default: an offline web, so nothing verifies). */
+  media?: VerifierOptions;
 }
 
 export interface Embedded {
@@ -181,6 +186,7 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
               queue,
               files,
               method: options.method ?? loadMethod(),
+              media: options.media ?? { web: offlineWeb },
               models:
                 typeof options.models === "function"
                   ? options.models({ db, vault })

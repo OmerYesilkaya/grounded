@@ -165,8 +165,9 @@ describe("parseBlocks: media", () => {
         type: "image",
         ref: "commons:File:Octave.svg",
         caption: "Two notes an octave apart.",
+        file: null,
       },
-      { id: "b3", type: "audio", ref: "commons:File:Octave.ogg", caption: null },
+      { id: "b3", type: "audio", ref: "commons:File:Octave.ogg", caption: null, file: null },
       {
         id: "b4",
         type: "link",

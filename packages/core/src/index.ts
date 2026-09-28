@@ -35,7 +35,7 @@ export {
   type TrackAction,
 } from "./actions.js";
 export { generateLesson, lessonOutlineSchema, placeChecks } from "./lesson.js";
-export type { GenerateLessonOptions, LessonOutline, LessonResult } from "./lesson.js";
+export type { GenerateLessonOptions, LessonMedia, LessonOutline, LessonResult } from "./lesson.js";
 export { loadMethod } from "./method-file.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
 export {

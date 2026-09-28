@@ -10,6 +10,7 @@ import { createTasks } from "./engine/tasks.js";
 import { readEnv } from "./env.js";
 import { fileStoreFor } from "./files/from-env.js";
 import { log, setLogService } from "./log.js";
+import { createWebAccess } from "./media/web.js";
 
 /** The worker process: runs generation jobs, separately from the API (design §4.2). */
 setLogService("worker");
@@ -32,6 +33,7 @@ const runner = await startWorker(
     queue,
     files: fileStoreFor(env),
     method: loadMethod(),
+    media: { web: createWebAccess(), youtubeKey: env.YOUTUBE_API_KEY },
     models:
       env.DEMO_MODELS === "true"
         ? createDemoModels()

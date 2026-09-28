@@ -1,12 +1,14 @@
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import type { LessonStep, TrackTerm } from "@grounded/content";
-import { simulateReadableStream } from "ai";
+import type { Issue, LessonStep, TrackTerm } from "@grounded/content";
+import { simulateReadableStream, tool } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import {
   generateLesson,
   placeChecks,
   type GenerateLessonOptions,
+  type LessonMedia,
   type LessonOutline,
 } from "./index.js";
 
@@ -275,6 +277,98 @@ describe("generateLesson", () => {
     expect(result.degraded.map((d) => [d.stepId, d.issues.map((i) => i.code)])).toEqual([
       ["s1", ["diagram/missing-separator"]],
     ]);
+  });
+});
+
+describe("generateLesson: media", () => {
+  const IMAGE = '::image{ref="commons:File:Counter.png" caption="A counter."}';
+  const withImage = step(
+    "Adding one is three moves",
+    `The value is copied out into a working copy.\n\n${IMAGE}`,
+    "What is in memory meanwhile?",
+  );
+  /** Media whose verifier finds nothing on Commons, and records what it was asked. */
+  const media = (searched: string[] = []): LessonMedia & { verified: string[] } => {
+    const verified: string[] = [];
+    return {
+      verified,
+      tools: {
+        find_image: tool({
+          inputSchema: z.object({ query: z.string() }),
+          execute: ({ query }) => {
+            searched.push(query);
+            return { files: [] };
+          },
+        }),
+      },
+      found: () => (searched.length ? "FOUND ON COMMONS" : ""),
+      verify: (s) => {
+        verified.push(s.id);
+        const body = s.body.filter((b) => b.type !== "image");
+        const issues: Issue[] =
+          body.length < s.body.length
+            ? [{ code: "image/unverified", message: "No such file.", stepId: s.id }]
+            : [];
+        return Promise.resolve({ step: { ...s, body }, issues });
+      },
+    };
+  };
+
+  it("offers the tools to the outline only, and tells the writer what they found", async () => {
+    const toolCall: LanguageModelV4GenerateResult = {
+      content: [
+        {
+          type: "tool-call",
+          toolCallId: "c1",
+          toolName: "find_image",
+          input: JSON.stringify({ query: "a mechanical counter" }),
+        },
+      ],
+      finishReason: { unified: "tool-calls", raw: "tool_use" },
+      usage,
+      warnings: [],
+    };
+    const model = new MockLanguageModelV4({
+      doGenerate: [toolCall, text(JSON.stringify(OUTLINE))],
+      doStream: streamOf([S1, S2, S3].join("\n\n")),
+    });
+    const searched: string[] = [];
+    const lessonMedia = media(searched);
+    const { result } = await run(model, { media: lessonMedia });
+
+    expect(searched).toEqual(["a mechanical counter"]);
+    expect(model.doGenerateCalls[0]?.tools?.map((t) => t.name)).toEqual(["find_image"]);
+    expect(promptText(model.doGenerateCalls[0])).toContain("find_image or find_audio");
+    expect(model.doStreamCalls[0]?.tools).toBeUndefined();
+    expect(promptText(model.doStreamCalls[0])).toContain("FOUND ON COMMONS");
+    expect(lessonMedia.verified).toEqual(["s1", "s2", "s3"]);
+    expect(result.steps.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+  });
+
+  it("rewrites a step whose media can't be verified, and keeps it without it after retries", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(OUTLINE)), text(withImage), text(withImage)],
+      doStream: streamOf([withImage, S2, S3].join("\n\n")),
+    });
+    const { result, emitted } = await run(model, { media: media() });
+
+    expect(promptText(model.doGenerateCalls[1])).toContain("No such file.");
+    expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    expect(emitted[0]?.body.map((b) => b.type)).toEqual(["paragraph"]);
+    expect(result.degraded.map((d) => [d.stepId, d.issues.map((i) => i.code)])).toEqual([
+      ["s1", ["image/unverified"]],
+    ]);
+  });
+
+  it("keeps the verified step once a rewrite's media checks out", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(OUTLINE)), text(S1)],
+      doStream: streamOf([withImage, S2, S3].join("\n\n")),
+    });
+    const { result, emitted } = await run(model, { media: media() });
+
+    expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    expect(result.degraded).toEqual([]);
   });
 });
 

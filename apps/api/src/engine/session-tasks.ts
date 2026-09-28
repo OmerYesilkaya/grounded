@@ -61,6 +61,8 @@ import {
 } from "./left-off.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import type { FileStore } from "../files/store.js";
+import { createLessonMedia } from "../media/lesson-media.js";
+import type { VerifierOptions } from "../media/verify.js";
 import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
@@ -79,6 +81,8 @@ export interface SessionTaskDependencies {
   queue: JobQueue;
   /** Learners' files (design §4.5). */
   files: FileStore;
+  /** Where lesson media is found and verified (design §6.4); tests pass a web of their own. */
+  media: VerifierOptions;
 }
 
 interface SessionJob {
@@ -568,6 +572,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}`,
           terms,
           ...(resume ? { resume } : {}),
+          media: createLessonMedia({
+            ...deps.media,
+            activity: (label, run) => withActivity(db, sessionId, label, run),
+          }),
           onOutline: async (outline) => {
             await outlining?.done();
             totalSteps = outline.steps.length;

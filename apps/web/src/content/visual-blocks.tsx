@@ -148,14 +148,18 @@ export function ChartView({ block }: { block: Extract<Block, { type: "chart" }> 
       {block.source && (
         <figcaption className={captionClass}>
           Source:{" "}
-          <a
-            href={block.source}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline underline-offset-2"
-          >
-            {hostname(block.source)}
-          </a>
+          {/^https?:\/\//i.test(block.source) ? (
+            <a
+              href={block.source}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2"
+            >
+              {hostname(block.source)}
+            </a>
+          ) : (
+            block.source
+          )}
         </figcaption>
       )}
     </figure>

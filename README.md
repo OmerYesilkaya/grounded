@@ -33,7 +33,9 @@ Pushes to `main` deploy both services once CI passes; each API deploy runs the m
 `DATABASE_URL` is a reference to the database, set on each service in the file (Railway leaves a
 reference to another service empty in a shared variable). Secrets live only on Railway (shared variables:
 `KEY_VAULT_MASTER_KEYS`, `KEY_VAULT_ACTIVE_KID`, `BETTER_AUTH_SECRET`; on the API: `APP_URL`,
-`RESEND_API_KEY`, `EMAIL_FROM`) and appear in the file as `preserve()`. Keep a copy of `KEY_VAULT_MASTER_KEYS` outside Railway: without it,
+`RESEND_API_KEY`, `EMAIL_FROM`) and appear in the file as `preserve()`. The worker takes an optional
+`YOUTUBE_API_KEY` (YouTube Data API v3), so lesson clips' times are checked against the video's
+length (`docs/design.md` §6.4). Keep a copy of `KEY_VAULT_MASTER_KEYS` outside Railway: without it,
 stored API keys can't be decrypted.
 
 Invite people from a shell in the API service (`railway ssh -s @grounded/api`):

@@ -43,6 +43,11 @@ const schema = z
     FILES_FORCE_PATH_STYLE: z.enum(["true", "false"]).default("false"),
     /** Default: `.files` at the repo root. */
     FILES_DIR: z.string().min(1).optional(),
+    /**
+     * Worker: YouTube Data API key, so a lesson clip's start and end are checked against the
+     * video's length; without it, only that the video exists and may be embedded (design §6.4).
+     */
+    YOUTUBE_API_KEY: z.string().min(1).optional(),
   })
   .refine(
     (env) =>

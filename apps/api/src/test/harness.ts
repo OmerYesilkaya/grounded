@@ -3,17 +3,21 @@ import type { TaskList } from "graphile-worker";
 import { afterAll, beforeAll, beforeEach } from "vitest";
 import { createEmbedded } from "../embedded.js";
 import type { ModelAccess } from "../engine/model-call.js";
+import type { VerifierOptions } from "../media/verify.js";
 import { TEST_DATABASE_URL } from "./database.js";
 
 export { BASE_URL } from "../embedded.js";
 
 /** The real app on the test database, with magic links captured and key validation faked. */
-export function createTestHarness(options: { tasks?: TaskList; models?: ModelAccess } = {}) {
+export function createTestHarness(
+  options: { tasks?: TaskList; models?: ModelAccess; media?: VerifierOptions } = {},
+) {
   let keyCheck: KeyCheck = { ok: true };
   const backend = createEmbedded({
     databaseUrl: TEST_DATABASE_URL,
     ...(options.models ? { models: options.models } : {}),
     ...(options.tasks ? { tasks: options.tasks } : {}),
+    ...(options.media ? { media: options.media } : {}),
     validateKey: () => Promise.resolve(keyCheck),
   });
   const { db, sent, waitFor, workerIdle } = backend;

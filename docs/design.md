@@ -100,8 +100,9 @@ apps/
   web/          Vite + React SPA, shadcn/ui (Tailwind + Radix), Tiptap, TanStack Router/Query
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
-                worker process (`src/worker.ts`); the CLI (`src/cli.ts`: `pnpm invite`, `pnpm revoke`)
-                and the track import (`src/import`, `pnpm import-track`)
+                worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
+                the CLI (`src/cli.ts`: `pnpm invite`, `pnpm revoke`) and the track import
+                (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
   content/      block-tree types, markdown→tree parser, per-surface allowlists, validation (shared by web, api, worker, eval)
@@ -538,7 +539,7 @@ naturally, and ids are what asides, repair notes and validation hang off. No mod
 | chart                                         | **Vega-Lite** spec; charts on real data carry their source                                                                                                                                                                                                                        |
 | image                                         | **Wikimedia Commons** via a server-side `find_image` tool; licence and credit shown                                                                                                                                                                                               |
 | video                                         | **YouTube** with start/end time, verified to exist                                                                                                                                                                                                                                |
-| audio                                         | Commons audio (music samples, instruments, pronunciation) — "audio when needed"                                                                                                                                                                                                   |
+| audio                                         | Commons audio (music samples, instruments, pronunciation) through `find_audio` — "audio when needed"                                                                                                                                                                              |
 | link card                                     | anything else from sources: title, site, one-line reason                                                                                                                                                                                                                          |
 | check                                         | the step's question; answered and graded inline                                                                                                                                                                                                                                   |
 
@@ -566,7 +567,49 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
   retries it degrades (diagram → caption + "diagram unavailable"; media → link card). A structural
   failure (missing check) cannot degrade: the step fails, and with it the lesson, which the learner
   writes again from that step ("Write the rest again", §4.2).
-- Every URL is resolved server-side before display; unverifiable media is dropped.
+- Every URL is resolved server-side before display; unverifiable media is dropped. How (decided
+  2026-09-29, #51; `apps/api/src/media`):
+  - **Media is found while outlining.** The lesson's outline call is offered `find_image` and
+    `find_audio` (up to 8 tool rounds, the last without tools so it always ends in the outline).
+    Each searches Wikimedia Commons (`filetype:bitmap|drawing` or `filetype:audio`, six results)
+    and returns each file's ref (`commons:File:…`), what its page says it shows, its size or
+    length and its licence; a file without a licence, or a recording no browser plays (MIDI), is
+    left out. What they found is listed in the writing prompt and in each step's rewrite. The
+    lesson itself is written by a call with no tools, as a chat message is (§7.1): a model that
+    narrates its tool use ("let me find an image") would otherwise write that into the lesson.
+    Each search shows as an activity ("Looking for an image of “…”"); a search that fails tells
+    the model to go on without it. A lesson written again from a failed step keeps its outline,
+    so it searches nothing; what it writes is verified all the same.
+  - **Each step is verified once it is sound** (parsed and validated), before it is released:
+    Commons images and audio are looked up (a ref the tools found is not asked about again) and
+    the block stores the file it resolved (`file`: the URL the browser loads, a 1280 px thumbnail
+    for an image and the MP3 version of a recording where Commons has one; its page; the author
+    as plain text; the licence and its URL). The renderer shows the author linked to the file's
+    page and the licence linked to its deed. YouTube videos are checked through the Data API
+    when the worker has `YOUTUBE_API_KEY` (it exists, may be embedded, and start and end fall
+    inside its length), otherwise through oEmbed (it exists and may be embedded; the times are
+    checked only against each other). Link cards, inline links and a chart's source must open:
+    a status below 400 after at most 5 redirects, HEAD first and GET when HEAD is refused.
+  - **What fails is fed back like any other issue** (`image/unverified`, `audio/unverified`,
+    `video/unverified`, `link/unverified`, `chart/unverified-source`), so the step is rewritten
+    with the problem stated; after two rewrites the step is kept without it: a missing file,
+    video or page is dropped, an inline link keeps its text, a chart keeps no source, and a video
+    that exists but can't be embedded or shown between the times asked becomes a link card to it
+    on YouTube.
+  - **Verification results live for one lesson job, in memory**; no cache table. A URL used twice,
+    or again in a rewrite, is asked about once; nothing outlives the job, since what it verified
+    is stored with the lesson. Stored lessons are not re-verified later.
+  - **Time limits:** 8 s for each API answer (Commons, YouTube) and 8 s for a page, redirects
+    included; one that doesn't answer in time is unverifiable. Requests name the app in their
+    User-Agent, as Wikimedia asks.
+  - **Only the public web is reached:** a page is fetched only over http(s), and never at an
+    address in a private, loopback, link-local, shared or reserved range, checked for the host's
+    every resolved address and again at each redirect, so a model-written URL can't reach the
+    app's own network.
+  - Tests and the embedded backend use a web that answers nothing, or one the test makes up; no
+    test reaches the network. The eval runs real models on the real web.
+  - Still unverified: links in chat messages and check replies (text-only surfaces, where a link
+    is rare), and Vega-Lite specs that load their own data (`data.url`).
 - Failures are logged per model and feed the eval (parse-failure rate is a gate metric).
 - **Prefer top-to-bottom diagrams:** left-to-right Mermaid flowcharts shrink badly in a 68ch column
   (prototype finding). The prompt says so; wide figures may later break out of the text column.
@@ -906,7 +949,7 @@ progress, so a step is done when its issues are closed.
 2. Repo setup: git, pnpm workspaces, lint/format/test tooling, CI, Docker, Postgres locally.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
    components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict. Owed:
-   server-side media (#51), the cheap model's review (#52).
+   the cheap model's review (#52).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),

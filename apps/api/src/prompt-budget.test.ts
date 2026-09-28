@@ -5,6 +5,7 @@ import type { JobHelpers } from "graphile-worker";
 import { beforeEach, describe, expect, it } from "vitest";
 import { estimateTokens, PROMPT_BUDGETS, type BudgetedPhase } from "./engine/prompt-budget.js";
 import { createSessionTasks } from "./engine/session-tasks.js";
+import { offlineWeb } from "./media/web.js";
 import { planAttempt, probeGoesOn } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import {
@@ -29,6 +30,7 @@ const tasks = createSessionTasks({
   method: loadMethod(),
   queue: { enqueue: () => Promise.resolve(), close: () => Promise.resolve() },
   files: t.files,
+  media: { web: offlineWeb },
 });
 const run = async (job: string, payload: object) => {
   // A job may fail after its calls (a state it doesn't expect); only its prompts are measured here.

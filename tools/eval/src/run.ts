@@ -3,6 +3,7 @@ import {
   createEmbedded,
   createFreshDatabase,
   createModelCaller,
+  createWebAccess,
   invite,
 } from "@grounded/api/embedded";
 import type { Method } from "@grounded/core";
@@ -72,6 +73,10 @@ export async function runEval(options: RunOptions): Promise<RunResult> {
         ? createDemoModels()
         : ({ db, vault }) => createModelCaller({ db, vault, createLanguageModel }),
     ...(options.method ? { method: options.method.method } : {}),
+    // Real models find and verify lesson media on the real web, as in production.
+    ...(candidate.kind === "demo"
+      ? {}
+      : { media: { web: createWebAccess(), youtubeKey: process.env.YOUTUBE_API_KEY } }),
   });
   const result: RunResult = {
     persona: persona.id,

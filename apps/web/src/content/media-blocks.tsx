@@ -1,44 +1,61 @@
-import type { Block } from "@grounded/content";
-import { useContentEnvironment } from "./environment";
+import type { Block, CommonsFile } from "@grounded/content";
 import { hostname } from "./visual-blocks";
 
 const unavailable = (
   <p className="my-4 font-sans text-sm text-subtle-foreground">Media unavailable</p>
 );
 
+const creditLink = "underline decoration-border underline-offset-2 hover:decoration-primary";
+
+/** Who made a Commons file and under which licence, linked to its page, as the licence asks. */
+function Credit({ file }: { file: CommonsFile }) {
+  return (
+    <span className="block text-xs text-subtle-foreground">
+      <a href={file.page} target="_blank" rel="noopener noreferrer" className={creditLink}>
+        {file.credit ?? "Wikimedia Commons"}
+      </a>
+      {" · "}
+      {file.licenseUrl ? (
+        <a href={file.licenseUrl} target="_blank" rel="noopener noreferrer" className={creditLink}>
+          {file.license}
+        </a>
+      ) : (
+        file.license
+      )}
+    </span>
+  );
+}
+
+/** A Commons image, as the server verified it (the block carries the file it resolved). */
 export function ImageView({ block }: { block: Extract<Block, { type: "image" }> }) {
-  const media = useContentEnvironment().media(block.ref, "image");
-  if (!media) return unavailable;
-  const credit = [media.credit, media.license].filter(Boolean).join(" · ");
+  const { file } = block;
+  if (!file) return unavailable;
   return (
     <figure data-block={block.id} className="my-6">
       <img
-        src={media.url}
+        src={file.url}
         alt={block.caption ?? ""}
         loading="lazy"
         className="mx-auto max-h-[480px] rounded-lg"
       />
-      {(block.caption ?? credit) && (
-        <figcaption className="mt-2 text-center font-sans text-[13.5px] text-muted-foreground">
-          {block.caption}
-          {credit && <span className="block text-xs text-subtle-foreground">{credit}</span>}
-        </figcaption>
-      )}
+      <figcaption className="mt-2 text-center font-sans text-[13.5px] text-muted-foreground">
+        {block.caption}
+        <Credit file={file} />
+      </figcaption>
     </figure>
   );
 }
 
 export function AudioView({ block }: { block: Extract<Block, { type: "audio" }> }) {
-  const media = useContentEnvironment().media(block.ref, "audio");
-  if (!media) return unavailable;
+  const { file } = block;
+  if (!file) return unavailable;
   return (
     <figure data-block={block.id} className="my-6 rounded-lg border bg-card p-4">
-      <audio controls preload="none" src={media.url} className="w-full" />
-      {block.caption && (
-        <figcaption className="mt-2 font-sans text-[13.5px] text-muted-foreground">
-          {block.caption}
-        </figcaption>
-      )}
+      <audio controls preload="none" src={file.url} className="w-full" />
+      <figcaption className="mt-2 font-sans text-[13.5px] text-muted-foreground">
+        {block.caption}
+        <Credit file={file} />
+      </figcaption>
     </figure>
   );
 }

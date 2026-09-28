@@ -7,7 +7,7 @@ import {
   type LessonStep,
   type TrackTerm,
 } from "@grounded/content";
-import { generateText, Output, streamText, type Instructions } from "ai";
+import { generateText, Output, stepCountIs, streamText, type Instructions, type ToolSet } from "ai";
 import { z } from "zod";
 import type { LessonStepInfo, StepCheck } from "./session.js";
 
@@ -31,6 +31,25 @@ export const lessonOutlineSchema = z.object({
 });
 
 export type LessonOutline = z.infer<typeof lessonOutlineSchema>;
+
+/**
+ * A lesson's media (design §6.4): tools the outline may call to find images and recordings, and
+ * the server's check of every step's media and links before the learner sees it.
+ */
+export interface LessonMedia {
+  /** Offered to the outline only, so the lesson itself is never written around a tool call. */
+  tools: ToolSet;
+  /** What the tools found, as the writer is told it (a step's rewrite too); "" when nothing. */
+  found: () => string;
+  /**
+   * Resolves a sound step's media and links. What can't be verified is left out of the step (or
+   * kept as a link card) and reported with a degradable issue, so the step is rewritten first.
+   */
+  verify: (step: LessonStep) => Promise<{ step: LessonStep; issues: Issue[] }>;
+}
+
+/** Tool rounds the outline may take before it must answer. */
+const OUTLINE_TOOL_STEPS = 8;
 
 export interface GenerateLessonOptions {
   model: LanguageModelV4;
@@ -58,6 +77,8 @@ export interface GenerateLessonOptions {
    * already written, from the first (the rest are written after them). No outline is asked for.
    */
   resume?: { outline: LessonOutline; written: readonly string[] };
+  /** Finding and verifying media; without it, steps are kept as parsed. */
+  media?: LessonMedia;
 }
 
 export interface LessonResult {
@@ -115,7 +136,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     system: options.system,
     prompt: resume
       ? resumePrompt(options.request, planned, resume.written)
-      : writePrompt(options.request, planned),
+      : writePrompt(options.request, planned, options.media?.found() ?? ""),
   });
   let buffer = "";
   let checked = 0;
@@ -129,22 +150,32 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     const pieces = splitLessonSteps(buffer);
     for (; started < pieces.length; started++) await options.onStepStart?.(first + started, 0, []);
     for (; checked < pieces.length - 1; checked++) {
-      settled[first + checked] = check(pieces[checked] ?? "", first + checked, planned, options);
+      settled[first + checked] = await check(
+        pieces[checked] ?? "",
+        first + checked,
+        planned,
+        options,
+      );
       await release();
     }
   }
   const pieces = splitLessonSteps(buffer);
   for (; checked < pieces.length; checked++)
-    settled[first + checked] = check(pieces[checked] ?? "", first + checked, planned, options);
+    settled[first + checked] = await check(
+      pieces[checked] ?? "",
+      first + checked,
+      planned,
+      options,
+    );
 
   for (let index = first; index < settled.length; index++) {
     let entry = settled[index];
     for (let attempt = 0; entry?.kind === "retry" && attempt < retries; attempt++) {
       await options.onStepStart?.(index, attempt + 1, entry.issues);
       const markdown = await regenerate(options, planned, index, entry);
-      entry = check(markdown, index, planned, options);
+      entry = await check(markdown, index, planned, options);
     }
-    if (entry?.kind === "retry") entry = finalize(entry, index, planned, options);
+    if (entry?.kind === "retry") entry = await finalize(entry, index, planned, options);
     settled[index] = entry;
     await release();
   }
@@ -168,12 +199,25 @@ async function writeOutline(
   retries: number,
 ): Promise<LessonOutline> {
   let feedback = "";
+  const tools = options.media?.tools;
+  const finding = tools
+    ? " Where a step would be clearer with a real image or recording (the thing itself, a historical document, how it sounds), look for one with find_image or find_audio now: the lesson is written with what you find."
+    : "";
   for (let attempt = 0; attempt <= retries; attempt++) {
     const { output } = await generateText({
       model: options.model,
       system: options.system,
       output: Output.object({ schema: lessonOutlineSchema }),
-      prompt: `${options.request}\n\nWrite the lesson's outline first: its steps in order.${feedback}`,
+      prompt: `${options.request}\n\nWrite the lesson's outline first: its steps in order.${finding}${feedback}`,
+      ...(tools
+        ? {
+            tools,
+            stopWhen: stepCountIs(OUTLINE_TOOL_STEPS),
+            // The last round has no tools, so the outline always ends in its answer.
+            prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+              stepNumber === OUTLINE_TOOL_STEPS - 1 ? { activeTools: [] } : {},
+          }
+        : {}),
     });
     const errors = outlineErrors(output, options.terms);
     if (errors.length === 0) return output;
@@ -216,21 +260,25 @@ function introducedUpTo(outline: LessonOutline, index: number): string[] {
   return outline.steps.slice(0, index + 1).flatMap((s) => s.introduces);
 }
 
-function check(
+/** Parses and validates a step, then verifies its media and links on the server. */
+async function check(
   markdown: string,
   index: number,
   planned: Planned,
   options: GenerateLessonOptions,
-): Settled {
+): Promise<Settled> {
   const parsed = parseLesson(markdown, { firstStepNumber: index + 1 });
   const [step] = parsed.steps;
   const issues = [...parsed.issues];
   if (step) issues.push(...stepErrors(step, index, planned, options));
   if (!step && issues.length === 0)
     issues.push({ code: "lesson/empty", message: "The step is empty." });
-  return step && issues.length === 0
-    ? { kind: "ok", step, markdown }
-    : { kind: "retry", markdown, issues };
+  if (!step || issues.length > 0) return { kind: "retry", markdown, issues };
+  if (!options.media) return { kind: "ok", step, markdown };
+  const verified = await options.media.verify(step);
+  return verified.issues.length === 0
+    ? { kind: "ok", step: verified.step, markdown }
+    : { kind: "retry", markdown, issues: verified.issues };
 }
 
 function stepErrors(
@@ -269,21 +317,26 @@ function checkPlacementErrors(step: LessonStep, placed: StepCheck | null): Issue
   return [];
 }
 
-/** After the last retry: keep the step without broken drawings or media, or report it failed. */
-function finalize(
+/**
+ * After the last retry: keep the step without broken drawings or media (what can't be verified is
+ * left out or kept as a link card), or report it failed.
+ */
+async function finalize(
   entry: Extract<Settled, { kind: "retry" }>,
   index: number,
   planned: Planned,
   options: GenerateLessonOptions,
-): Settled {
+): Promise<Settled> {
   if (entry.issues.every((i) => DEGRADABLE.test(i.code))) {
     const parsed = parseLesson(entry.markdown, {
       firstStepNumber: index + 1,
       tolerate: (i) => DEGRADABLE.test(i.code),
     });
     const [step] = parsed.steps;
-    if (step && stepErrors(step, index, planned, options).length === 0)
-      return { kind: "degraded", step, markdown: entry.markdown, issues: entry.issues };
+    if (step && stepErrors(step, index, planned, options).length === 0) {
+      const kept = options.media ? (await options.media.verify(step)).step : step;
+      return { kind: "degraded", step: kept, markdown: entry.markdown, issues: entry.issues };
+    }
   }
   return { kind: "failed", issues: entry.issues };
 }
@@ -304,16 +357,20 @@ async function regenerate(
       entry.markdown,
       "Fix these problems:",
       ...entry.issues.map((i) => `- ${i.message}`),
-    ].join("\n\n"),
+      options.media?.found() ?? "",
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
   });
   return text;
 }
 
-function writePrompt(request: string, planned: Planned): string {
+function writePrompt(request: string, planned: Planned, found: string): string {
   const steps = planned.outline.steps
     .map((_, i) => `${String(i + 1)}. ${stepBrief(planned, i)}`)
     .join("\n");
-  return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}`;
+  const media = found ? `\n\n${found}` : "";
+  return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}${media}`;
 }
 
 function resumePrompt(request: string, planned: Planned, written: readonly string[]): string {

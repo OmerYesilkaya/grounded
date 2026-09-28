@@ -41,9 +41,25 @@ export type Block =
       end: number | null;
       caption: string | null;
     }
-  | { id: string; type: "image"; ref: string; caption: string | null }
-  | { id: string; type: "audio"; ref: string; caption: string | null }
+  | { id: string; type: "image"; ref: string; caption: string | null; file: CommonsFile | null }
+  | { id: string; type: "audio"; ref: string; caption: string | null; file: CommonsFile | null }
   | { id: string; type: "link"; url: string; title: string; why: string };
+
+/**
+ * A Wikimedia Commons file as the server resolved it (design §6.4): what the browser loads, and the
+ * credit its licence asks for. Null when parsed; a stored image or audio block always has one.
+ */
+export interface CommonsFile {
+  /** What the browser loads: a thumbnail of an image, a widely playable version of a recording. */
+  url: string;
+  /** The file's page on Commons, which the credit links to. */
+  page: string;
+  /** Who made it, as plain text, when Commons says. */
+  credit: string | null;
+  /** The licence's short name ("CC BY-SA 4.0", "Public domain"). */
+  license: string;
+  licenseUrl: string | null;
+}
 
 /** Diagram engines are swappable; each stored diagram records the syntax it was written in. */
 export type DiagramSyntax = "mermaid";

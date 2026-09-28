@@ -1,27 +1,24 @@
-import { parseBlocks } from "@grounded/content";
+import { parseBlocks, type Block, type CommonsFile } from "@grounded/content";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { setThemeChoice } from "@/lib/theme";
 import { Blocks } from "./blocks";
-import {
-  ContentProvider,
-  type ChartEngine,
-  type DiagramEngine,
-  type MediaResolver,
-} from "./environment";
+import { ContentProvider, type ChartEngine, type DiagramEngine } from "./environment";
 
 const fence = (lang: string, body: string) => "```" + lang + "\n" + body + "\n```";
 
 function renderWith(
   markdown: string,
-  env: { diagrams?: DiagramEngine; charts?: ChartEngine; media?: MediaResolver },
+  env: { diagrams?: DiagramEngine; charts?: ChartEngine },
+  /** Stands in for the server's verification of the parsed blocks. */
+  verify: (block: Block) => Block = (block) => block,
 ) {
   const { blocks, issues } = parseBlocks(markdown);
   expect(issues).toEqual([]);
   return render(
-    <ContentProvider diagrams={env.diagrams} charts={env.charts} media={env.media}>
-      <Blocks blocks={blocks} />
+    <ContentProvider diagrams={env.diagrams} charts={env.charts}>
+      <Blocks blocks={blocks.map(verify)} />
     </ContentProvider>,
   );
 }
@@ -133,12 +130,26 @@ describe("Blocks: charts", () => {
 });
 
 describe("Blocks: media", () => {
-  const media: MediaResolver = (ref) =>
-    ref === "commons:File:Octave.svg"
-      ? { url: "https://upload.example/octave.svg", credit: "Jane Doe", license: "CC BY-SA 4.0" }
-      : ref === "commons:File:Octave.ogg"
-        ? { url: "https://upload.example/octave.ogg" }
-        : null;
+  const files: Record<string, CommonsFile> = {
+    "commons:File:Octave.svg": {
+      url: "https://upload.example/octave.png",
+      page: "https://commons.wikimedia.org/wiki/File:Octave.svg",
+      credit: "Jane Doe",
+      license: "CC BY-SA 4.0",
+      licenseUrl: "https://creativecommons.org/licenses/by-sa/4.0",
+    },
+    "commons:File:Octave.ogg": {
+      url: "https://upload.example/octave.mp3",
+      page: "https://commons.wikimedia.org/wiki/File:Octave.ogg",
+      credit: null,
+      license: "Public domain",
+      licenseUrl: null,
+    },
+  };
+  const verify = (block: Block): Block =>
+    block.type === "image" || block.type === "audio"
+      ? { ...block, file: files[block.ref] ?? null }
+      : block;
 
   it("renders verified images, audio, video clips and link cards", () => {
     const { container } = renderWith(
@@ -148,15 +159,28 @@ describe("Blocks: media", () => {
         '::video{id="abc123" start="12" end="40" caption="A recording."}',
         '::link{url="https://example.org/spec" title="The spec" why="Defines it precisely."}',
       ].join("\n\n"),
-      { media },
+      {},
+      verify,
     );
 
     const image = screen.getByRole("img", { name: "Two notes an octave apart." });
-    expect(image).toHaveAttribute("src", "https://upload.example/octave.svg");
-    expect(screen.getByText("Jane Doe · CC BY-SA 4.0")).toBeInTheDocument();
+    expect(image).toHaveAttribute("src", "https://upload.example/octave.png");
+    expect(screen.getByRole("link", { name: "Jane Doe" })).toHaveAttribute(
+      "href",
+      "https://commons.wikimedia.org/wiki/File:Octave.svg",
+    );
+    expect(screen.getByRole("link", { name: "CC BY-SA 4.0" })).toHaveAttribute(
+      "href",
+      "https://creativecommons.org/licenses/by-sa/4.0",
+    );
     expect(container.querySelector("audio")).toHaveAttribute(
       "src",
-      "https://upload.example/octave.ogg",
+      "https://upload.example/octave.mp3",
+    );
+    // Without a named author, the credit is Commons itself.
+    expect(screen.getByRole("link", { name: "Wikimedia Commons" })).toHaveAttribute(
+      "href",
+      "https://commons.wikimedia.org/wiki/File:Octave.ogg",
     );
     expect(screen.getByTitle("A recording.")).toHaveAttribute(
       "src",
@@ -169,7 +193,7 @@ describe("Blocks: media", () => {
   });
 
   it("shows a quiet note for media that couldn't be verified", () => {
-    renderWith('::image{ref="commons:File:Missing.png" caption="Gone."}', { media });
+    renderWith('::image{ref="commons:File:Missing.png" caption="Gone."}', {}, verify);
     expect(screen.queryByRole("img")).toBeNull();
     expect(screen.getByText("Media unavailable")).toBeInTheDocument();
   });

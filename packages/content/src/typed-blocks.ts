@@ -200,7 +200,7 @@ export function convertLeafDirective(
     case "audio": {
       const got = need(node.name, "ref");
       if (!got) return null;
-      return { id, type: node.name, ref: got[0] ?? "", caption };
+      return { id, type: node.name, ref: got[0] ?? "", caption, file: null };
     }
     case "link": {
       const got = need("link", "url", "title", "why");
