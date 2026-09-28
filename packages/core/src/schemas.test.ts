@@ -6,6 +6,7 @@ import {
   lessonOutlineSchema,
   planActionsSchema,
   probeDecisionSchema,
+  sweepActionsSchema,
   trackActionsSchema,
 } from "./index.js";
 
@@ -38,6 +39,7 @@ function strictProblems(node: unknown, path = "$"): string[] {
 describe("model output schemas", () => {
   it.each([
     ["track actions", trackActionsSchema],
+    ["sweep actions", sweepActionsSchema],
     ["check verdict", checkVerdictSchema],
     ["lesson outline", lessonOutlineSchema],
     ["probe decision", probeDecisionSchema],
@@ -54,5 +56,25 @@ describe("the plan's record", () => {
     expect(parse({ type: "add-to-arc", arc: "Concurrency", terms: ["lock"] })).toBe(true);
     expect(parse({ type: "add-plan-notes", notes: "Backend first." })).toBe(true);
     expect(parse({ type: "set-plan", arcs: [], notes: "" })).toBe(false);
+  });
+});
+
+describe("who may rewrite the plan", () => {
+  const edit = { type: "edit-plan-notes", heading: "## Open threads", text: null };
+  const arcsOnly = { type: "set-plan", arcs: [], notes: null };
+
+  it("the close's sweep, by its arcs or by a section of the notes", () => {
+    const parse = (action: object) => sweepActionsSchema.safeParse({ actions: [action] }).success;
+    expect(parse(edit)).toBe(true);
+    expect(parse(arcsOnly)).toBe(true);
+  });
+
+  it("no other call: the probe's decision, a check's verdict, or an edit asked for again", () => {
+    for (const action of [edit, arcsOnly]) {
+      expect(trackActionsSchema.safeParse({ actions: [action] }).success).toBe(false);
+      expect(probeDecisionSchema.safeParse({ actions: [action], finished: false }).success).toBe(
+        false,
+      );
+    }
   });
 });

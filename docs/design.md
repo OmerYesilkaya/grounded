@@ -300,17 +300,17 @@ about, test and debug.
   - The **plan** lists the current arc's terms; every other arc is its title and a tally ("17
     terms (15 confirmed, 2 taught)"). The phases that record the plan (plan, close, final:
     `WHOLE_PLAN_PHASES`) see every arc's terms: the plan's record to place its new terms in the arc
-    they belong to, the close and the final because their `set-plan` replaces the whole plan.
+    they belong to, the close and the final because their `set-plan` replaces the arcs.
 - **"Where you left off" stands in for the plan's notes** (`tracks.left_off`, decided 2026-09-28,
   #13; `apps/api/src/engine/left-off.ts`). The plan's notes as written (34 KB on the imported
   track) stay in the database and go only to the close: the recap and the term sweep read them,
-  and a `set-plan` in the sweep replaces them in full (its request says to carry forward what still
-  holds). After the sweep, one more call (`left-off`, little reasoning) writes the summary from the
+  and the sweep changes them a section at a time (`edit-plan-notes`, §5). After the sweep, one more call (`left-off`, little reasoning) writes the summary from the
   notes as the sweep left them and the whole session: open threads, owed work, what to re-check,
   where the next session picks up, in about 300 words. Every other call carries it, under the
   plan's arcs. The plan's record saw only the summary, so its notes (`add-plan-notes`) are added
   after the notes under "Noted while planning" (one heading for all of them until the next close),
-  for the next close to fold in.
+  for the next close to fold in: the sweep's request says to move them into the sections they
+  belong to and remove that section.
   - If the close's summary fails, the track is left with none (not one from before the session),
     and prompts carry the notes as written until one is written.
   - Notes with no summary yet (the imported track, or any track before its first close): up to
@@ -472,7 +472,7 @@ the rest is still a valid batch. What each caller does with a rejection:
   last attempt applies what validates, so a bad edit doesn't cost the rest of the sweep.
 - **An import** is all or nothing: its edits are built to be valid.
 
-The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes through two edits
+The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes through these edits
 (`apps/api/src/engine/track-state.ts`):
 
 - **`add-to-arc`** `{ arc, terms }` appends terms to the arc with that title (matched
@@ -483,11 +483,28 @@ The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes thro
   belongs to one arc, moving it is a rewrite, and a revised plan that places the same terms again
   changes nothing. If every term is skipped, no arc is created. Terms are stored in the term list's
   spelling.
-- **`set-plan`** `{ arcs, notes }` replaces the whole plan. Only a call that saw all of it, every
-  arc's terms and the notes as written, may send one: the close's term sweep (and the final's
+- **`set-plan`** `{ arcs, notes }` replaces the arcs, and the notes unless `notes` is null (the
+  close changes the arcs this way and keeps the notes as they are). Only a call that saw all of it,
+  every arc's terms and the notes as written, may send one: the close's term sweep (and the final's
   audit), and an import (`rewritePlan` on `applyActions`). From any other call it is left out,
   logged, and the rest of the batch applies.
+- **`edit-plan-notes`** `{ heading, text }` changes one section of the notes (decided 2026-09-29,
+  #18), so the close doesn't write 34 KB of notes again to change a line, or drop one by accident.
+  A section is a heading line and everything up to the next heading of its level or above (its
+  subsections with it); headings inside code fences don't count. `heading` is the section's heading
+  line as the notes write it ("## Open threads"), matched ignoring case and runs of spaces. `text`
+  replaces the body under the heading (kept as written); null removes the section; a heading no
+  section has adds a new section at the end. Rejected: a `heading` that isn't a heading line
+  (`not-a-heading`), removing a section that isn't there (`no-section`), and a heading more than
+  one section has (`ambiguous-section`: the reason says to edit the section that holds the one
+  meant). Allowed from the same calls as `set-plan`; edits in a batch apply in order, after a
+  `set-plan`'s notes when it has them.
 - **`add-plan-notes`** `{ notes }` adds notes after the plan's notes (above).
+
+Which call is offered which edits (`packages/core/src/actions.ts`): the probe's decision, a check's
+verdict and an edit asked for again (`trackActionSchema`) get the term, fix-list, language and
+`add-to-arc` edits; the plan's record adds `add-plan-notes`; the close's sweep
+(`closeActionSchema`) adds `set-plan` and `edit-plan-notes`.
 
 **A session's plan never rewrites the plan** (decided 2026-09-28, #23). Its record (`planActionsSchema`)
 isn't offered `set-plan` at all: it adds its planned terms and places this session's new ones with

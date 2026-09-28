@@ -6,6 +6,7 @@ import {
   planActionsSchema,
   probeDecisionSchema,
   placeChecks,
+  sweepActionsSchema,
   trackActionsSchema,
   type Method,
   type Phase,
@@ -99,6 +100,8 @@ const PROBE_SUMMARY_PROMPT =
   "(For the app; the learner doesn't see this.) The probe is finished. Write what it found, for the plan: for each strand the lesson will lean on, what the learner holds and where it stops, in their own words where you can. Where you found where a strand stops but not what they hold below it, say so; that is not the same as holding nothing. Then what they want to reach. Plain prose, no preamble.";
 const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
+const SWEEP_REQUEST =
+  "settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. Change the plan's notes a section at a time with edit-plan-notes: the section's heading line as the notes write it, and its new text (null removes the section; a heading no section has adds one at the end). Fold what was \"Noted while planning\" into the sections it belongs to, then remove that section. Change the arcs with set-plan, notes null to keep the notes as they are.";
 const RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
@@ -819,8 +822,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           generateText({
             model,
             system,
-            output: Output.object({ schema: trackActionsSchema }),
-            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. A set-plan's notes replace the plan's notes in full: carry forward everything in them that still holds.${feedback}`,
+            output: Output.object({ schema: sweepActionsSchema }),
+            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: ${SWEEP_REQUEST}${feedback}`,
           }),
         );
         if (output.actions.length === 0) break;

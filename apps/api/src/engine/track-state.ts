@@ -41,17 +41,87 @@ type Arcs = TrackPlan["arcs"];
 
 /**
  * What the track looks like to the validator: its terms by lowercased name, its open fix-list
- * items, and the plan's arcs.
+ * items, and the plan's arcs and notes.
  */
 export interface TrackShape {
   terms: Map<string, KnownTerm>;
   openFixItems: Set<string>;
   arcs: Arcs;
+  notes: string;
 }
 
 /** An empty track: the shape a batch is validated against before the track exists (an import). */
 export function emptyTrackShape(): TrackShape {
-  return { terms: new Map(), openFixItems: new Set(), arcs: [] };
+  return { terms: new Map(), openFixItems: new Set(), arcs: [], notes: "" };
+}
+
+/** The edits only a call that saw the whole plan may make (`rewritePlan` on applyActions). */
+const PLAN_REWRITES: ReadonlySet<TrackAction["type"]> = new Set(["set-plan", "edit-plan-notes"]);
+
+const HEADING = /^(#{1,6})[ \t]+(.+?)[ \t]*$/;
+const FENCE = /^\s*(```|~~~)/;
+
+/** A heading line's level and its text as matched: case and runs of spaces don't count. */
+function headingOf(line: string): { level: number; match: string } | null {
+  const found = HEADING.exec(line.trim());
+  if (!found?.[1] || !found[2]) return null;
+  const level = found[1].length;
+  return { level, match: `${String(level)} ${found[2].replace(/\s+/g, " ").toLowerCase()}` };
+}
+
+/**
+ * An edit-plan-notes applied to the notes (design §5), or why it can't be. A section is its heading
+ * line and everything up to the next heading of its level or above (so its subsections with it);
+ * headings inside code fences don't count. `text` replaces the section's body under its heading,
+ * null removes the section, and a heading no section has adds a new section at the end. Pure.
+ */
+export function editNotesSection(
+  notes: string,
+  edit: { heading: string; text: string | null },
+): { notes: string } | { code: RejectionCode; reason: string } {
+  const heading = headingOf(edit.heading);
+  if (!heading)
+    return {
+      code: "not-a-heading",
+      reason: `edit-plan-notes needs a section's heading line as the notes write it, like "## Open threads"; "${edit.heading}" isn't one.`,
+    };
+  const lines = notes.split("\n");
+  let fenced = false;
+  const headings: { at: number; level: number; match: string }[] = [];
+  lines.forEach((line, at) => {
+    if (FENCE.test(line)) fenced = !fenced;
+    const found = fenced ? null : headingOf(line);
+    if (found) headings.push({ at, ...found });
+  });
+  const matches = headings.filter((h) => h.match === heading.match);
+  const text = edit.text?.trim() ?? null;
+  const section = (line: string) => (text ? `${line}\n\n${text}` : line);
+  const [found, ...more] = matches;
+  if (!found) {
+    if (text === null)
+      return {
+        code: "no-section",
+        reason: `The plan's notes have no section "${edit.heading.trim()}" to remove.`,
+      };
+    return {
+      notes: [notes.trimEnd(), section(edit.heading.trim())].filter(Boolean).join("\n\n"),
+    };
+  }
+  if (more.length > 0)
+    return {
+      code: "ambiguous-section",
+      reason: `The plan's notes have ${String(matches.length)} sections "${edit.heading.trim()}"; edit the section that holds the one you mean.`,
+    };
+  const end = headings.find((h) => h.at > found.at && h.level <= found.level)?.at ?? lines.length;
+  return {
+    notes: [
+      lines.slice(0, found.at).join("\n").trimEnd(),
+      edit.text === null ? "" : section(lines[found.at]?.trim() ?? ""),
+      lines.slice(end).join("\n").trim(),
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
+  };
 }
 
 /**
@@ -94,7 +164,10 @@ export type RejectionCode =
   | "no-open-fix-item"
   | "no-language"
   | "empty-arc"
-  | "unplaced-term";
+  | "unplaced-term"
+  | "not-a-heading"
+  | "no-section"
+  | "ambiguous-section";
 
 /** An edit of a batch that doesn't validate: which one (its index in the batch) and why. */
 export interface Rejection {
@@ -178,8 +251,16 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
         break;
       case "set-plan":
         shape.arcs = action.arcs;
+        if (action.notes !== null) shape.notes = action.notes;
         break;
+      case "edit-plan-notes": {
+        const edited = editNotesSection(shape.notes, action);
+        if ("code" in edited) reject(edited.code, edited.reason);
+        else shape.notes = edited.notes;
+        break;
+      }
       case "add-plan-notes":
+        shape.notes = addedNotes(shape.notes, action.notes);
         break;
     }
   });
@@ -216,11 +297,11 @@ async function checkBatch(
 ): Promise<CheckedBatch> {
   const actions = options.rewritePlan
     ? batch
-    : batch.filter((action) => action.type !== "set-plan");
+    : batch.filter((action) => !PLAN_REWRITES.has(action.type));
   if (actions.length < batch.length)
     log.info(
       { trackId, source: options.source, dropped: batch.length - actions.length },
-      "set-plan left out: this call may not rewrite the plan",
+      "plan rewrites left out: this call may not rewrite the plan",
     );
   const existing = await db.select().from(terms).where(eq(terms.trackId, trackId));
   const openFixItems = await db
@@ -234,6 +315,7 @@ async function checkBatch(
     ),
     openFixItems: new Set(openFixItems.map((f) => f.text)),
     arcs: track?.plan.arcs ?? [],
+    notes: track?.plan.notes ?? "",
   };
   const rejected = validateActions(shape, actions).flatMap((r) => {
     const action = actions[r.index];
@@ -260,10 +342,11 @@ async function checkBatch(
  * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
  * on, and nothing is written. (applyValidActions applies the valid part instead.)
  *
- * `rewritePlan` says whether a set-plan may replace the plan: only from a call that saw all of it,
- * every arc's terms and the notes as written (the close and the final, and an import; design §4.4).
- * From any other call a set-plan would drop what it didn't see or wasn't asked to change; it is
- * left out (logged), and the rest of the batch applies. A session's plan places its terms with
+ * `rewritePlan` says whether a set-plan may replace the plan, and an edit-plan-notes rewrite a
+ * section of its notes: only from a call that saw all of it, every arc's terms and the notes as
+ * written (the close and the final, and an import; design §4.4). From any other call they would
+ * drop what it didn't see or wasn't asked to change; they are left out (logged), and the rest of
+ * the batch applies. A session's plan places its terms with
  * add-to-arc instead, and its add-plan-notes are added after the notes, for the close to fold in.
  */
 export async function applyActions(
@@ -407,9 +490,20 @@ async function writeBatch(
           break;
         }
         case "set-plan":
-          plan = { arcs: action.arcs, notes: action.notes };
+          plan = { arcs: action.arcs, notes: action.notes ?? plan.notes };
           planChanged = true;
           break;
+        case "edit-plan-notes": {
+          const edited = editNotesSection(plan.notes, action);
+          // Validated against the notes as they were read; changed since, the edit is left out.
+          if ("code" in edited) {
+            log.warn({ trackId, source, code: edited.code }, "plan notes changed; edit left out");
+            break;
+          }
+          plan = { ...plan, notes: edited.notes };
+          planChanged = true;
+          break;
+        }
         case "add-plan-notes":
           plan = { ...plan, notes: addedNotes(plan.notes, action.notes) };
           planChanged = true;

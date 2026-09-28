@@ -5,6 +5,7 @@ import { createTestHarness } from "../test/harness.js";
 import {
   applyActions,
   applyValidActions,
+  editNotesSection,
   emptyTrackShape,
   loadTrackContext,
   validateActions,
@@ -436,6 +437,125 @@ describe("applyActions: from the plan's record, which saw where you left off, no
       arcs: [],
       notes: "Backend first.",
     });
+  });
+});
+
+describe("editNotesSection", () => {
+  const NOTES = [
+    "# Plan notes",
+    "",
+    "Intro line.",
+    "",
+    "## Open threads",
+    "",
+    "- homework 3",
+    "",
+    "### Detail",
+    "",
+    "Under open threads.",
+    "",
+    "## Pacing",
+    "",
+    "```",
+    "## not a heading",
+    "```",
+    "",
+    "Slow down on proofs.",
+  ].join("\n");
+
+  it("replaces a section's body, subsections included, and keeps its heading as written", () => {
+    expect(editNotesSection(NOTES, { heading: "##  open THREADS", text: "- none\n" })).toEqual({
+      notes: [
+        "# Plan notes",
+        "",
+        "Intro line.",
+        "",
+        "## Open threads",
+        "",
+        "- none",
+        "",
+        "## Pacing",
+        "",
+        "```",
+        "## not a heading",
+        "```",
+        "",
+        "Slow down on proofs.",
+      ].join("\n"),
+    });
+  });
+
+  it("removes a section, and adds one at the end for a heading no section has", () => {
+    const removed = editNotesSection(NOTES, { heading: "### Detail", text: null });
+    expect("notes" in removed && removed.notes).toContain("- homework 3\n\n## Pacing");
+    const added = editNotesSection(NOTES, { heading: "## Owed", text: "Homework 4." });
+    expect("notes" in added && added.notes).toBe(`${NOTES}\n\n## Owed\n\nHomework 4.`);
+    expect(editNotesSection("", { heading: "## Owed", text: "Homework 4." })).toEqual({
+      notes: "## Owed\n\nHomework 4.",
+    });
+  });
+
+  it("says why it can't: not a heading, nothing to remove, or more than one match", () => {
+    const code = (notes: string, heading: string, text: string | null) => {
+      const edited = editNotesSection(notes, { heading, text });
+      return "code" in edited ? edited.code : null;
+    };
+    expect(code(NOTES, "Open threads", "x")).toBe("not-a-heading");
+    expect(code(NOTES, "## Missing", null)).toBe("no-section");
+    // Inside a code fence, a heading line isn't one.
+    expect(code(NOTES, "## not a heading", null)).toBe("no-section");
+    expect(code(`${NOTES}\n\n## Pacing\n\nAgain.`, "## Pacing", "x")).toBe("ambiguous-section");
+  });
+});
+
+describe("applyActions: the plan's notes, edited by section", () => {
+  const NOTES = "## Open threads\n\n- homework 3\n\n## Pacing\n\nSlow.";
+  const plan = { arcs: [{ title: "Concurrency", terms: [] }], notes: NOTES };
+
+  it("from the close: a section edited, and set-plan changing the arcs only", async () => {
+    const trackId = await newTrack();
+    await applyActions(t.db, trackId, [{ type: "set-plan", ...plan }], {
+      source: "import",
+      rewritePlan: true,
+    });
+    const arcs = [{ title: "Locks", terms: [] }];
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "set-plan", arcs, notes: null },
+        { type: "edit-plan-notes", heading: "## Open threads", text: "- homework 4" },
+      ],
+      { source: "close", rewritePlan: true },
+    );
+    expect(result).toEqual({ ok: true });
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs,
+      notes: "## Open threads\n\n- homework 4\n\n## Pacing\n\nSlow.",
+    });
+  });
+
+  it("rejects an edit it can't place, and leaves it out from a call that didn't see the notes", async () => {
+    const trackId = await newTrack();
+    await applyActions(t.db, trackId, [{ type: "set-plan", ...plan }], {
+      source: "import",
+      rewritePlan: true,
+    });
+    expect(
+      await applyActions(
+        t.db,
+        trackId,
+        [{ type: "edit-plan-notes", heading: "## Owed", text: null }],
+        { source: "close", rewritePlan: true },
+      ),
+    ).toEqual({ ok: false, errors: ['The plan\'s notes have no section "## Owed" to remove.'] });
+    await applyActions(
+      t.db,
+      trackId,
+      [{ type: "edit-plan-notes", heading: "## Pacing", text: null }],
+      { source: "probe" },
+    );
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual(plan);
   });
 });
 

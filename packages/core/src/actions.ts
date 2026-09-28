@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 /*
- * Structured edits the model returns instead of rewriting state (design §5). The server validates a
- * whole batch and applies it only if every edit is valid. Plain unions (JSON Schema anyOf), not
+ * Structured edits the model returns instead of rewriting state (design §5). The server validates
+ * every edit of a batch against the track as the edits before it leave it. Plain unions (JSON Schema anyOf), not
  * discriminated ones: OpenAI's strict structured outputs reject oneOf.
  */
 
@@ -30,15 +30,30 @@ const addToArc = z.object({
   arc: z.string().min(1),
   terms: z.array(z.string().min(1)),
 });
-/** Replaces the whole plan, arcs and notes: only from a call that saw all of it (the close). */
+/**
+ * Replaces the plan's arcs, and its notes unless `notes` is null (the notes are then kept as they
+ * are): only from a call that saw all of it (the close).
+ */
 const setPlan = z.object({
   type: z.literal("set-plan"),
   arcs: z.array(z.object({ title: z.string().min(1), terms: z.array(z.string()) })),
-  notes: z.string(),
+  notes: z.string().nullable(),
+});
+/**
+ * Edits one section of the plan's notes: the section under this heading line (as written, e.g.
+ * "## Open threads", up to the next heading of its level or above) gets `text` as its body, or is
+ * removed when `text` is null; a heading no section has adds a new section at the end. Only from a
+ * call that saw the notes as written (the close; design §5).
+ */
+const editPlanNotes = z.object({
+  type: z.literal("edit-plan-notes"),
+  heading: z.string().min(1),
+  text: z.string().nullable(),
 });
 /** Notes for later sessions, added after the plan's notes (from a call that didn't see them). */
 const addPlanNotes = z.object({ type: z.literal("add-plan-notes"), notes: z.string() });
 
+/** What any call may record: terms, the fix-list, the language, and terms placed in the plan's arcs. */
 export const trackActionSchema = z.union([
   setTermStatus,
   addPlannedTerm,
@@ -46,12 +61,26 @@ export const trackActionSchema = z.union([
   closeFixItem,
   setLanguage,
   addToArc,
-  setPlan,
 ]);
 
 /**
- * What the plan's record may return: the track actions without set-plan, since a session's plan
- * never rewrites the plan (it places its terms with add-to-arc), plus the notes it adds.
+ * What the close's term sweep may return: the track actions, plus rewriting the plan (its arcs, or
+ * its notes by section), since the close sees all of it: every arc's terms and the notes as written.
+ */
+export const closeActionSchema = z.union([
+  setTermStatus,
+  addPlannedTerm,
+  addFixItem,
+  closeFixItem,
+  setLanguage,
+  addToArc,
+  setPlan,
+  editPlanNotes,
+]);
+
+/**
+ * What the plan's record may return: the track actions, plus the notes it adds. A session's plan
+ * never rewrites the plan (it places its terms with add-to-arc).
  */
 export const planActionSchema = z.union([
   setTermStatus,
@@ -63,4 +92,4 @@ export const planActionSchema = z.union([
   addPlanNotes,
 ]);
 
-export type TrackAction = z.infer<typeof trackActionSchema> | z.infer<typeof planActionSchema>;
+export type TrackAction = z.infer<typeof closeActionSchema> | z.infer<typeof planActionSchema>;

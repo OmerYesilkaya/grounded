@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { planActionSchema, trackActionSchema } from "./actions.js";
+import { closeActionSchema, planActionSchema, trackActionSchema } from "./actions.js";
 
 /*
  * The structured calls around a chat message: the message itself is streamed without tools, and its
@@ -32,10 +32,12 @@ export const planActionsSchema = z.object({
     ),
 });
 
-/**
- * Track edits on their own: the close's term sweep, and the edits of a call asked for again after
- * some were rejected.
- */
+/** The edits of a call asked for again after some were rejected. */
 export const trackActionsSchema = z.object({
   actions: z.array(trackActionSchema),
+});
+
+/** The close's term sweep: every term settled, and any change to the plan or the fix-list. */
+export const sweepActionsSchema = z.object({
+  actions: z.array(closeActionSchema),
 });
