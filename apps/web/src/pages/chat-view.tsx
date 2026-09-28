@@ -119,18 +119,13 @@ export function ChatView({
               : undefined
           }
         />
-        {phase === "lesson" && (
+        {/* While the first step is written, the activity line above says so; the card is the way in. */}
+        {phase === "lesson" && hasSteps && (
           <div className="rounded-xl border bg-card px-5 py-4 text-sm">
-            {hasSteps ? (
-              <>
-                The lesson is on.{" "}
-                <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
-                  Open the lesson
-                </Button>
-              </>
-            ) : (
-              "The lesson is being written; it opens as soon as the first step is ready."
-            )}
+            The lesson is on.{" "}
+            <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
+              Open the lesson
+            </Button>
           </div>
         )}
         {phase === "closed" && (
