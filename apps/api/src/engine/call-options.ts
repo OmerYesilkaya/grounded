@@ -11,14 +11,26 @@ import type { SystemModelMessage } from "ai";
 const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } };
 
 /**
- * A system prompt as the calls send it: one message per part, with the stable parts (the method,
- * the track's state) marked as cache breakpoints, so a call whose own part differs still reuses the
- * method and the track from the cache. Only Anthropic reads the marks; for the others the model
- * middleware joins the parts back into the one text assemblePrompt gives (see shapeCall).
+ * The most cache breakpoints Anthropic accepts in one request; more is an error. The top-level
+ * `cacheControl` (shapeCall) takes one of them. @ai-sdk/anthropic counts only the marks on blocks
+ * (and drops those past 4), not the top-level one, so keeping within the limit is ours to do: the
+ * system prompt marks at most 3 parts, and shapeCall leaves out the top-level mark when a prompt
+ * already carries 4.
+ */
+export const MAX_CACHE_BREAKPOINTS = 4;
+
+/**
+ * A system prompt as the calls send it: one message per part, with the stable parts (the method's
+ * shared sections, the phase's own, the track's state) marked as cache breakpoints, so a call of
+ * another phase still reuses the shared sections, and a call whose own part differs still reuses
+ * the method and the track, from the cache. An empty part is left out, with its mark. Only
+ * Anthropic reads the marks; for the others the model middleware joins the parts back into the one
+ * text assemblePrompt gives (see shapeCall).
  */
 export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
   const parts = [
-    { content: prompt.method, stable: true },
+    { content: prompt.sharedMethod, stable: true },
+    { content: prompt.phaseMethod, stable: true },
     { content: prompt.track, stable: true },
     { content: prompt.call, stable: false },
   ];
@@ -68,7 +80,8 @@ export interface CallFacts {
  *   separate blocks (its breakpoints sit between them), the others get one system message.
  * - Caching. OpenAI: `promptCacheKey` is the track, so a track's calls reach the same cache.
  *   Anthropic: besides the breakpoints in the system prompt, the top-level `cacheControl` caches
- *   the whole prompt, so the next call of the conversation reuses it. Google caches implicitly.
+ *   the whole prompt, so the next call of the conversation reuses it; it is left out when the
+ *   prompt's own marks already fill MAX_CACHE_BREAKPOINTS. Google caches implicitly.
  * - Reasoning effort: the purpose's, from REASONING.
  */
 export function shapeCall(
@@ -76,7 +89,8 @@ export function shapeCall(
   params: LanguageModelV4CallOptions,
 ): LanguageModelV4CallOptions {
   const hints: SharedV4ProviderOptions = {};
-  if (facts.provider === "anthropic") hints.anthropic = CACHE_BREAKPOINT.anthropic;
+  if (facts.provider === "anthropic" && breakpointsIn(params.prompt) < MAX_CACHE_BREAKPOINTS)
+    hints.anthropic = CACHE_BREAKPOINT.anthropic;
   if (facts.provider === "openai" && facts.trackId)
     hints.openai = { promptCacheKey: facts.trackId };
   const reasoning = params.reasoning ?? REASONING[facts.purpose];
@@ -110,6 +124,22 @@ function separateSystemParts(
 }
 
 type SystemMessage = Extract<LanguageModelV4Prompt[number], { role: "system" }>;
+
+/**
+ * The Anthropic cache marks a prompt carries, on its messages and their parts. A message's mark
+ * and its last part's may count as one there; counting both only errs on the safe side.
+ */
+function breakpointsIn(prompt: LanguageModelV4Prompt): number {
+  const marked = (options: SharedV4ProviderOptions | undefined) =>
+    options?.anthropic?.cacheControl || options?.anthropic?.cache_control ? 1 : 0;
+  let count = 0;
+  for (const message of prompt) {
+    count += marked(message.providerOptions);
+    if (typeof message.content !== "string")
+      for (const part of message.content) count += marked(part.providerOptions);
+  }
+  return count;
+}
 
 function mergeProviderOptions(
   base: SharedV4ProviderOptions,

@@ -94,8 +94,13 @@ export interface PromptContext {
  * first. Joined, the parts are the prompt the model reads.
  */
 export interface SystemPrompt {
-  /** The phase's method sections: the same for every call of the phase. */
-  method: string;
+  /**
+   * The method's leading `all` sections: the same for every call of every phase, so calls of
+   * different phases share it from the cache.
+   */
+  sharedMethod: string;
+  /** The phase's own method sections, after the shared ones: the same for every call of the phase. */
+  phaseMethod: string;
   /** The track's slowly changing state, under the context heading; "" when the call has none. */
   track: string;
   /** What only this call carries (the step being checked, research notes…); "" when none. */
@@ -109,10 +114,14 @@ export function assembleSystemPrompt(
   phase: Phase,
   context: PromptContext,
 ): SystemPrompt {
-  const body = method.sections
-    .filter((s) => s.phases.includes("all") || s.phases.includes(phase))
-    .map((s) => s.text)
-    .join("\n\n");
+  // The shared part runs up to the first section not tagged `all`; method.md keeps every `all`
+  // section in that run, and one placed later would count as the phase's.
+  const first = method.sections.findIndex((s) => !s.phases.includes("all"));
+  const leading = first === -1 ? method.sections.length : first;
+  const text = (sections: readonly Section[]) => sections.map((s) => s.text).join("\n\n");
+  const phaseSections = method.sections
+    .slice(leading)
+    .filter((s) => s.phases.includes("all") || s.phases.includes(phase));
   const track = renderTrack(context);
   const call = [
     ...renderChanges(context),
@@ -121,7 +130,8 @@ export function assembleSystemPrompt(
   // The heading opens the app's context, in whichever part the context starts.
   const headed = (part: string) => `${CONTEXT_HEADING}\n\n${part}`;
   return {
-    method: body,
+    sharedMethod: text(method.sections.slice(0, leading)),
+    phaseMethod: text(phaseSections),
     track: track ? headed(track) : "",
     call: call && !track ? headed(call) : call,
   };
@@ -129,7 +139,9 @@ export function assembleSystemPrompt(
 
 /** The whole prompt as one text: its parts in order. */
 export function joinSystemPrompt(prompt: SystemPrompt): string {
-  return [prompt.method, prompt.track, prompt.call].filter(Boolean).join("\n\n");
+  return [prompt.sharedMethod, prompt.phaseMethod, prompt.track, prompt.call]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 export function assemblePrompt(method: Method, phase: Phase, context: PromptContext): string {

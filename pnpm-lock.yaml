@@ -98,6 +98,10 @@ importers:
       zod:
         specifier: ^4.6.5
         version: 4.6.5
+    devDependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.65
+        version: 4.0.65(zod@4.6.5)
 
   apps/web:
     dependencies:

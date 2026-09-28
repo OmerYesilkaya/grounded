@@ -239,12 +239,15 @@ about, test and debug.
   from the request to a stream's finish or the failure), so the effect of caching and reasoning
   effort shows per purpose.
 - **Prompts are ordered stable-first** (`assembleSystemPrompt` in `packages/core/src/prompt.ts`), so
-  a provider can reuse the cached start of the previous call: the phase's method sections, then the
-  track's slowly changing state (subject and language, plan, term list, borrowed terms, fix-list,
-  teaching notes, in that order), then what only this call carries (the step being checked, research
-  notes, the probe's conclusion), then the conversation. The track's state renders the same way on
-  every load (terms and fix-list in creation order, what a term rests on in the term list's order),
-  so two calls of a track and phase are byte-identical up to their own parts.
+  a provider can reuse the cached start of the previous call: the method's `all` sections (the same
+  for every phase; `method.md` keeps them all at its top, so they are one leading run), then the
+  phase's own method sections, then the track's slowly changing state (subject and language, plan,
+  term list, borrowed terms, fix-list, teaching notes, in that order), then what only this call
+  carries (the step being checked, research notes, the probe's conclusion), then the conversation.
+  The track's state renders the same way on every load (terms and fix-list in creation order, what
+  a term rests on in the term list's order), so two calls of a track and phase are byte-identical
+  up to their own parts, and two calls of different phases through the all-phase sections (decided
+  2026-09-28).
 - **The track's part holds the track as the session began** (`loadTrackContext` with the session):
   the term list with each term's status as of the session's start (its last `term_events` change
   before then) and the fix-list as it stood then. What changed since (a term's new status, a term
@@ -314,9 +317,15 @@ about, test and debug.
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
   block per part, with a cache breakpoint (`cacheControl: { type: "ephemeral" }`, 5 minutes) after the
-  method and after the track's state, and the top-level `cacheControl` caches the whole prompt for the
-  conversation's next call. Google caches implicitly. For OpenAI and Google the parts are joined back
-  into one system message, so every provider reads exactly the assembled prompt.
+  all-phase method sections (about 16 KB of the 18–24 KB, shared by every phase's calls: a check
+  reuses what the lesson before it cached), after the phase's own sections and after the track's
+  state, and the top-level `cacheControl` caches the whole prompt for the conversation's next call.
+  That is 4 breakpoints, Anthropic's maximum per request (more is an error); the top-level one
+  counts, though `@ai-sdk/anthropic` counts only the marks on blocks, so the limit is kept in
+  `call-options.ts` (`MAX_CACHE_BREAKPOINTS`): an empty part gets no block and no mark, and the
+  top-level mark is left out when a prompt already carries 4. Google caches implicitly. For OpenAI
+  and Google the parts are joined back into one system message, so every provider reads exactly
+  the assembled prompt.
 - **Reasoning effort per purpose** (`REASONING` in `apps/api/src/engine/call-options.ts`), set in
   the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
   effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured

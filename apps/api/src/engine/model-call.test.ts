@@ -1,3 +1,4 @@
+import { createAnthropic } from "@ai-sdk/anthropic";
 import { joinSystemPrompt, type SystemPrompt } from "@grounded/core";
 import { credentials, usageEvents, users } from "@grounded/db";
 import { generateText, simulateReadableStream, streamText } from "ai";
@@ -516,7 +517,8 @@ describe("reasoning effort per purpose", () => {
 
 describe("provider cache hints", () => {
   const prompt: SystemPrompt = {
-    method: "# Teaching method\n\nThe rules.",
+    sharedMethod: "# Teaching method\n\nThe rules.",
+    phaseMethod: "## Checks\n\nHow to grade.",
     track: "# What the app gives you in this call\n\n## Track\n\nSubject: Concurrency",
     call: "## The step being checked\n\nStep one.",
   };
@@ -560,7 +562,7 @@ describe("provider cache hints", () => {
     expect(mock.doGenerateCalls[0]?.providerOptions).toEqual({});
   });
 
-  it("marks Anthropic cache breakpoints after the method and the track, and caches the conversation", async () => {
+  it("marks Anthropic cache breakpoints after the shared method, the phase's method and the track, and caches the conversation", async () => {
     const userId = await userWithKey("anthropic", "claude-opus-5-5");
     const mock = streamed();
     const { caller } = callerWith(mock);
@@ -573,12 +575,106 @@ describe("provider cache hints", () => {
     expect(call?.providerOptions).toEqual(breakpoint);
     const system = call?.prompt.filter((m) => m.role === "system") ?? [];
     expect(system).toEqual([
-      { role: "system", content: `${prompt.method}\n\n`, providerOptions: breakpoint },
+      { role: "system", content: `${prompt.sharedMethod}\n\n`, providerOptions: breakpoint },
+      { role: "system", content: `${prompt.phaseMethod}\n\n`, providerOptions: breakpoint },
       { role: "system", content: `${prompt.track}\n\n`, providerOptions: breakpoint },
       { role: "system", content: prompt.call },
     ]);
     // Read as one text, the blocks are exactly the assembled prompt.
     expect(system.map((m) => m.content).join("")).toBe(joinSystemPrompt(prompt));
+  });
+
+  describe("as Anthropic receives them", () => {
+    /** The request bodies @ai-sdk/anthropic sends, through a fetch that answers in place of the API. */
+    function anthropicRequests() {
+      const bodies: Record<string, unknown>[] = [];
+      const fetch = (_url: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+        const message = {
+          id: "msg_1",
+          type: "message",
+          role: "assistant",
+          model: "claude-opus-5-5",
+          content: [{ type: "text", text: "ok" }],
+          stop_reason: "end_turn",
+          stop_sequence: null,
+          usage: { input_tokens: 10, output_tokens: 1 },
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify(message), {
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      };
+      const caller = createModelCaller({
+        db: t.db,
+        vault: t.vault,
+        createLanguageModel: (_provider, modelId, apiKey) =>
+          createAnthropic({ apiKey, fetch })(modelId),
+      });
+      return { caller, bodies };
+    }
+
+    /** Every cache_control in a request body, the top-level one included. */
+    function cacheControls(value: unknown): unknown[] {
+      if (Array.isArray(value)) return value.flatMap(cacheControls);
+      if (!value || typeof value !== "object") return [];
+      return Object.entries(value as Record<string, unknown>).flatMap(([key, inner]) =>
+        key === "cache_control" ? [inner] : cacheControls(inner),
+      );
+    }
+
+    it("sends one breakpoint per stable part and the top-level one, never more than 4", async () => {
+      const userId = await userWithKey("anthropic", "claude-opus-5-5");
+      const { caller, bodies } = anthropicRequests();
+      const model = await caller.model({
+        userId,
+        purpose: "check",
+        role: "strong",
+        trackId: "t-1",
+      });
+      const cases: [SystemPrompt, number][] = [
+        [prompt, 4],
+        [{ ...prompt, call: "" }, 4],
+        [{ ...prompt, track: "" }, 3],
+        [{ ...prompt, phaseMethod: "", track: "", call: "" }, 2],
+      ];
+      for (const [parts] of cases)
+        await generateText({ model, system: systemMessages(parts), prompt: "grade" });
+
+      expect(bodies.map((body) => cacheControls(body).length)).toEqual(cases.map(([, n]) => n));
+      for (const [i, [parts]] of cases.entries()) {
+        const system = bodies[i]?.system as { text: string }[];
+        // Read as one text, the blocks are exactly the assembled prompt.
+        expect(system.map((block) => block.text).join("")).toBe(joinSystemPrompt(parts));
+        expect(bodies[i]?.cache_control).toEqual({ type: "ephemeral" });
+      }
+    });
+
+    it("leaves out the top-level breakpoint when the prompt's own marks already fill the 4", async () => {
+      const userId = await userWithKey("anthropic", "claude-opus-5-5");
+      const { caller, bodies } = anthropicRequests();
+      const model = await caller.model({
+        userId,
+        purpose: "check",
+        role: "strong",
+        trackId: "t-1",
+      });
+      const marked = { anthropic: { cacheControl: { type: "ephemeral" } } };
+
+      await generateText({
+        model,
+        system: ["one", "two", "three", "four"].map((content) => ({
+          role: "system" as const,
+          content,
+          providerOptions: marked,
+        })),
+        prompt: "grade",
+      });
+
+      expect(cacheControls(bodies[0])).toHaveLength(4);
+      expect(bodies[0]).not.toHaveProperty("cache_control");
+    });
   });
 
   it("lets the caller's own provider options win", async () => {

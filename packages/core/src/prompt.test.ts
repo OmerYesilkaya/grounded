@@ -105,14 +105,30 @@ describe("assemblePrompt", () => {
       ...context,
       extra: [{ heading: "The step being checked", body: "Step two, with more to say." }],
     });
-    expect(next.method).toBe(grading.method);
+    expect(next.sharedMethod).toBe(grading.sharedMethod);
+    expect(next.phaseMethod).toBe(grading.phaseMethod);
     expect(next.track).toBe(grading.track);
     expect(next.call).not.toBe(grading.call);
 
-    const prefix = `${grading.method}\n\n${grading.track}\n\n`;
+    const prefix = `${joinSystemPrompt({ ...grading, call: "" })}\n\n`;
     expect(joinSystemPrompt(grading).startsWith(prefix)).toBe(true);
     expect(joinSystemPrompt(next).startsWith(prefix)).toBe(true);
     expect(joinSystemPrompt(grading).slice(prefix.length)).toBe(grading.call);
+  });
+
+  it("splits the method into the leading all-phase sections and the phase's own, in the document's order", () => {
+    const later = parseMethod(`${FIXTURE}\n<!-- phases: all -->\n## Late\n\nAlso always on.\n`);
+    const probe = assembleSystemPrompt(later, "probe", {});
+    const lesson = assembleSystemPrompt(later, "lesson", {});
+    expect(probe.sharedMethod).toBe("# Method\n\nAlways on.");
+    expect(lesson.sharedMethod).toBe(probe.sharedMethod);
+    // An `all` section after a phase's own stays where the document puts it.
+    expect(probe.phaseMethod).toBe("## Probe\n\nProbe rules.\n\n## Late\n\nAlso always on.");
+    expect(lesson.phaseMethod).toBe("## Lesson\n\nLesson rules.\n\n## Late\n\nAlso always on.");
+    expect(assembleSystemPrompt(method, "check", {})).toMatchObject({
+      sharedMethod: "# Method\n\nAlways on.",
+      phaseMethod: "",
+    });
   });
 
   it("marks the current arc, tallies arcs shown without their terms, and counts terms not listed", () => {
@@ -212,6 +228,40 @@ describe("the real method.md", () => {
       expect(prompt, phase).toContain("## Principle i — Unconditional truths first");
       expect(prompt, phase).toContain("## Principle ii");
       expect(prompt, phase).toContain("## Conduct (always on)");
+    }
+  });
+
+  it("starts every phase's prompt with the same all-phase sections, so phases share them from the cache", () => {
+    const shared = assembleSystemPrompt(method, "probe", context).sharedMethod;
+    expect(shared).toContain("## Principle i — Unconditional truths first");
+    expect(shared).toContain("## Conduct (always on)");
+    for (const phase of PHASES) {
+      const prompt = assembleSystemPrompt(method, phase, context);
+      expect(prompt.sharedMethod, phase).toBe(shared);
+      expect(prompt.phaseMethod, phase).not.toBe("");
+      expect(joinSystemPrompt(prompt).startsWith(`${shared}\n\n${prompt.phaseMethod}\n\n`)).toBe(
+        true,
+      );
+    }
+    // Two different phases' prompts: the same bytes through the shared sections, then their own.
+    const aside = assemblePrompt(method, "aside", context);
+    const lesson = assemblePrompt(method, "lesson", context);
+    expect(aside.slice(0, shared.length)).toBe(lesson.slice(0, shared.length));
+    expect(aside.slice(shared.length)).toMatch(/^\n\n## Asides — answering in the margin\n/);
+    expect(lesson.slice(shared.length)).toMatch(/^\n\n### The learner's teaching notes\n/);
+  });
+
+  it("keeps every all-phase section in the shared part, and every phase's sections in the document's order", () => {
+    const always = method.sections.filter((s) => s.phases.includes("all"));
+    for (const phase of PHASES) {
+      const prompt = assembleSystemPrompt(method, phase, {});
+      expect(prompt.sharedMethod, phase).toBe(always.map((s) => s.text).join("\n\n"));
+      expect(joinSystemPrompt(prompt), phase).toBe(
+        method.sections
+          .filter((s) => s.phases.includes("all") || s.phases.includes(phase))
+          .map((s) => s.text)
+          .join("\n\n"),
+      );
     }
   });
 
