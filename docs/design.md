@@ -242,6 +242,14 @@ about, test and debug.
   notes, the probe's conclusion), then the conversation. The track's state renders the same way on
   every load (terms and fix-list in creation order, what a term rests on in the term list's order),
   so two calls of a track and phase are byte-identical up to their own parts.
+- **The track's part holds the track as the session began** (`loadTrackContext` with the session):
+  the term list with each term's status as of the session's start (its last `term_events` change
+  before then) and the fix-list as it stood then. What changed since (a term's new status, a term
+  or fix-list item added, an item closed) comes first in the call's own part, under "Changed since
+  this session began", which says it holds over the lists above. So the probe's records, a check's
+  verdict or the plan's new terms don't change the track's part: it stays cached all session. The
+  subject, language and plan are shown as they are now (they change about once a session). What the
+  tutor writes is still validated against the track as it is now.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one

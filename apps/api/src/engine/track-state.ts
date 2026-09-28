@@ -1,9 +1,11 @@
-import type { PromptContext, TrackAction } from "@grounded/core";
+import type { FixItem, PromptContext, TermRow, TrackAction } from "@grounded/core";
 import {
   and,
+  desc,
   eq,
   fixListItems,
   inArray,
+  learningSessions,
   sql,
   termDependencies,
   termEvents,
@@ -221,18 +223,64 @@ export async function applyActions(
   return { ok: true };
 }
 
-/** The track as the prompt sees it (method.md, "What the app gives you"). */
+export interface TrackContext extends Required<
+  Pick<PromptContext, "track" | "terms" | "plan" | "fixList">
+> {
+  /** In a session: what changed since it began (the term list and fix-list are as it began). */
+  changes?: NonNullable<PromptContext["changes"]>;
+  /** Every term with its status now: what the server validates the tutor's writing against. */
+  current: { term: string; status: TermStatus }[];
+}
+
+/**
+ * The track as the prompt sees it (method.md, "What the app gives you"). For a session's calls
+ * (`sessionId`), the term list and fix-list are as the session began and the changes since come
+ * apart, so the prompt's track part stays byte-identical all session (design §4.4).
+ */
 export async function loadTrackContext(
   db: Db,
   trackId: string,
-): Promise<Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>> {
+  options: { sessionId?: string } = {},
+): Promise<TrackContext> {
   const [track] = await db.select().from(tracks).where(eq(tracks.id, trackId));
   if (!track) throw new Error(`track ${trackId} not found`);
+  // Compared in the database, at its precision: a JavaScript Date keeps only milliseconds.
+  const began = options.sessionId
+    ? sql`(select ${learningSessions.createdAt} from ${learningSessions} where ${learningSessions.id} = ${options.sessionId})`
+    : sql`'infinity'::timestamptz`;
   const rows = await db
-    .select()
+    .select({
+      id: terms.id,
+      term: terms.term,
+      status: terms.status,
+      existed: sql<boolean>`${terms.createdAt} < ${began}`,
+    })
     .from(terms)
     .where(eq(terms.trackId, trackId))
     .orderBy(terms.createdAt, terms.id);
+  // Each term's status as the session began: the last change recorded before then.
+  const then = new Map(
+    options.sessionId && rows.length
+      ? (
+          await db
+            .selectDistinctOn([termEvents.termId], {
+              termId: termEvents.termId,
+              status: termEvents.toStatus,
+            })
+            .from(termEvents)
+            .where(
+              and(
+                inArray(
+                  termEvents.termId,
+                  rows.map((r) => r.id),
+                ),
+                sql`${termEvents.createdAt} < ${began}`,
+              ),
+            )
+            .orderBy(termEvents.termId, desc(termEvents.createdAt), desc(termEvents.id))
+        ).map((e) => [e.termId, e.status])
+      : [],
+  );
   const deps = rows.length
     ? await db
         .select()
@@ -256,19 +304,47 @@ export async function loadTrackContext(
     restsOn.set(d.termId, [...(restsOn.get(d.termId) ?? []), nameOf.get(d.restsOnTermId) ?? ""]);
   }
   const fixList = await db
-    .select()
+    .select({
+      text: fixListItems.text,
+      status: fixListItems.status,
+      existed: sql<boolean>`${fixListItems.createdAt} < ${began}`,
+      closedBefore: sql<boolean>`coalesce(${fixListItems.closedAt} < ${began}, false)`,
+    })
     .from(fixListItems)
     .where(eq(fixListItems.trackId, trackId))
     .orderBy(fixListItems.createdAt, sql`${fixListItems.id}`);
 
+  const listed: TermRow[] = [];
+  const changes = { terms: [] as TermRow[], fixList: [] as FixItem[] };
+  for (const r of rows) {
+    const row = { term: r.term, status: r.status, restsOn: restsOn.get(r.id) ?? [] };
+    if (!r.existed) {
+      changes.terms.push(row);
+      continue;
+    }
+    // A term with no change recorded before the session (none is written without one) keeps its own.
+    const status = then.get(r.id) ?? r.status;
+    listed.push({ ...row, status });
+    if (status !== r.status) changes.terms.push(row);
+  }
+  const fixItems: FixItem[] = [];
+  for (const f of fixList) {
+    const item = { text: f.text, status: f.status };
+    if (!f.existed) {
+      changes.fixList.push(item);
+      continue;
+    }
+    const status = f.closedBefore ? "closed" : "open";
+    fixItems.push({ ...item, status });
+    if (status !== f.status) changes.fixList.push(item);
+  }
+
   return {
     track: { title: track.title, language: track.language },
-    terms: rows.map((r) => ({
-      term: r.term,
-      status: r.status,
-      restsOn: restsOn.get(r.id) ?? [],
-    })),
+    terms: listed,
     plan: track.plan,
-    fixList: fixList.map((f) => ({ text: f.text, status: f.status })),
+    fixList: fixItems,
+    ...(options.sessionId ? { changes } : {}),
+    current: rows.map((r) => ({ term: r.term, status: r.status })),
   };
 }

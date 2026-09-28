@@ -103,8 +103,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
   const contextFor = async (sessionId: string, phase: Phase) => {
     const session = await loadSession(db, sessionId);
-    const track = await loadTrackContext(db, session.trackId);
-    const terms: TrackTerm[] = track.terms.map((t) => ({ term: t.term, status: t.status }));
+    const track = await loadTrackContext(db, session.trackId, { sessionId });
+    const terms: TrackTerm[] = track.current;
     const history = await db
       .select()
       .from(sessionMessages)
@@ -142,7 +142,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   /** The prompt for grading or re-asking a step: the check phase's method plus the step and its thread. */
   const checkPrompt = async (sessionId: string, stepId: string, state: SessionState) => {
     const session = await loadSession(db, sessionId);
-    const track = await loadTrackContext(db, session.trackId);
+    const track = await loadTrackContext(db, session.trackId, { sessionId });
     const lesson = await lessonRow(sessionId);
     const thread = await db
       .select()
@@ -180,7 +180,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         },
       ],
     });
-    const terms: TrackTerm[] = track.terms.map((t) => ({ term: t.term, status: t.status }));
+    const terms: TrackTerm[] = track.current;
     return { session, system, thread, terms, introduced };
   };
 

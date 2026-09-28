@@ -5,7 +5,15 @@ export {
   parseMethod,
   PHASES,
 } from "./prompt.js";
-export type { Method, Phase, PromptContext, SystemPrompt, TermStatus } from "./prompt.js";
+export type {
+  FixItem,
+  Method,
+  Phase,
+  PromptContext,
+  SystemPrompt,
+  TermRow,
+  TermStatus,
+} from "./prompt.js";
 export { initialSession, transition } from "./session.js";
 export type {
   LessonStepInfo,

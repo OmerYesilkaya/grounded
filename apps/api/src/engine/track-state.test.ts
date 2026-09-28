@@ -1,4 +1,5 @@
-import { termEvents, tracks, users } from "@grounded/db";
+import { initialSession } from "@grounded/core";
+import { eq, learningSessions, termEvents, tracks, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { createTestHarness } from "../test/harness.js";
 import { applyActions, emptyTrackShape, loadTrackContext, validateActions } from "./track-state.js";
@@ -221,5 +222,77 @@ describe("validateActions", () => {
       `"TLS" isn't in the term list; add it as a planned term first (or as assumed, if the learner already knew it).`,
       `"QUIC" rests on "UDP", which isn't in the term list.`,
     ]);
+  });
+});
+
+describe("loadTrackContext: in a session", () => {
+  const openSession = async (trackId: string) => {
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    if (!track) throw new Error("no track");
+    const [session] = await t.db
+      .insert(learningSessions)
+      .values({ trackId, userId: track.userId, state: initialSession() })
+      .returning();
+    if (!session) throw new Error("no session");
+    return session.id;
+  };
+
+  it("keeps the term list and fix-list as the session began, and gives what changed since apart", async () => {
+    const trackId = await newTrack();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "add-planned-term", term: "worker", restsOn: [] },
+        { type: "add-fix-item", text: "Thinks adding one is one step" },
+        { type: "add-fix-item", text: "Thinks memory can add" },
+      ],
+      { source: "plan" },
+    );
+    const sessionId = await openSession(trackId);
+    const before = await loadTrackContext(t.db, trackId, { sessionId });
+    expect(before.changes).toEqual({ terms: [], fixList: [] });
+
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "set-term-status", term: "memory", status: "confirmed", evidence: "holds 5" },
+        { type: "add-planned-term", term: "race condition", restsOn: ["memory", "worker"] },
+        { type: "close-fix-item", text: "Thinks memory can add" },
+        { type: "add-fix-item", text: "Thinks a lock is free" },
+      ],
+      { source: "probe" },
+    );
+    const after = await loadTrackContext(t.db, trackId, { sessionId });
+    expect(after.terms).toEqual(before.terms);
+    expect(after.fixList).toEqual(before.fixList);
+    expect(after.changes).toEqual({
+      terms: [
+        { term: "memory", status: "confirmed", restsOn: [] },
+        { term: "race condition", status: "planned", restsOn: ["memory", "worker"] },
+      ],
+      fixList: [
+        { text: "Thinks memory can add", status: "closed" },
+        { text: "Thinks a lock is free", status: "open" },
+      ],
+    });
+    // The tutor's writing is validated against the track as it is now.
+    expect(after.current).toEqual([
+      { term: "memory", status: "confirmed" },
+      { term: "worker", status: "planned" },
+      { term: "race condition", status: "planned" },
+    ]);
+  });
+
+  it("outside a session, gives the track as it is now", async () => {
+    const trackId = await newTrack();
+    await applyActions(t.db, trackId, [{ type: "add-planned-term", term: "memory", restsOn: [] }], {
+      source: "plan",
+    });
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.changes).toBeUndefined();
+    expect(context.terms).toEqual([{ term: "memory", status: "planned", restsOn: [] }]);
   });
 });

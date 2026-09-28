@@ -115,6 +115,40 @@ describe("assemblePrompt", () => {
     expect(joinSystemPrompt(grading).slice(prefix.length)).toBe(grading.call);
   });
 
+  it("gives the session's changes in the call's part, so the track's part stays the same", () => {
+    const changes = {
+      terms: [{ term: "memory", status: "taught" as const, restsOn: [] }],
+      fixList: [{ text: "Thinks a lock is free", status: "open" as const }],
+    };
+    const before = assembleSystemPrompt(method, "probe", context);
+    const after = assembleSystemPrompt(method, "probe", {
+      ...context,
+      changes,
+      extra: [{ heading: "Research notes", body: "Notes." }],
+    });
+    expect(after.track).toBe(before.track);
+    expect(after.call).toBe(
+      [
+        "## Changed since this session began",
+        "",
+        "Newer than the term list and fix-list above: where they differ, these hold.",
+        "",
+        "| term | status | rests on |",
+        "| --- | --- | --- |",
+        "| memory | taught | — |",
+        "",
+        "- [open] Thinks a lock is free",
+        "",
+        "## Research notes",
+        "",
+        "Notes.",
+      ].join("\n"),
+    );
+    expect(
+      assembleSystemPrompt(method, "probe", { ...context, changes: { terms: [], fixList: [] } }),
+    ).toEqual(before);
+  });
+
   it("joins its parts into exactly the prompt, the context heading opening whichever part comes first", () => {
     const extra = [{ heading: "Research notes", body: "Notes." }];
     for (const ctx of [{}, context, { extra }, { ...context, extra }]) {
