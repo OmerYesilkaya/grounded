@@ -727,15 +727,30 @@ Three structurally different variants were explored
 
 ### 9.2 Track list
 
-A refined "typographic index":
+A "typographic index" of parents and children (redesigned 2026-09-29, #57: the first version drew a
+track and its sessions as equal rows between full-width rules, so the list read as one flat column,
+and marked the current track with bolder text):
 
 - At the very top, the **Grounded** wordmark (Notable, accent colour) in a row as tall as the Chat /
   Lesson bar, so the sidebar and the main view share one header band. It links home.
 - Below it, a clearly visible **+ New track** button (accent, dashed border), then search (`/`).
-- **The current track** expanded as a ruled list (serif name; items with small-caps kind: session,
-  homework, arc exam); the current session marked by an accent bar; due items tagged ("tonight").
-- **Other tracks** as single serif lines with what is waiting ("1 due", "1 open"); click to expand;
-  finished items fold ("3 done ▸").
+- **A track is a parent line:** a chevron and the serif name (every track at the same size and
+  weight). No rules between tracks, only a little space. The chevron opens and closes its items; the
+  name opens the track's page.
+- **Its items hang below it from a thread line** (a hairline from under the chevron, down the items'
+  left edge), indented to the name, in sans: session, homework, arc exam, oldest first. So the parent
+  and its children differ in typeface, size, indent and the thread, never in weight.
+- **An item row says what the item is about**, over a small-caps line saying what it is: a session
+  shows the terms its lesson introduces ("Working copy, lost update, race condition", up to two
+  lines) over "Session 4 · lesson"; before its lesson is outlined, what is under way stands in
+  ("Finding where you start", "Choosing what comes next") over "Session 4". Due items get a tag
+  ("tonight").
+- **The current track** (the page shows it or something in it) is open, its name in the foreground
+  colour and its chevron in the accent; other names are muted. **The current item** is where the
+  thread turns into the accent colour beside it, its text in the foreground colour.
+- **Other tracks** start closed, one line each with what is waiting ("1 open", later "1 due"); the
+  chevron opens them in place. Finished items fold into one line ("3 done ›") above the rest; the
+  item on the page is never folded away.
 - **At scale (15+):** ordered by recent activity, six shown, the rest under "N more tracks"; search
   filters tracks and lessons live.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API

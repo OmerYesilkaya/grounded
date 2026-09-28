@@ -1,5 +1,5 @@
 import { ATTACHMENT_LIMITS, initialSession } from "@grounded/core";
-import { eq, learningSessions, trackFiles, tracks } from "@grounded/db";
+import { eq, learningSessions, lessons, trackFiles, tracks, users } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
@@ -356,5 +356,103 @@ describe("the tutor reading what the learner brought", () => {
       (a) => a.label === "Reading what you brought",
     );
     expect(reading?.state).toBe("done");
+  });
+});
+
+const hoursAgo = (hours: number) => new Date(Date.now() - hours * 3_600_000);
+
+/** The signed-in learner's id. */
+const learnerId = async () => {
+  const [user] = await t.db.select({ id: users.id }).from(users);
+  return user?.id ?? "";
+};
+
+/** A track made straight in the database, last touched `hours` ago. */
+const trackAt = async (userId: string, title: string, hours: number) => {
+  const [track] = await t.db
+    .insert(tracks)
+    .values({ userId, title, goal: title, createdAt: hoursAgo(hours), updatedAt: hoursAgo(hours) })
+    .returning();
+  return track?.id ?? "";
+};
+
+/** A session made straight in the database; with `terms`, a lesson whose steps introduce them. */
+const sessionAt = async (
+  userId: string,
+  trackId: string,
+  hours: number,
+  options: { closed?: boolean; terms?: string[][] } = {},
+) => {
+  const [session] = await t.db
+    .insert(learningSessions)
+    .values({
+      trackId,
+      userId,
+      state: { ...initialSession(), phase: options.closed ? "closed" : "lesson" },
+      createdAt: hoursAgo(hours),
+      updatedAt: hoursAgo(hours),
+      closedAt: options.closed ? hoursAgo(hours) : null,
+    })
+    .returning();
+  const id = session?.id ?? "";
+  if (options.terms)
+    await t.db.insert(lessons).values({
+      sessionId: id,
+      outline: {
+        steps: options.terms.map((introduces, i) => ({
+          heading: `Step ${String(i + 1)}`,
+          establishes: "",
+          introduces,
+          restsOn: [],
+        })),
+      },
+    });
+  return id;
+};
+
+interface ListedTrack {
+  id: string;
+  title: string;
+  openSession: { id: string } | null;
+  items: { kind: string; id: string; number: number; done: boolean; terms: string[] }[];
+}
+const trackList = async (cookie: string) =>
+  (await (await t.request("/api/tracks", { cookie })).json()) as ListedTrack[];
+
+describe("the track list", () => {
+  it("lists each track's sessions in order, saying what each teaches and whether it is done", async () => {
+    const cookie = await signedIn();
+    const userId = await learnerId();
+    const trackId = await trackAt(userId, "How software works", 48);
+    const first = await sessionAt(userId, trackId, 40, {
+      closed: true,
+      terms: [["bit"], ["byte", "bit"]],
+    });
+    const second = await sessionAt(userId, trackId, 30, { terms: [["working copy"]] });
+    const third = await sessionAt(userId, await trackAt(userId, "Other", 50), 50);
+
+    const [track, other] = await trackList(cookie);
+    expect(track?.items).toEqual([
+      expect.objectContaining({ kind: "session", id: first, number: 1, done: true }),
+      expect.objectContaining({ kind: "session", id: second, number: 2, done: false }),
+    ]);
+    expect(track?.items.map((item) => item.terms)).toEqual([["bit", "byte"], ["working copy"]]);
+    expect(track?.openSession?.id).toBe(second);
+    expect(other?.items).toEqual([expect.objectContaining({ id: third, number: 1, terms: [] })]);
+  });
+
+  it("puts the most recently active track first, counting activity in its sessions", async () => {
+    const cookie = await signedIn();
+    const userId = await learnerId();
+    await trackAt(userId, "Touched yesterday", 24);
+    const older = await trackAt(userId, "Made last week, studied an hour ago", 24 * 7);
+    await sessionAt(userId, older, 1);
+    await trackAt(userId, "Untouched for a month", 24 * 30);
+
+    expect((await trackList(cookie)).map((track) => track.title)).toEqual([
+      "Made last week, studied an hour ago",
+      "Touched yesterday",
+      "Untouched for a month",
+    ]);
   });
 });

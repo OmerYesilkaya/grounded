@@ -37,6 +37,8 @@ const track = (importedLesson: TrackSummary["importedLesson"]): TrackSummary => 
   title: "How software works",
   naming: false,
   language: "English",
+  activeAt: "2026-09-29T00:00:00.000Z",
+  items: [],
   openSession: null,
   importedLesson,
   files: [],

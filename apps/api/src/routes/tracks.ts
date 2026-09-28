@@ -1,24 +1,14 @@
 import { ATTACHMENT_LIMITS, needsNaming, standInTitle } from "@grounded/core";
-import {
-  and,
-  desc,
-  eq,
-  importedLessons,
-  inArray,
-  isNull,
-  learningSessions,
-  trackFiles,
-  tracks,
-  type Db,
-} from "@grounded/db";
+import { and, eq, importedLessons, trackFiles, tracks, type Db } from "@grounded/db";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { JobQueue } from "../engine/queue.js";
 import { readAttachments, type UploadedFile } from "../files/attachments.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
-import { createTrack, filesOf } from "../files/track-files.js";
+import { createTrack } from "../files/track-files.js";
 import { addLogContext } from "../log.js";
+import { trackList } from "../track-list.js";
 
 interface Env {
   Variables: { user: { id: string; email: string; name: string } };
@@ -140,46 +130,6 @@ export function registerTrackRoutes(
     return c.json(lesson);
   });
 
-  app.get("/api/tracks", async (c) => {
-    const userId = c.get("user").id;
-    const rows = await db
-      .select()
-      .from(tracks)
-      .where(eq(tracks.userId, userId))
-      .orderBy(desc(tracks.updatedAt));
-    const open = await db
-      .select()
-      .from(learningSessions)
-      .where(and(eq(learningSessions.userId, userId), isNull(learningSessions.closedAt)));
-    const imported = rows.length
-      ? await db
-          .select({ trackId: importedLessons.trackId, title: importedLessons.title })
-          .from(importedLessons)
-          .where(
-            inArray(
-              importedLessons.trackId,
-              rows.map((t) => t.id),
-            ),
-          )
-      : [];
-    const attached = await filesOf(
-      db,
-      rows.map((t) => t.id),
-    );
-    return c.json(
-      rows.map((t) => {
-        const session = open.find((s) => s.trackId === t.id);
-        const lesson = imported.find((l) => l.trackId === t.id);
-        return {
-          id: t.id,
-          title: t.title,
-          naming: t.titlePending,
-          language: t.language,
-          openSession: session ? { id: session.id, phase: session.state.phase } : null,
-          importedLesson: lesson ? { title: lesson.title } : null,
-          files: attached.get(t.id) ?? [],
-        };
-      }),
-    );
-  });
+  /** The track list (design §9.2): every track with its items, the most recently active first. */
+  app.get("/api/tracks", async (c) => c.json(await trackList(db, c.get("user").id)));
 }

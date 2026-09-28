@@ -40,10 +40,11 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
   const model = useSessionModel(sessionId);
   const phase = model?.state.phase;
   const queryClient = useQueryClient();
-  // The sidebar shows each track's session phase; refresh it when this one moves on.
+  // The sidebar shows each session's phase and its lesson's terms; refresh it when either changes.
+  const lessonStatus = model?.state.lesson.status;
   useEffect(() => {
     if (phase) void queryClient.invalidateQueries({ queryKey: ["tracks"] });
-  }, [phase, queryClient]);
+  }, [phase, lessonStatus, queryClient]);
   // The lesson view during the lesson, the chat otherwise, unless the learner switched in this phase.
   const [choice, setChoice] = useState<{ phase: string; tab: "chat" | "lesson" } | null>(null);
   const tab =
