@@ -5,9 +5,7 @@ export function CentredPage({ children }: { children: ReactNode }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-4">
       <div className="w-full max-w-sm">
-        <p className="mb-8 text-center font-brand text-2xl text-primary">
-          Grounded
-        </p>
+        <p className="mb-8 text-center font-brand text-2xl text-primary">Grounded</p>
         {children}
       </div>
     </main>
