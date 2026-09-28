@@ -60,21 +60,18 @@ const OUTLINE = {
       establishes: "copy, change, put back",
       introduces: ["working copy"],
       restsOn: [],
-      check: "What is in memory meanwhile?",
     },
     {
       heading: "Two workers, one number",
       establishes: "interleaving loses an update",
       introduces: ["lost update"],
       restsOn: ["working copy"],
-      check: "Why 6 and not 7?",
     },
     {
       heading: "Why it hides",
       establishes: "it needs bad timing",
       introduces: [],
-      restsOn: [],
-      check: "Why can it hide?",
+      restsOn: ["lost update"],
     },
   ],
 };
