@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { createMagicLinkDelivery, createResendSender } from "./email.js";
+import { captureLogs } from "./log.js";
 
 const LINK = "https://app.example.org/api/auth/magic-link/verify?token=abc&callbackURL=%2F";
 
@@ -53,59 +54,62 @@ describe("magic link email", () => {
 });
 
 describe("magic link delivery", () => {
-  const link = "http://localhost:5173/api/auth/magic-link/verify?token=t";
+  const link = "http://localhost:5173/api/auth/magic-link/verify?token=t0ken";
+  const logs = () => {
+    const captured = captureLogs();
+    onTestFinished(captured.restore);
+    return captured;
+  };
 
-  it("prints the link in development before emailing it, so a failed email never blocks sign-in", async () => {
-    const lines: string[] = [];
+  it("logs the link in development before emailing it, so a failed email never blocks sign-in", async () => {
+    const captured = logs();
     const order: string[] = [];
     const deliver = createMagicLinkDelivery({
       email: (to) => {
-        order.push(`email ${to}`);
+        order.push(`email ${to} after ${String(captured.lines.length)} line(s)`);
         return Promise.resolve();
       },
       printLinks: true,
-      log: (line) => {
-        lines.push(line);
-        order.push("print");
-      },
     });
     await deliver("ada@example.com", link);
-    expect(order).toEqual(["print", "email ada@example.com"]);
-    expect(lines.join("\n")).toContain(link);
+    expect(order).toEqual(["email ada@example.com after 1 line(s)"]);
+    expect(captured.text()).toContain(link);
   });
 
-  it("only emails in production", async () => {
-    const lines: string[] = [];
+  it("only emails in production, and never logs the token", async () => {
+    const captured = logs();
     const email = vi.fn(() => Promise.resolve());
-    const deliver = createMagicLinkDelivery({
-      email,
-      printLinks: false,
-      log: (line) => lines.push(line),
-    });
+    const deliver = createMagicLinkDelivery({ email, printLinks: false });
     await deliver("ada@example.com", link);
     expect(email).toHaveBeenCalledWith("ada@example.com", link);
-    expect(lines).toEqual([]);
+    expect(captured.text()).not.toContain("t0ken");
   });
 
   it("logs a failed email with the reason, and still fails the request", async () => {
-    const errors: string[] = [];
+    const captured = logs();
     const deliver = createMagicLinkDelivery({
       email: () =>
         Promise.reject(new Error("Resend refused the email (403): only your own address")),
       printLinks: false,
-      log: () => undefined,
-      logError: (line) => errors.push(line),
     });
     await expect(deliver("eve@example.com", link)).rejects.toThrow("Resend refused the email");
-    expect(errors).toEqual([
-      "Magic link email to eve@example.com failed: Resend refused the email (403): only your own address",
+    expect(captured.lines).toEqual([
+      expect.objectContaining({
+        level: "error",
+        message: "magic link email failed",
+        to: "eve@example.com",
+        err: expect.objectContaining({
+          message: "Resend refused the email (403): only your own address",
+        }) as unknown,
+      }),
     ]);
+    expect(captured.text()).not.toContain("t0ken");
   });
 
-  it("prints only, when there is no email provider", async () => {
-    const lines: string[] = [];
-    const deliver = createMagicLinkDelivery({ printLinks: true, log: (line) => lines.push(line) });
+  it("logs only, when there is no email provider", async () => {
+    const captured = logs();
+    const deliver = createMagicLinkDelivery({ printLinks: true });
     await deliver("ada@example.com", link);
-    expect(lines.join("\n")).toContain(link);
+    expect(captured.text()).toContain(link);
   });
 });

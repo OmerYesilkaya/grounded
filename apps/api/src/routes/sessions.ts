@@ -21,6 +21,7 @@ import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
+import { addLogContext } from "../log.js";
 
 interface Env {
   Variables: { user: { id: string; email: string; name: string } };
@@ -40,6 +41,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .select()
       .from(learningSessions)
       .where(and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, userId)));
+    if (session) addLogContext({ sessionId: session.id, trackId: session.trackId });
     return session ?? null;
   };
 
@@ -61,6 +63,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .values({ userId: c.get("user").id, ...parsed.data })
       .returning();
     if (!track) throw new Error("track insert returned nothing");
+    addLogContext({ trackId: track.id });
     return c.json({ id: track.id, title: track.title, language: track.language }, 201);
   });
 
@@ -105,6 +108,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
   app.get("/api/tracks/:id/imported-lesson", async (c) => {
     const trackId = c.req.param("id");
     if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    addLogContext({ trackId });
     const [lesson] = await db
       .select({
         title: importedLessons.title,
@@ -122,6 +126,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
     const userId = c.get("user").id;
     const trackId = c.req.param("id");
     if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    addLogContext({ trackId });
     const [track] = await db
       .select()
       .from(tracks)
@@ -139,6 +144,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
       .values({ trackId, userId, state: initialSession() })
       .returning();
     if (!session) throw new Error("session insert returned nothing");
+    addLogContext({ sessionId: session.id });
     await publish(db, session.id, "state", session.state);
     await queue.enqueue("probe-turn", { sessionId: session.id });
     return c.json({ id: session.id }, 201);

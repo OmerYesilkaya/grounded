@@ -1,3 +1,5 @@
+import { log } from "./log.js";
+
 export type MagicLinkSender = (email: string, url: string) => Promise<void>;
 
 const escape = (value: string) =>
@@ -37,27 +39,21 @@ export function createResendSender(options: {
 }
 
 /**
- * How a magic link reaches the learner. In development the link is printed first, so a refused or
- * spam-filed email never blocks local sign-in; in production it is only emailed. A failed email is
- * logged with its reason and still fails the request.
+ * How a magic link reaches the learner. In development the link is logged first, so a refused or
+ * spam-filed email never blocks local sign-in; in production it is only emailed, and its token is
+ * never logged. A failed email is logged with its reason and still fails the request.
  */
 export function createMagicLinkDelivery(options: {
   email?: MagicLinkSender | undefined;
   printLinks: boolean;
-  log?: (line: string) => void;
-  logError?: (line: string) => void;
 }): MagicLinkSender {
-  const log = options.log ?? console.log;
-  const logError = options.logError ?? console.error;
   return async (to, url) => {
-    if (options.printLinks) log(`\nMagic link for ${to}:\n${url}\n`);
+    if (options.printLinks) log.info({ to }, `magic link for ${to}: ${url}`);
     if (!options.email) return;
     try {
       await options.email(to, url);
     } catch (error) {
-      logError(
-        `Magic link email to ${to} failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+      log.error({ to, err: error }, "magic link email failed");
       throw error;
     }
   };

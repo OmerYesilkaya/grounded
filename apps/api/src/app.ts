@@ -7,6 +7,8 @@ import { z } from "zod";
 import type { Auth } from "./auth.js";
 import { eventsAfter, type EventHub } from "./engine/events.js";
 import type { JobQueue } from "./engine/queue.js";
+import { addLogContext, log } from "./log.js";
+import { requestLogging, unexpectedError } from "./request-log.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 
 export interface AppDependencies {
@@ -35,6 +37,8 @@ const credentialInput = z.object({
 export function createApp(deps: AppDependencies) {
   const { db, auth, vault } = deps;
   const app = new Hono<{ Variables: Variables }>();
+  app.use(requestLogging());
+  app.onError(unexpectedError);
 
   /** For the host's deploy check: the process is up and reaches the database. */
   app.get("/healthz", async (c) => {
@@ -48,6 +52,7 @@ export function createApp(deps: AppDependencies) {
     const session = await auth.api.getSession({ headers: c.req.raw.headers });
     if (!session) return c.json({ error: "Sign in first." }, 401);
     c.set("user", { id: session.user.id, email: session.user.email, name: session.user.name });
+    addLogContext({ userId: session.user.id });
     await next();
   });
 
@@ -115,7 +120,9 @@ export function createApp(deps: AppDependencies) {
         and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, c.get("user").id)),
       );
     if (!session) return c.json({ error: "Not found." }, 404);
+    addLogContext({ sessionId });
     const lastId = Number(c.req.header("last-event-id") ?? c.req.query("after") ?? 0) || 0;
+    log.debug({ after: lastId }, "stream opened");
 
     return streamSSE(c, async (stream) => {
       let cursor = lastId;
@@ -128,6 +135,7 @@ export function createApp(deps: AppDependencies) {
       // Subscribe before replaying, so nothing published in between is missed.
       const unsubscribe = await deps.events.subscribe(sessionId, signal);
       stream.onAbort(() => {
+        log.debug({ cursor }, "stream closed");
         unsubscribe();
         wake?.();
       });

@@ -156,6 +156,21 @@ about, test and debug.
   one that starts late never contradicts recovery. Running recovery again changes nothing. Open
   gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed; a worker
   that dies while others keep running is recovered at the next worker start, not sooner.
+- **Structured logs, through one logger** (pino, `apps/api/src/log.ts`): JSON lines on stdout in
+  production (the message in `message` and the level's name in `level`, the fields Railway reads),
+  one readable line per entry otherwise, at `LOG_LEVEL` (`trace`, `debug`, `info` (the default),
+  `warn`, `error`, `silent`; tests are silent). Every line carries the ids of the context it was
+  written in, kept in an `AsyncLocalStorage` rather than passed around: a request's `requestId` (a
+  proxy's `x-request-id` is kept, and the response answers with it) and the `userId`, `sessionId`
+  and `trackId` it touches. The API writes one line per request (method, route, path without its
+  query, status, duration), with the reason for a 4xx or 5xx; an error no handler caught is logged
+  with its cause chain and answered with a plain 500.
+  **Never logged:** keys (plain or sealed), magic-link tokens outside development, or anything a
+  learner or the tutor wrote, the track's title included: lines hold ids, counts, issue codes and
+  the app's own messages. Errors are serialized field by field (type, message, stack frames, a
+  provider's status and error body, the cause chain), never whole: an SDK error carries the request,
+  and so the prompt. A message that quotes content (a failed JSON parse of the model's output) is
+  withheld.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite. One image (`Dockerfile`) runs both processes: the API by
   default, the worker with `node --import tsx src/worker.ts`. The API runs its TypeScript through tsx
@@ -515,7 +530,7 @@ and whenever `method.md` changes. Built after the first working session.
 ## 12. Security and privacy
 
 - HTTPS; least-privilege database roles; backups.
-- Keys: §4.3. Content: never in logs or error reports; no content-reading UI.
+- Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI.
 - A plain sentence at sign-up: what is stored (answers, progress, questions, the encrypted key), that
   nothing is shared, and that the operator can technically access the database but does not read it.
 - Model output is never rendered as HTML or run as code; every URL is verified before display.

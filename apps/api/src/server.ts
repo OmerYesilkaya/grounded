@@ -8,8 +8,10 @@ import { createMagicLinkDelivery, createResendSender } from "./email.js";
 import { createEventHub } from "./engine/events.js";
 import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
+import { log, setLogService } from "./log.js";
 import { serveWeb } from "./web.js";
 
+setLogService("api");
 const env = readEnv();
 const { db, client, close } = createDb(env.DATABASE_URL);
 const events = createEventHub(client);
@@ -44,10 +46,10 @@ const app = createApp({
 if (env.WEB_DIST_DIR) serveWeb(app, env.WEB_DIST_DIR);
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
-  console.log(`api listening on http://localhost:${String(port)}`);
+  log.info({ port }, `api listening on http://localhost:${String(port)}`);
   const email = env.RESEND_API_KEY ? `by email from ${env.EMAIL_FROM}` : "";
   const printed = env.NODE_ENV === "production" ? "" : "printed here";
-  console.log(
+  log.info(
     `magic links: ${[printed, email].filter(Boolean).join(", and ") || "nowhere (set RESEND_API_KEY)"}`,
   );
 });
@@ -55,6 +57,7 @@ const server = serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {
 // On a deploy or restart: stop taking requests and end the open streams (browsers reconnect to
 // another process and replay from their last event id), then let go of the database.
 const stop = () => {
+  log.info("api stopping");
   server.close(() => {
     void Promise.all([events.close(), queue.close()])
       .then(close)
