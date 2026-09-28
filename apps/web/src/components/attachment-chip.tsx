@@ -21,6 +21,20 @@ export interface AttachmentChipProps {
   href?: string;
 }
 
+/**
+ * A problem without the file's name, which the chip shows just above it: "budget.xlsx: only
+ * images…" reads "Only images…", "scan.png is larger than 5 MB." reads "Larger than 5 MB.".
+ */
+export function reasonOnly(problem: string, name: string): string {
+  for (const prefix of [`${name}: `, `${name} is `, `${name} `]) {
+    if (problem.startsWith(prefix)) {
+      const rest = problem.slice(prefix.length);
+      return rest.charAt(0).toUpperCase() + rest.slice(1);
+    }
+  }
+  return problem;
+}
+
 /** A file attached to a message or a track: its kind, name and size, and a way to remove it. */
 export function AttachmentChip({
   name,
@@ -49,7 +63,7 @@ export function AttachmentChip({
             problem ? "text-destructive" : "text-subtle-foreground",
           )}
         >
-          {problem ?? formatSize(size)}
+          {problem ? reasonOnly(problem, name) : formatSize(size)}
         </span>
       </span>
     </>

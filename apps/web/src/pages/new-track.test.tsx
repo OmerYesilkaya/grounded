@@ -67,8 +67,8 @@ describe("the new-track page", () => {
     await user.type(box(), "Spreadsheets");
     await user.upload(picker, [file("budget.xlsx"), file("scan.png", 6 * MB)]);
     expect(attached()).toEqual([
-      expect.stringContaining("only images, PDFs, Word documents and text files"),
-      expect.stringContaining("scan.png is larger than 5 MB."),
+      expect.stringContaining("Only images, PDFs, Word documents and text files"),
+      expect.stringContaining("Larger than 5 MB."),
     ]);
     expect(createButton()).toBeDisabled();
 
