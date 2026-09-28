@@ -175,6 +175,18 @@ about, test and debug.
   the job writes the rest when the lesson has an outline and is `ready`, and the whole lesson
   otherwise. A request that fails part-way is simply sent again: every write before the state change
   can be made twice.
+- **A job the learner can't set going again by writing can be tried again** (`engine/retry.ts`,
+  `awaitedJob` in `packages/core/src/session.ts`; #21). Those are the probe's turn (the opening
+  question, or the one after the learner's answer: the composer waits for the tutor), a plan being
+  written or revised, the homework and the recap. When the one the session waits on failed, or died
+  with its worker, nothing is queued for it and nothing runs: the session is **stalled** (the
+  snapshot says so, and the job's `error` event), and the chat shows the error, or "The tutor
+  stopped before finishing" after a reload, with **Try again**, which queues the same job again.
+  Like writing a lesson again, it is done only while no job works on the session, so two clicks
+  queue it once. The homework and the recap are kept once written: a homework job tried again
+  after its message only assigns it, and a recap job tried again after a failed sweep goes on from
+  the recap the learner has read. The lesson's own jobs have their ways back: an answer again for
+  a check, and writing the lesson again.
 - **Structured logs, through one logger** (pino, `apps/api/src/log.ts`): JSON lines on stdout in
   production (the message in `message` and the level's name in `level`, the fields Railway reads),
   one readable line per entry otherwise, at `LOG_LEVEL` (`trace`, `debug`, `info` (the default),

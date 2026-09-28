@@ -1,3 +1,4 @@
+import { awaitedJob } from "@grounded/core/session";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowDown } from "lucide-react";
@@ -68,6 +69,16 @@ export function ChatView({
   // A failed lesson says so here too, with its way back: the lesson's tab may have nothing to show.
   const lessonFailed = phase === "lesson" && model.state.lesson.status === "failed";
   const waiting = !writing && model.messages.at(-1)?.role === "learner";
+  // The job the session waits on failed, or died, and writing can't set it going again (design
+  // §4.2): say so, and offer to try it again.
+  const stuck =
+    awaitedJob(model.state, model.messages.at(-1)?.role ?? null) !== null &&
+    (model.error !== null || model.stalled) &&
+    !writing &&
+    model.activities.length === 0;
+  const retry = useMutation({
+    mutationFn: () => api(`/api/sessions/${model.id}/retry`, { method: "POST" }),
+  });
 
   const send = useMutation({
     mutationFn: (text: string) =>
@@ -117,7 +128,7 @@ export function ChatView({
         <ActivityLine
           activities={model.activities}
           fallback={
-            waiting || (phase === "plan" && plan !== "proposed" && !writing)
+            !stuck && (waiting || (phase === "plan" && plan !== "proposed" && !writing))
               ? "Thinking…"
               : undefined
           }
@@ -146,7 +157,26 @@ export function ChatView({
             </Button>
           </div>
         )}
-        {model.error && !lessonFailed && <p className="text-sm text-destructive">{model.error}</p>}
+        {stuck ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-sm text-destructive">
+              {model.error ?? "The tutor stopped before finishing."}
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={retry.isPending}
+              onClick={() => {
+                retry.mutate();
+              }}
+            >
+              Try again
+            </Button>
+            {retry.error && <p className="text-sm text-destructive">{retry.error.message}</p>}
+          </div>
+        ) : (
+          model.error && !lessonFailed && <p className="text-sm text-destructive">{model.error}</p>
+        )}
       </div>
 
       {phase === "plan" && plan === "proposed" && !writing && (

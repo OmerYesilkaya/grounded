@@ -8,13 +8,13 @@ import {
   lessons,
   sessionEvents,
   sessionMessages,
-  sql,
   type Db,
 } from "@grounded/db";
 import { log, withLogContext } from "../log.js";
 import { asideFailedText, loadAsides, recordAsideMessage, waitingFor } from "./asides.js";
 import { messagesBeingWritten } from "./chat.js";
 import { publish, runningActivities } from "./events.js";
+import { jobWaiting } from "./queue.js";
 import { applyEvent, loadSession } from "./session-store.js";
 import { checkFailedText, recordCheckMessage } from "./session-tasks.js";
 import { unlessWorkedOn } from "./work-locks.js";
@@ -96,7 +96,7 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
 
   const checks: string[] = [];
   for (const stepId of await answersWaiting(db, sessionId)) {
-    if (await queued(db, "check", sessionId, { stepId })) continue;
+    if (await jobWaiting(db, "check", sessionId, { stepId })) continue;
     await recordCheckMessage(db, sessionId, stepId, checkFailedText(), null);
     checks.push(stepId);
   }
@@ -104,14 +104,14 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
   // A question in the margin still waiting for its answer is told in its card, like a check.
   let asides = 0;
   for (const aside of await loadAsides(db, sessionId)) {
-    if (!waitingFor(aside) || (await queued(db, "aside", sessionId, { asideId: aside.id })))
+    if (!waitingFor(aside) || (await jobWaiting(db, "aside", sessionId, { asideId: aside.id })))
       continue;
     await recordAsideMessage(db, sessionId, aside.id, { role: "tutor", text: asideFailedText() });
     asides++;
   }
 
   const lesson =
-    (await lessonUnfinished(db, sessionId)) && !(await queued(db, "lesson", sessionId));
+    (await lessonUnfinished(db, sessionId)) && !(await jobWaiting(db, "lesson", sessionId));
   if (lesson) await applyEvent(db, sessionId, { type: "lesson-failed" });
 
   // An aside's card says what happened itself; the session hears about the rest.
@@ -150,29 +150,4 @@ async function lessonUnfinished(db: Db, sessionId: string): Promise<boolean> {
   const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, sessionId));
   if (!lesson?.outline) return false;
   return lesson.steps.length + lesson.failedSteps.length < lesson.outline.steps.length;
-}
-
-/**
- * Whether a job for the session (and the step or aside its payload names) is waiting to run. A job
- * whose worker died is not: it was attempted, and jobs are attempted once (queue.ts).
- */
-async function queued(
-  db: Db,
-  task: string,
-  sessionId: string,
-  match: { stepId?: string; asideId?: string } = {},
-): Promise<boolean> {
-  const also = Object.entries(match).map(
-    ([key, value]) => sql`and jobs.payload->>${key} = ${value}`,
-  );
-  const rows = await db.execute(sql`
-    select 1
-    from graphile_worker._private_jobs as jobs
-    join graphile_worker._private_tasks as tasks on tasks.id = jobs.task_id
-    where tasks.identifier = ${task}
-      and jobs.is_available
-      and jobs.payload->>'sessionId' = ${sessionId}
-      ${sql.join(also, sql` `)}
-    limit 1`);
-  return rows.length > 0;
 }

@@ -17,8 +17,9 @@ export type {
 } from "./prompt.js";
 export { NOTES_PHASES, selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.js";
 export type { TrackView, TrackViewInput } from "./track-view.js";
-export { initialSession, resolved, transition } from "./session.js";
+export { awaitedJob, initialSession, resolved, transition } from "./session.js";
 export type {
+  AwaitedJob,
   LessonStepInfo,
   SessionEvent,
   SessionPhase,

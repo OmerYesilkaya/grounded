@@ -67,6 +67,33 @@ export type SessionEvent =
 
 export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
 
+/** The jobs a session can wait on that the learner can't set going again by writing. */
+export type AwaitedJob = "probe-turn" | "plan" | "homework" | "recap";
+
+/**
+ * The job the session is waiting on, when the learner can't move it on themselves (design §4.2):
+ * the probe's next turn (the opening question, or after the learner's answer), a plan being written
+ * or revised, the homework, the recap. Null when it is the learner's turn, and in the lesson, whose
+ * jobs are set going again by answering a check or by writing the lesson again.
+ */
+export function awaitedJob(
+  state: SessionState,
+  lastMessage: "learner" | "tutor" | null,
+): AwaitedJob | null {
+  switch (state.phase) {
+    case "probe":
+      return lastMessage === "tutor" ? null : "probe-turn";
+    case "plan":
+      return state.plan === "none" || state.plan === "revising" ? "plan" : null;
+    case "homework":
+      return "homework";
+    case "close":
+      return "recap";
+    default:
+      return null;
+  }
+}
+
 export function initialSession(): SessionState {
   return {
     phase: "probe",

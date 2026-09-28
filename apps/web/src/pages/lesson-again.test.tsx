@@ -29,6 +29,7 @@ function model(lesson: SessionModel["lesson"], error: string | null = null): Ses
     activities: [],
     lastEventId: 0,
     error,
+    stalled: false,
   };
 }
 

@@ -20,6 +20,7 @@ import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import { writeLessonAgain } from "../engine/lesson-again.js";
 import type { JobQueue } from "../engine/queue.js";
+import { retryStalled, stalledJob } from "../engine/retry.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
 import type { FileStore } from "../files/store.js";
 import { addLogContext } from "../log.js";
@@ -152,8 +153,19 @@ export function registerSessionRoutes(
       hasAskedAside: await hasAskedAside(db, session.userId),
       // What jobs are doing at the cursor; later changes arrive on the stream as activity events.
       activities: await runningActivities(db, session.id, cursor),
+      // Waiting on a job nothing is doing (it failed, or died): the learner can try it again.
+      stalled: (await stalledJob(db, session.id)) !== null,
       lastEventId: cursor,
     });
+  });
+
+  /** Queues the job a stalled session waits on again (retry.ts). */
+  app.post("/api/sessions/:id/retry", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const retried = await retryStalled(db, queue, session.id);
+    if (!retried.ok) return c.json({ error: retried.reason }, 409);
+    return c.json({ job: retried.job }, 202);
   });
 
   app.post("/api/sessions/:id/messages", async (c) => {

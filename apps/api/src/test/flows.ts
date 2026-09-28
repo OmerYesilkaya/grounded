@@ -27,6 +27,8 @@ export interface Snapshot {
   lesson: { steps: { id: string }[]; totalSteps: number; notes: Record<string, string> } | null;
   checks: { stepId: string; role: string; text: string | null; verdict: string | null }[];
   activities: ActivityEvent[];
+  /** Waiting on a job nothing is doing: the learner can try it again. */
+  stalled: boolean;
 }
 
 /**

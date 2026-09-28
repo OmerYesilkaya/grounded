@@ -18,6 +18,7 @@ import {
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import {
+  and,
   asc,
   checkMessages,
   eq,
@@ -249,6 +250,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
     const learnerHasSpoken = history.some((m) => m.role === "learner");
     return { session, track, terms, messages, learnerHasSpoken, system };
+  };
+
+  /** The session's homework or recap, if it has been written. */
+  const writtenMessage = async (sessionId: string, kind: "homework" | "recap") => {
+    const [row] = await db
+      .select({ text: sessionMessages.text })
+      .from(sessionMessages)
+      .where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.kind, kind)))
+      .limit(1);
+    return row ? { text: row.text ?? "" } : null;
   };
 
   const lessonRow = async (sessionId: string) => {
@@ -835,50 +846,62 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }),
 
     homework: guarded(async ({ sessionId }) => {
-      const { session, terms, messages, system } = await contextFor(sessionId, "homework");
-      const model = await models.model({
-        userId: session.userId,
-        trackId: session.trackId,
-        sessionId: session.id,
-        purpose: "homework",
-        role: "strong",
-      });
-      await writeChatMessage({
-        db,
-        media: deps.media,
-        sessionId,
-        model,
-        system,
-        messages: [
-          ...messages,
-          { role: "user", content: "(The lesson's checks are done. Assign the homework.)" },
-        ],
-        terms,
-        kind: "homework",
-        surface: "homework",
-      });
+      // Tried again after it failed past its message (retry.ts): the homework stands as assigned.
+      if (!(await writtenMessage(sessionId, "homework"))) {
+        const { session, terms, messages, system } = await contextFor(sessionId, "homework");
+        const model = await models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          sessionId: session.id,
+          purpose: "homework",
+          role: "strong",
+        });
+        await writeChatMessage({
+          db,
+          media: deps.media,
+          sessionId,
+          model,
+          system,
+          messages: [
+            ...messages,
+            { role: "user", content: "(The lesson's checks are done. Assign the homework.)" },
+          ],
+          terms,
+          kind: "homework",
+          surface: "homework",
+        });
+      }
       await applyEvent(db, sessionId, { type: "homework-assigned" });
       await queue.enqueue("recap", { sessionId });
     }),
 
     recap: guarded(async ({ sessionId }) => {
-      const { session, terms, messages, system } = await contextFor(sessionId, "close");
-      const recap = await writeChatMessage({
-        db,
-        media: deps.media,
-        sessionId,
-        model: await models.model({
-          userId: session.userId,
-          trackId: session.trackId,
-          sessionId: session.id,
-          purpose: "close",
-          role: "strong",
-        }),
-        system,
-        messages: [...messages, { role: "user", content: "(Close the session: the recap.)" }],
-        terms,
-        kind: "recap",
-      });
+      const context = await contextFor(sessionId, "close");
+      const { session, terms, system } = context;
+      // Tried again after it failed past the recap (in the sweep, say; retry.ts): the recap the
+      // learner has read stands, and the close goes on from it. It is the conversation's last turn.
+      const written = await writtenMessage(sessionId, "recap");
+      const messages = written ? context.messages.slice(0, -1) : context.messages;
+      const recap = written ?? {
+        text: (
+          await writeChatMessage({
+            db,
+            media: deps.media,
+            sessionId,
+            model: await models.model({
+              userId: session.userId,
+              trackId: session.trackId,
+              sessionId: session.id,
+              purpose: "close",
+              role: "strong",
+            }),
+            system,
+            messages: [...messages, { role: "user", content: "(Close the session: the recap.)" }],
+            terms,
+            kind: "recap",
+          })
+        ).text,
+      };
 
       // The term sweep is its own call, so a rejected edit never means rewriting the recap; and its
       // own purpose, a structured record made with little reasoning (call-options.ts). It settles

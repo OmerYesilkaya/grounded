@@ -6,6 +6,7 @@ import {
   type TaskList,
   type WorkerUtils,
 } from "graphile-worker";
+import { sql, type Db } from "@grounded/db";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { log, logContext, withLogContext, type LogFields } from "../log.js";
 import { createWorkLocks, holdingWorkLocks } from "./work-locks.js";
@@ -57,6 +58,31 @@ export function createJobQueue(connectionString: string): JobQueue {
       if (utils) await (await utils).release();
     },
   };
+}
+
+/**
+ * Whether a job for the session (and the step or aside its payload names) is waiting to run. A job
+ * whose worker died is not: it was attempted, and jobs are attempted once (createJobQueue).
+ */
+export async function jobWaiting(
+  db: Db,
+  task: string,
+  sessionId: string,
+  match: { stepId?: string; asideId?: string } = {},
+): Promise<boolean> {
+  const also = Object.entries(match).map(
+    ([key, value]) => sql`and jobs.payload->>${key} = ${value}`,
+  );
+  const rows = await db.execute(sql`
+    select 1
+    from graphile_worker._private_jobs as jobs
+    join graphile_worker._private_tasks as tasks on tasks.id = jobs.task_id
+    where tasks.identifier = ${task}
+      and jobs.is_available
+      and jobs.payload->>'sessionId' = ${sessionId}
+      ${sql.join(also, sql` `)}
+    limit 1`);
+  return rows.length > 0;
 }
 
 export interface Worker {

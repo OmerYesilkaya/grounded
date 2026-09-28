@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { initialSession, transition, type SessionEvent, type SessionState } from "./index.js";
+import {
+  awaitedJob,
+  initialSession,
+  transition,
+  type SessionEvent,
+  type SessionState,
+} from "./index.js";
 
 /** Applies events in order, failing the test on the first rejection. */
 function run(state: SessionState, ...events: SessionEvent[]): SessionState {
@@ -237,5 +243,37 @@ describe("a failed lesson", () => {
     expect(rejected(failed(), { type: "lesson-resumed", from: "s9" })).toBe(
       "Step s9 isn't in this lesson.",
     );
+  });
+});
+
+describe("the job a session waits on", () => {
+  const planning = () => run(initialSession(), { type: "probe-done" });
+
+  it("is the probe's turn until the tutor has written, then the learner's", () => {
+    expect(awaitedJob(initialSession(), null)).toBe("probe-turn");
+    expect(awaitedJob(initialSession(), "learner")).toBe("probe-turn");
+    expect(awaitedJob(initialSession(), "tutor")).toBeNull();
+  });
+
+  it("is the plan while one is written or revised, not once it is proposed", () => {
+    expect(awaitedJob(planning(), "learner")).toBe("plan");
+    const proposed = run(planning(), { type: "plan-proposed" });
+    expect(awaitedJob(proposed, "tutor")).toBeNull();
+    expect(awaitedJob(run(proposed, { type: "learner-message" }), "learner")).toBe("plan");
+  });
+
+  it("is the homework, then the recap, and nothing in the lesson or once closed", () => {
+    expect(awaitedJob(inLesson(), "tutor")).toBeNull();
+    const homework = run(
+      inLesson(),
+      { type: "check-verdict", stepId: "s1", verdict: "landed" },
+      { type: "check-verdict", stepId: "s2", verdict: "landed" },
+      { type: "check-verdict", stepId: "s3", verdict: "landed" },
+      { type: "checks-complete" },
+    );
+    expect(awaitedJob(homework, "tutor")).toBe("homework");
+    const closing = run(homework, { type: "homework-assigned" });
+    expect(awaitedJob(closing, "tutor")).toBe("recap");
+    expect(awaitedJob(run(closing, { type: "recap-done" }), "tutor")).toBeNull();
   });
 });

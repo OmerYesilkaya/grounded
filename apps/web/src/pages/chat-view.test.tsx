@@ -33,6 +33,7 @@ function model(messages: ChatMessage[]): SessionModel {
     activities: [],
     lastEventId: 0,
     error: null,
+    stalled: false,
   };
 }
 
@@ -175,6 +176,44 @@ describe("ChatView: what the tutor is doing", () => {
     expect(screen.queryByText("Start from rectangles.")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Show thinking" }));
     expect(screen.getByText("Start from rectangles.")).toBeInTheDocument();
+  });
+});
+
+describe("ChatView: a job that stopped", () => {
+  const renderModel = (m: SessionModel) =>
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatView model={m} onOpenLesson={vi.fn()} />
+      </QueryClientProvider>,
+    );
+
+  it("offers to try the homework again, saying why it stopped", async () => {
+    const user = userEvent.setup();
+    const stopped = model([message("m1", "tutor", "Here is the lesson's last check.")]);
+    stopped.state = { ...state, phase: "homework", plan: "approved" };
+    stopped.error = "Your OpenAI account is out of credit.";
+    renderModel(stopped);
+
+    expect(screen.getByText("Your OpenAI account is out of credit.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    expect(api).toHaveBeenCalledWith("/api/sessions/s1/retry", { method: "POST" });
+  });
+
+  it("offers it after a reload too, when the session waits on a job nothing is doing", () => {
+    const stopped = model([message("m1", "learner", "it just adds one")]);
+    stopped.stalled = true;
+    renderModel(stopped);
+    expect(screen.getByText("The tutor stopped before finishing.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeInTheDocument();
+    // Not "Thinking…": nothing is.
+    expect(screen.queryByText("Thinking…")).toBeNull();
+  });
+
+  it("doesn't offer it on the learner's turn, or while the tutor is at work", () => {
+    const answered = model([message("m1", "tutor", "What happens when you add one?")]);
+    answered.error = "Something went wrong on our side. Try again in a moment.";
+    renderModel(answered);
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
   });
 });
 

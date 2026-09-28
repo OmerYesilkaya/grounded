@@ -45,6 +45,11 @@ export interface SessionModel {
   activities: Activity[];
   lastEventId: number;
   error: string | null;
+  /**
+   * Waiting on a job nothing is doing (it failed, or died with its worker), which the learner can't
+   * set going by writing: "Try again" queues it again. From the snapshot; a job starting clears it.
+   */
+  stalled: boolean;
 }
 
 /**
@@ -100,7 +105,9 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
         blocks: null,
         streaming: event.type === "message-start",
       };
-      return { ...next, messages: [...model.messages, message] };
+      // A tutor message starting is a job at work: whatever failed before is behind it.
+      const working = event.type === "message-start" ? { stalled: false, error: null } : {};
+      return { ...next, ...working, messages: [...model.messages, message] };
     }
     case "message-delta":
       return {
@@ -199,7 +206,13 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
           activities: model.activities.map((a) => (a.id === id ? { ...a, label, detail } : a)),
         };
       }
-      return { ...next, activities: [...model.activities, { id, label, detail, reasoning: "" }] };
+      // A job at work: whatever failed before is behind it.
+      return {
+        ...next,
+        stalled: false,
+        error: null,
+        activities: [...model.activities, { id, label, detail, reasoning: "" }],
+      };
     }
     case "activity-reasoning":
       return {

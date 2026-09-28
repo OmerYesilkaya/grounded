@@ -57,6 +57,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     hasAskedAside: false,
     lastEventId: 7,
     activities: [],
+    stalled: false,
     ...overrides,
   };
 }
@@ -241,6 +242,25 @@ describe("useSessionModel: what the tutor is doing", () => {
       source.emit("error", 8, { message: "Your OpenAI key was rejected." });
     });
     expect(result.current?.error).toBe("Your OpenAI key was rejected.");
+  });
+});
+
+describe("a job that stopped", () => {
+  it("is behind the session once a job is at work again", async () => {
+    serve(snapshot({ stalled: true }));
+    const { result } = await renderModel();
+    const source = openStream();
+    act(() => {
+      source.emit("error", 8, { message: "Your OpenAI account is out of credit." });
+    });
+    expect(result.current).toMatchObject({
+      stalled: true,
+      error: "Your OpenAI account is out of credit.",
+    });
+    act(() => {
+      source.emit("activity", 9, { id: "a1", label: "Thinking…", detail: null, state: "running" });
+    });
+    expect(result.current).toMatchObject({ stalled: false, error: null });
   });
 });
 
