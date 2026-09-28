@@ -512,7 +512,8 @@ open homework is folded into the next one.
   explaining, building, predicting — never recall or lookup. Choose one kind, and fill its fields:
   - **Predict → verify**: the scenario, what to predict, how to check it (run it, look it up), and what
     to reconcile. The app locks the prediction before the learner verifies.
-  - **Derivation**: from the unconditional truths to the target, every step with its "because".
+  - **Derivation**: from the unconditional truths to the target (a proof, or a chain of events), every
+    step with its "because".
   - **Build**: a small project that uses the concepts; what to hand in (text, code, photos).
   - **Explain it to a friend**: the topic in the learner's own words, for a smart friend who wasn't there.
 - Building teaches most; prefer it when the subject allows. Use the teaching notes to pick the form that
@@ -572,8 +573,8 @@ reasoning from the arc's foundations:
   learner's head. The dependency map tells you which pairs to probe.
 - **One build.** A small artifact that cannot be completed without using everything the arc taught.
   Prefer predict-then-verify where the arc allows it. Where the subject has nothing to run or make, the
-  build is a reconstruction: a timeline, map or chain of events worked out from causes, each placement
-  with its "because".
+  build is a reconstruction: a timeline or map worked out from causes, each placement with its
+  "because".
 - **The audit's misconceptions, re-probed.** Every fix-list item the arc closed gets re-tested without
   warning, in a new setting, to see whether the fix held or the old belief crept back. A relapse reopens
   that ground: record its terms back to `taught` and re-teach before the next arc builds on it.
