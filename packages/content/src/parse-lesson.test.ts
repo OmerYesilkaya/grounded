@@ -58,21 +58,28 @@ describe("parseLesson", () => {
     const { steps, issues } = parseLesson(
       [
         "Some text before any step.",
-        step("No check", "Body.", ""),
         step("Two checks", "Body.", ":::check\nOne?\n:::\n\n:::check\nTwo?\n:::"),
         step("Check in the middle", ":::check\nEarly?\n:::", "More text after it."),
         step("Fine", "Body."),
       ].join("\n\n"),
     );
 
-    expect(steps.map((s) => s.id)).toEqual(["s4"]);
+    expect(steps.map((s) => s.id)).toEqual(["s3"]);
     expect(issues.map((i) => [i.code, i.stepId])).toEqual([
       ["lesson/content-before-first-step", undefined],
-      ["lesson/missing-check", "s1"],
-      ["lesson/multiple-checks", "s2"],
-      ["lesson/check-not-last", "s3"],
+      ["lesson/multiple-checks", "s1"],
+      ["lesson/check-not-last", "s2"],
     ]);
-    expect(issues[1]?.message).toBe('Step "No check" must end with exactly one :::check block.');
+    expect(issues[1]?.message).toBe(
+      'Step "Two checks" has 2 checks; a step ends with at most one.',
+    );
+  });
+
+  it("parses a step without a check: which steps have one is the lesson pipeline's to say", () => {
+    const { steps, issues } = parseLesson(step("Background", "Body.", ""));
+    expect(issues).toEqual([]);
+    expect(steps).toMatchObject([{ id: "s1", check: null }]);
+    expect(steps[0]?.body.map((b) => b.type)).toEqual(["paragraph"]);
   });
 
   it("attributes block issues to their step", () => {
@@ -108,7 +115,7 @@ describe("parseLesson: numbering", () => {
   it("numbers steps from firstStepNumber", () => {
     const { steps } = parseLesson(step("Three", "Body."), { firstStepNumber: 3 });
     expect(steps[0]?.id).toBe("s3");
-    expect(steps[0]?.check.id).toBe("s3.b3");
+    expect(steps[0]?.check?.id).toBe("s3.b3");
   });
 });
 

@@ -16,11 +16,12 @@ const rejected = (state: SessionState, event: SessionEvent) => {
   return result.ok ? "" : result.reason;
 };
 
-// Step s2 rests on s1; s3 does not rest on s2.
+const gate = (id: string) => ({ steps: [id], terms: [], gates: true });
+// Every step checked: s1's and s2's checks gate what comes next; s3's is the last, before homework.
 const LESSON_STEPS = [
-  { id: "s1", restsOnPrevious: false },
-  { id: "s2", restsOnPrevious: true },
-  { id: "s3", restsOnPrevious: false },
+  { id: "s1", check: gate("s1") },
+  { id: "s2", check: gate("s2") },
+  { id: "s3", check: { steps: ["s3"], terms: [], gates: false } },
 ];
 
 const inLesson = () =>
@@ -116,7 +117,38 @@ describe("checks and the gate", () => {
     );
   });
 
-  it("continues on its own, marked settling, when the next step doesn't rest on this one", () => {
+  it("opens steps without a check with the step before them, and asks nothing on them", () => {
+    const state = run(
+      initialSession(),
+      { type: "probe-done" },
+      { type: "plan-proposed" },
+      { type: "plan-approved" },
+      {
+        type: "lesson-ready",
+        steps: [
+          { id: "s1", check: null },
+          { id: "s2", check: gate("s1") },
+          { id: "s3", check: null },
+          { id: "s4", check: { steps: ["s3", "s4"], terms: [], gates: false } },
+        ],
+      },
+    );
+    expect(state.steps.s1).toMatchObject({ status: "unchecked" });
+    expect(state.currentStep).toBe("s2");
+    expect(rejected(state, { type: "check-verdict", stepId: "s1", verdict: "landed" })).toBe(
+      "Step s1 isn't the step being checked.",
+    );
+    const next = run(state, { type: "check-verdict", stepId: "s2", verdict: "landed" });
+    expect(next.currentStep).toBe("s4");
+    const done = run(
+      next,
+      { type: "check-verdict", stepId: "s4", verdict: "landed" },
+      { type: "checks-complete" },
+    );
+    expect(done.phase).toBe("homework");
+  });
+
+  it("continues on its own, marked settling, when nothing in the lesson rests on the check", () => {
     const state = run(
       inLesson(),
       { type: "check-verdict", stepId: "s1", verdict: "landed" },

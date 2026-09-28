@@ -6,9 +6,10 @@ export type CheckMessage =
 
 /**
  * open: waiting for an answer · passed: the check landed · settling: continued past while shaky ·
- * paused: the learner chose to come back to it next time.
+ * paused: the learner chose to come back to it next time · unchecked: the step has no check, so it
+ * opens with the step before it.
  */
-export type StepStatus = "open" | "passed" | "settling" | "paused";
+export type StepStatus = "open" | "passed" | "settling" | "paused" | "unchecked";
 
 /** What the server knows about one step's check; the view only shows it. */
 export interface StepProgress {

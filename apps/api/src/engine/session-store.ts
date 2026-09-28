@@ -1,4 +1,4 @@
-import { transition, type SessionEvent, type SessionState } from "@grounded/core";
+import { resolved, transition, type SessionEvent, type SessionState } from "@grounded/core";
 import { eq, learningSessions, sql, type Db } from "@grounded/db";
 import { log } from "../log.js";
 import { appendEvent, lockSessionEvents } from "./events.js";
@@ -105,10 +105,7 @@ export async function completeIfDone(
     state.phase === "lesson" &&
     state.lesson.status === "ready" &&
     state.lesson.steps.length > 0 &&
-    state.lesson.steps.every((s) => {
-      const status = state.steps[s.id]?.status;
-      return status === "passed" || status === "settling";
-    });
+    state.lesson.steps.every((s) => resolved(state.steps[s.id]));
   if (!done) return;
   await applyEvent(db, sessionId, { type: "checks-complete" });
   await queue.enqueue("homework", { sessionId });

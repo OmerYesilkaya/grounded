@@ -69,7 +69,7 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 
 | Today                                              | In the app                                                                                                                                                                     | Why                                                                                                                                                        |
 | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The page is read in full, then checks in chat      | **Each step ends with an inline check; the next step unlocks when it lands**                                                                                                   | Restores the safety net the method lost when the terminal couldn't host both ("a bad step was caught by its check before anything was built on top of it") |
+| The page is read in full, then checks in chat      | **Inline checks at the point of need (§7.3); the steps after a check unlock when it lands**                                                                                    | Restores the safety net the method lost when the terminal couldn't host both ("a bad step was caught by its check before anything was built on top of it") |
 | A lesson opens with a "what rests on what" picture | **No opener.** A "what you just built" picture after the last check; the same picture in the plan and on track stats; all drawn from the term dependencies, never by the model | The opener spoils the discovery path and duplicates the approved plan; at the end it _is_ the click                                                        |
 | Homework is never skipped                          | **Homework can be postponed ("Later", with snooze), never skipped silently;** the next homework subsumes an open one                                                           | Building homework teaches most; sometimes there is only room to read and think                                                                             |
 | Hand-drawn SVG                                     | Mermaid (and other typed blocks)                                                                                                                                               | Auto-layout removes label overflow; validation is mechanical                                                                                               |
@@ -516,7 +516,7 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
 
 ### 7.1 Phases
 
-Server-owned state machine: **review → probe → plan → lesson (steps with inline checks) → homework →
+Server-owned state machine: **review → probe → plan → lesson (inline checks at the point of need) → homework →
 close.** The model _proposes_ transitions through structured actions ("probing done; here is the
 plan"); the server checks preconditions (a plan before a lesson; every check resolved before homework);
 the learner approves at the gates (the plan). The learner can nudge at any time ("skip ahead to the
@@ -543,26 +543,44 @@ given to the plan's calls, research included; when the learner skips ahead to th
 
 ### 7.2 Lesson generation pipeline
 
-1. **Research + outline** (search on): steps, the motivation for each, the terms each introduces, the
-   drawings needed, the checks. Validated against the term list before any writing.
+1. **Research + outline** (search on): steps, the motivation for each, the terms each introduces and
+   rests on, the drawings needed. Validated against the term list before any writing. The app then
+   places the checks from what each step rests on (`placeChecks`, §7.3), and the writing prompt says
+   which steps end with one and what it covers.
 2. **Write** in one streamed call, rendered block by block — the learner reads step 1 while later
    steps are still being written (only unlocked steps are visible anyway).
-3. **Validate per step**; regenerate only a failing step.
+3. **Validate per step**, a check exactly where one was placed included; regenerate only a failing
+   step.
 
 Lessons are expected at roughly 15–25 KB of markdown (the 50–90 KB of today's lessons was mostly
 HTML/SVG). To be measured, then adjusted.
 
 ### 7.3 Inline checks and the gate
 
-- Each step ends with its check (one or two lines). The strong model grades it inline.
-- **Landed** → the next step unlocks, and the page scrolls to it once the verdict has been read.
+- **Checks at the point of need.** A check catches a missing piece before anything is built on it,
+  so it goes where that would happen: before a step that rests on terms this lesson taught and no
+  check has covered, the step before it ends with a check on those terms, however far back they were
+  taught. The last step always ends with one, on everything still unchecked, since the homework rests
+  on the whole lesson. Every other step has none and opens with the step before it (state
+  `unchecked`), so the learner reads straight through to the next check. A check covering several
+  steps is graded with all their sources in its prompt. Placement is computed by the app, not chosen
+  by the model, so it is predictable and testable; its weak point is the outline's `restsOn`, since an
+  idea a step leans on without naming it as a term gets no check before it (the eval measures this,
+  §11). Lessons written before this (every step checked) were migrated as one check per step, gating
+  where the next step rested on it.
+- Each check is one or two lines. The strong model grades it inline.
+- **Landed** → the steps after it unlock, and the page scrolls to the first once the verdict has been
+  read.
 - **Miss or "I don't know"** → a repair thread opens under the check (the one place explanation
   happens outside the lesson), then a **fresh** question on the same idea — never the same one again.
-  A marked "After the check-back" note is added under the step; later steps are not rewritten.
-- **Still shaky after a repair:** if the next step **rests on** this one (term dependencies), offer
+  A marked "After the check-back" note is added under the check; later steps are not rewritten.
+- **Still shaky after a repair:** if a later step **rests on** the check (every check but the last), offer
   **Pause here** (next time opens with a fresh question on this idea — the incubation option) or
   **Continue anyway** (step flagged "settling", its terms stay `taught`, homework and the next session
-  re-test it). If the next step doesn't rest on it, continue freely with the step flagged.
+  re-test it). After the last check, continue freely with the step flagged.
+- Why checks at the point of need: a step nothing rests on yet doesn't need to be solid before the next
+  one, and a check there only interrupts reading; asking a few steps after an idea was taught is also
+  better practice for remembering it than asking straight away (spaced retrieval).
 - Why a soft gate: building on a missing piece hurts when the next step uses it (mastery learning,
   cognitive load), but a later idea can make an earlier one click, a break helps (incubation), and
   repeated failure breeds helplessness. Later layers (homework, next-session review, the v2 quiz) catch

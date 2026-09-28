@@ -5,7 +5,7 @@ import {
   generateLesson,
   planActionsSchema,
   probeDecisionSchema,
-  stepInfoFor,
+  placeChecks,
   trackActionSchema,
   type Method,
   type Phase,
@@ -204,7 +204,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .where(sql`${checkMessages.sessionId} = ${sessionId} and ${checkMessages.stepId} = ${stepId}`)
       .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
     const index = state.lesson.steps.findIndex((s) => s.id === stepId);
-    const nextRests = state.lesson.steps[index + 1]?.restsOnPrevious ?? false;
+    const placed = state.lesson.steps[index]?.check;
+    // A check covers every step whose ideas it asks about, not only the one it ends.
+    const covered = placed?.steps ?? [stepId];
     const misses = state.steps[stepId]?.misses ?? 0;
     const introduced = (lesson.outline?.steps ?? [])
       .slice(0, index + 1)
@@ -212,7 +214,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     const system = systemFor("check", {
       ...track,
       extra: [
-        { heading: "The step being checked", body: lesson.stepSources[stepId] ?? "" },
+        {
+          heading:
+            covered.length > 1
+              ? `The steps this check covers (it ends step ${stepId.slice(1)})`
+              : "The step being checked",
+          body: covered.map((id) => lesson.stepSources[id] ?? "").join("\n\n"),
+        },
         {
           heading: "Its check thread so far",
           body:
@@ -224,13 +232,18 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           heading: "Where this step stands",
           body: [
             `Missed answers on this step so far: ${String(misses)}.`,
-            nextRests
-              ? "The next step rests on this one."
-              : "The next step does not rest on this one.",
+            placed?.terms.length ? `This check covers: ${placed.terms.join(", ")}.` : "",
+            placed?.gates
+              ? "The next step rests on what this check covers."
+              : index === state.lesson.steps.length - 1
+                ? "This is the lesson's last check; the homework comes next."
+                : "Nothing ahead in the lesson rests on it.",
             misses >= 1
               ? "If this answer misses too, the idea is still settling: say so kindly, stop repairing, and give no fresh question."
-              : "If this answer misses, repair that one piece and give a fresh question on the same idea.",
-          ].join(" "),
+              : "If this answer misses, repair the piece that leaked, rebuilt from what it rests on, and give a fresh question on the same ideas.",
+          ]
+            .filter(Boolean)
+            .join(" "),
         },
       ],
     });
@@ -435,7 +448,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             totalSteps = outline.steps.length;
             await db.update(lessons).set({ outline }).where(eq(lessons.sessionId, sessionId));
             // The steps are known from the outline, so the learner can start while later ones are written.
-            await applyEvent(db, sessionId, { type: "lesson-ready", steps: stepInfoFor(outline) });
+            await applyEvent(db, sessionId, { type: "lesson-ready", steps: placeChecks(outline) });
             await publish(db, sessionId, "lesson-outline", { totalSteps: outline.steps.length });
           },
           onStep: async (step, markdown) => {

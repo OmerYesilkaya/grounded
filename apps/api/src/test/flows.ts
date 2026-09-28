@@ -13,7 +13,7 @@ export interface Snapshot {
     phase: string;
     plan: string;
     currentStep: string | null;
-    lesson: { status: string };
+    lesson: { status: string; steps: { id: string; check: object | null }[] };
     steps: Record<string, { status: string; misses: number; offerGate: boolean } | undefined>;
   };
   messages: {

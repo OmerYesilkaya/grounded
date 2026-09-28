@@ -77,12 +77,15 @@ export interface ParseResult {
 
 export type CheckBlock = Extract<Block, { type: "check" }>;
 
-/** One step of a lesson: revealed on its own, ending in the check that unlocks the next. */
+/**
+ * One step of a lesson, revealed on its own. It ends in the check that unlocks the next step, or,
+ * where nothing ahead rests on it yet, in none: the next step then opens with it.
+ */
 export interface LessonStep {
   id: string;
   heading: Inline[];
   body: Block[];
-  check: CheckBlock;
+  check: CheckBlock | null;
 }
 
 export interface LessonParseResult {

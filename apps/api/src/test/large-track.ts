@@ -168,7 +168,10 @@ export async function createLargeTrack(
   const state = {
     phase: "lesson" as const,
     plan: "approved" as const,
-    lesson: { status: "ready" as const, steps: [{ id: "s1", restsOnPrevious: false }] },
+    lesson: {
+      status: "ready" as const,
+      steps: [{ id: "s1", check: { steps: ["s1"], terms: [], gates: false } }],
+    },
     steps: { s1: { status: "open" as const, misses: 0, offerGate: false } },
     currentStep: "s1",
   };

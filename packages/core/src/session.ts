@@ -1,20 +1,36 @@
 export type SessionPhase = "probe" | "plan" | "lesson" | "homework" | "close" | "closed";
 
-/** open: waiting for an answer · passed · settling: continued past while shaky · paused. */
-export type StepStatus = "open" | "passed" | "settling" | "paused";
+/**
+ * open: waiting for an answer · passed · settling: continued past while shaky · paused ·
+ * unchecked: the step has no check, so it opens with the step before it.
+ */
+export type StepStatus = "open" | "passed" | "settling" | "paused" | "unchecked";
 
 export interface StepState {
   status: StepStatus;
   /** Missed answers on this step since it was last opened. */
   misses: number;
-  /** Still shaky after a repair, and the next step rests on this one. */
+  /** Still shaky after a repair, and the next step rests on what its check covers. */
   offerGate: boolean;
+}
+
+/**
+ * A check, placed where the next step needs what came before it (design §7.3): it covers everything
+ * taught so far, and not yet checked, that the next step rests on.
+ */
+export interface StepCheck {
+  /** The steps whose ideas it checks, in order; the last is the step it ends. */
+  steps: string[];
+  /** The lesson's terms it checks (empty for a check made before this was recorded). */
+  terms: string[];
+  /** A later step rests on it, so an answer still shaky after a repair offers a pause. */
+  gates: boolean;
 }
 
 export interface LessonStepInfo {
   id: string;
-  /** Whether this step builds on the one before it (from the outline's term dependencies). */
-  restsOnPrevious: boolean;
+  /** The check the step ends with, or null: a step without one opens with the step before it. */
+  check: StepCheck | null;
 }
 
 export interface SessionState {
@@ -55,8 +71,10 @@ export function initialSession(): SessionState {
 }
 
 const MISSES_BEFORE_GATE = 2;
-const resolved = (step: StepState | undefined) =>
-  step?.status === "passed" || step?.status === "settling";
+
+/** Whether the lesson can go past this step: its check landed or was continued past, or it has none. */
+export const resolved = (step: StepState | undefined) =>
+  step?.status === "passed" || step?.status === "settling" || step?.status === "unchecked";
 
 /**
  * The session's phase machine (design §7.1). Pure: the server applies an event only if this accepts
@@ -97,13 +115,13 @@ export function transition(state: SessionState, event: SessionEvent): Transition
       const steps = Object.fromEntries(
         event.steps.map((s): [string, StepState] => [
           s.id,
-          { status: "open", misses: 0, offerGate: false },
+          { status: s.check ? "open" : "unchecked", misses: 0, offerGate: false },
         ]),
       );
       return ok({
         lesson: { status: "ready", steps: event.steps },
         steps,
-        currentStep: event.steps[0]?.id ?? null,
+        currentStep: event.steps.find((s) => !resolved(steps[s.id]))?.id ?? null,
       });
     }
 
@@ -125,7 +143,7 @@ export function transition(state: SessionState, event: SessionEvent): Transition
       const misses = step.misses + 1;
       if (misses < MISSES_BEFORE_GATE)
         return ok({ steps: { ...state.steps, [event.stepId]: { ...step, misses } } });
-      if (nextRestsOn(state, event.stepId)) {
+      if (gates(state, event.stepId)) {
         return ok({
           steps: { ...state.steps, [event.stepId]: { ...step, misses, offerGate: true } },
         });
@@ -181,7 +199,6 @@ function advance(state: SessionState, stepId: string, step: StepState): Transiti
   return { ok: true, state: { ...state, steps, currentStep: next?.id ?? null } };
 }
 
-function nextRestsOn(state: SessionState, stepId: string): boolean {
-  const index = state.lesson.steps.findIndex((s) => s.id === stepId);
-  return state.lesson.steps[index + 1]?.restsOnPrevious ?? false;
+function gates(state: SessionState, stepId: string): boolean {
+  return state.lesson.steps.find((s) => s.id === stepId)?.check?.gates ?? false;
 }

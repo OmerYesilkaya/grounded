@@ -6,8 +6,9 @@ import type { Block, Inline, Issue, LessonParseResult, LessonStep } from "./type
 const isStepHeading = (node: RootContent) => node.type === "heading" && node.depth === 2;
 
 /**
- * Parses a whole lesson. Every step starts with a "##" heading and ends with exactly one check;
- * anything else is reported against that step so it alone can be regenerated.
+ * Parses a whole lesson. Every step starts with a "##" heading and ends with at most one check
+ * (which steps have one is the lesson pipeline's to say); anything else is reported against that
+ * step so it alone can be regenerated.
  */
 export interface ParseLessonOptions {
   /** Number of the first step (default 1), for parsing a single step in place. */
@@ -62,17 +63,11 @@ function toStep(id: string, blocks: Block[], issues: Issue[]): LessonStep | null
   const checks = rest.filter((block) => block.type === "check");
   const last = rest.at(-1);
 
-  if (checks.length === 0) {
-    issues.push({
-      code: "lesson/missing-check",
-      message: `Step "${title}" must end with exactly one :::check block.`,
-    });
-    return null;
-  }
+  if (checks.length === 0) return { id, heading: heading.children, body: rest, check: null };
   if (checks.length > 1) {
     issues.push({
       code: "lesson/multiple-checks",
-      message: `Step "${title}" has ${String(checks.length)} checks; a step ends with exactly one.`,
+      message: `Step "${title}" has ${String(checks.length)} checks; a step ends with at most one.`,
     });
     return null;
   }

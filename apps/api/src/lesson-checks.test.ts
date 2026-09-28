@@ -14,7 +14,8 @@ beforeEach(() => {
   models.reset();
 });
 
-// s2 builds on what s1 introduces; s3 doesn't build on s2.
+// Each step builds on what the one before it introduces, so every step ends with a check: s1's and
+// s2's gate the next step, s3's is the lesson's last.
 const OUTLINE = {
   steps: [
     {
@@ -22,21 +23,18 @@ const OUTLINE = {
       establishes: "copy, change, put back",
       introduces: ["working copy"],
       restsOn: [],
-      check: "What is in memory meanwhile?",
     },
     {
       heading: "Two workers",
       establishes: "interleaving loses an update",
       introduces: ["lost update"],
       restsOn: ["working copy"],
-      check: "Why 6 and not 7?",
     },
     {
       heading: "Why it hides",
       establishes: "it needs bad timing",
       introduces: [],
-      restsOn: [],
-      check: "Why can it hide for months?",
+      restsOn: ["lost update"],
     },
   ],
 };
@@ -251,6 +249,46 @@ describe("checks", () => {
     expect(second?.slice(0, 3)).toEqual(first?.slice(0, 3));
     expect(second?.[3]).not.toEqual(first?.[3]);
     expect(JSON.stringify(first?.[3])).toContain("The step being checked");
+  });
+
+  it("checks at the point of need: a step nothing rests on yet opens with the next, whose check covers both", async () => {
+    const session = await planned();
+    const outline = {
+      steps: [
+        { ...OUTLINE.steps[0], restsOn: [] },
+        { ...OUTLINE.steps[1], restsOn: [] },
+        { ...OUTLINE.steps[2], restsOn: ["working copy", "lost update"] },
+      ],
+    };
+    const lesson = [
+      "## Adding one is three moves\n\nThe value is copied out into a working copy, changed, and put back.",
+      step("Two workers", "Both copy 5, and one addition vanishes: a lost update.", "Why 6?"),
+      step("Why it hides", "It only happens when the timing is just wrong.", "Why months?"),
+    ].join("\n\n");
+    models.script("lesson", { text: lesson, thenGenerate: [JSON.stringify(outline)] });
+    await t.request(`/api/sessions/${session.sessionId}/approve-plan`, {
+      method: "POST",
+      cookie: session.cookie,
+    });
+    await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 3);
+
+    const s = await snapshot(session.cookie, session.sessionId);
+    expect(s.state.currentStep).toBe("s2");
+    expect(s.state.steps.s1?.status).toBe("unchecked");
+    expect(s.state.lesson.steps.map((x) => x.check !== null)).toEqual([false, true, true]);
+    expect(
+      (await answer(session.cookie, session.sessionId, "s1", { text: "too early" })).status,
+    ).toBe(409);
+
+    models.script("check", verdict({ verdict: "landed", reply: "Yes." }));
+    await answer(session.cookie, session.sessionId, "s2", { text: "B copied an old 5" });
+    await until(session.cookie, session.sessionId, (x) => x.state.currentStep === "s3");
+    const grading = JSON.stringify(
+      models.used.find((u) => u.purpose === "check")?.model.doGenerateCalls[0]?.prompt,
+    );
+    expect(grading).toContain("The steps this check covers (it ends step 2)");
+    expect(grading).toContain("copied out into a working copy");
+    expect(grading).toContain("This check covers: working copy, lost update.");
   });
 
   it("only takes an answer for the step being checked", async () => {

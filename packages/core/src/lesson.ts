@@ -9,7 +9,7 @@ import {
 } from "@grounded/content";
 import { generateText, Output, streamText, type Instructions } from "ai";
 import { z } from "zod";
-import type { LessonStepInfo } from "./session.js";
+import type { LessonStepInfo, StepCheck } from "./session.js";
 
 export const lessonOutlineSchema = z.object({
   steps: z
@@ -20,9 +20,11 @@ export const lessonOutlineSchema = z.object({
         establishes: z.string(),
         /** New terms this step names (each must be a planned term). */
         introduces: z.array(z.string()),
-        /** Terms this step builds on (held by the learner, or introduced by an earlier step). */
+        /**
+         * Terms this step builds on (held by the learner, or introduced by an earlier step). The app
+         * places the lesson's checks from these (placeChecks).
+         */
         restsOn: z.array(z.string()),
-        check: z.string().min(1),
       }),
     )
     .min(1),
@@ -56,7 +58,7 @@ export interface GenerateLessonOptions {
 export interface LessonResult {
   outline: LessonOutline;
   steps: LessonStep[];
-  /** Every step of the outline, with whether it builds on the one before (the gate uses this). */
+  /** Every step of the outline, with the check it ends with, if any. */
   stepInfo: LessonStepInfo[];
   /** Steps still broken after the retries; shown to the learner as failed, with "regenerate". */
   failed: { stepId: string; heading: string; issues: Issue[] }[];
@@ -83,6 +85,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   const retries = options.maxRetries ?? 2;
   const outline = await writeOutline(options, retries);
   await options.onOutline?.(outline);
+  const planned: Planned = { outline, steps: placeChecks(outline) };
 
   const settled: (Settled | undefined)[] = [];
   let released = 0;
@@ -100,7 +103,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   const stream = streamText({
     model: options.model,
     system: options.system,
-    prompt: writePrompt(options.request, outline),
+    prompt: writePrompt(options.request, planned),
   });
   let buffer = "";
   let checked = 0;
@@ -114,22 +117,22 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     const pieces = splitLessonSteps(buffer);
     for (; started < pieces.length; started++) await options.onStepStart?.(started, 0, []);
     for (; checked < pieces.length - 1; checked++) {
-      settled[checked] = check(pieces[checked] ?? "", checked, outline, options);
+      settled[checked] = check(pieces[checked] ?? "", checked, planned, options);
       await release();
     }
   }
   const pieces = splitLessonSteps(buffer);
   for (; checked < pieces.length; checked++)
-    settled[checked] = check(pieces[checked] ?? "", checked, outline, options);
+    settled[checked] = check(pieces[checked] ?? "", checked, planned, options);
 
   for (let index = 0; index < settled.length; index++) {
     let entry = settled[index];
     for (let attempt = 0; entry?.kind === "retry" && attempt < retries; attempt++) {
       await options.onStepStart?.(index, attempt + 1, entry.issues);
-      const markdown = await regenerate(options, outline, index, entry);
-      entry = check(markdown, index, outline, options);
+      const markdown = await regenerate(options, planned, index, entry);
+      entry = check(markdown, index, planned, options);
     }
-    if (entry?.kind === "retry") entry = finalize(entry, index, outline, options);
+    if (entry?.kind === "retry") entry = finalize(entry, index, planned, options);
     settled[index] = entry;
     await release();
   }
@@ -145,7 +148,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     else steps.push(entry.step);
     if (entry.kind === "degraded") degraded.push({ stepId, issues: entry.issues });
   });
-  return { outline, steps, stepInfo: stepInfoFor(outline), failed, degraded };
+  return { outline, steps, stepInfo: planned.steps, failed, degraded };
 }
 
 async function writeOutline(
@@ -191,6 +194,12 @@ function outlineErrors(outline: LessonOutline, terms: readonly TrackTerm[]): str
   return errors;
 }
 
+/** The outline, with the checks the app placed on it. */
+interface Planned {
+  outline: LessonOutline;
+  steps: LessonStepInfo[];
+}
+
 function introducedUpTo(outline: LessonOutline, index: number): string[] {
   return outline.steps.slice(0, index + 1).flatMap((s) => s.introduces);
 }
@@ -198,13 +207,13 @@ function introducedUpTo(outline: LessonOutline, index: number): string[] {
 function check(
   markdown: string,
   index: number,
-  outline: LessonOutline,
+  planned: Planned,
   options: GenerateLessonOptions,
 ): Settled {
   const parsed = parseLesson(markdown, { firstStepNumber: index + 1 });
   const [step] = parsed.steps;
   const issues = [...parsed.issues];
-  if (step) issues.push(...stepErrors(step, index, outline, options));
+  if (step) issues.push(...stepErrors(step, index, planned, options));
   if (!step && issues.length === 0)
     issues.push({ code: "lesson/empty", message: "The step is empty." });
   return step && issues.length === 0
@@ -215,21 +224,44 @@ function check(
 function stepErrors(
   step: LessonStep,
   index: number,
-  outline: LessonOutline,
+  planned: Planned,
   options: GenerateLessonOptions,
 ): Issue[] {
-  return validateStep(step, {
-    terms: options.terms,
-    introduced: introducedUpTo(outline, index),
-    ...(options.glossary ? { glossary: options.glossary } : {}),
-  }).filter((issue) => issue.severity !== "review");
+  return [
+    ...checkPlacementErrors(step, planned.steps[index]?.check ?? null),
+    ...validateStep(step, {
+      terms: options.terms,
+      introduced: introducedUpTo(planned.outline, index),
+      ...(options.glossary ? { glossary: options.glossary } : {}),
+    }),
+  ].filter((issue) => issue.severity !== "review");
+}
+
+/** A step ends with a check exactly where the app placed one. */
+function checkPlacementErrors(step: LessonStep, placed: StepCheck | null): Issue[] {
+  if (placed && !step.check)
+    return [
+      {
+        code: "lesson/missing-check",
+        message: `This step must end with a :::check block: ${checkBrief(placed)}.`,
+      },
+    ];
+  if (!placed && step.check)
+    return [
+      {
+        code: "lesson/unexpected-check",
+        message:
+          "This step ends without a check: nothing ahead rests on it yet, and a later check covers it. Remove the :::check block.",
+      },
+    ];
+  return [];
 }
 
 /** After the last retry: keep the step without broken drawings or media, or report it failed. */
 function finalize(
   entry: Extract<Settled, { kind: "retry" }>,
   index: number,
-  outline: LessonOutline,
+  planned: Planned,
   options: GenerateLessonOptions,
 ): Settled {
   if (entry.issues.every((i) => DEGRADABLE.test(i.code))) {
@@ -238,7 +270,7 @@ function finalize(
       tolerate: (i) => DEGRADABLE.test(i.code),
     });
     const [step] = parsed.steps;
-    if (step && stepErrors(step, index, outline, options).length === 0)
+    if (step && stepErrors(step, index, planned, options).length === 0)
       return { kind: "degraded", step, markdown: entry.markdown, issues: entry.issues };
   }
   return { kind: "failed", issues: entry.issues };
@@ -246,19 +278,16 @@ function finalize(
 
 async function regenerate(
   options: GenerateLessonOptions,
-  outline: LessonOutline,
+  planned: Planned,
   index: number,
   entry: Extract<Settled, { kind: "retry" }>,
 ): Promise<string> {
-  const plan = outline.steps[index];
   const { text } = await generateText({
     model: options.model,
     system: options.system,
     prompt: [
       `Rewrite step ${String(index + 1)} of the lesson, and only that step.`,
-      plan
-        ? `Its outline: "${plan.heading}" establishes ${plan.establishes}; introduces ${plan.introduces.join(", ") || "no new terms"}; its check: ${plan.check}`
-        : "",
+      planned.outline.steps[index] ? `Its outline: ${stepBrief(planned, index)}` : "",
       "Your previous version:",
       entry.markdown,
       "Fix these problems:",
@@ -268,23 +297,64 @@ async function regenerate(
   return text;
 }
 
-function writePrompt(request: string, outline: LessonOutline): string {
-  const steps = outline.steps
-    .map(
-      (s, i) =>
-        `${String(i + 1)}. ${s.heading}: establishes ${s.establishes}; introduces ${s.introduces.join(", ") || "nothing new"}; check: ${s.check}`,
-    )
+function writePrompt(request: string, planned: Planned): string {
+  const steps = planned.outline.steps
+    .map((_, i) => `${String(i + 1)}. ${stepBrief(planned, i)}`)
     .join("\n");
   return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}`;
 }
 
-/** Every step of the outline, with whether it builds on the one before (the gate uses this). */
-export function stepInfoFor(outline: LessonOutline): LessonStepInfo[] {
-  return outline.steps.map((step, i) => {
-    const previous = outline.steps[i - 1];
-    const restsOnPrevious =
-      previous !== undefined &&
-      step.restsOn.some((t) => previous.introduces.some((p) => norm(p) === norm(t)));
-    return { id: `s${String(i + 1)}`, restsOnPrevious };
+function stepBrief(planned: Planned, index: number): string {
+  const step = planned.outline.steps[index];
+  if (!step) return "";
+  const placed = planned.steps[index]?.check ?? null;
+  const ending = placed
+    ? `it ends with a check: ${checkBrief(placed)}`
+    : "it ends without a check (nothing ahead rests on it yet; a later check covers it)";
+  return `"${step.heading}" establishes ${step.establishes}; introduces ${step.introduces.join(", ") || "nothing new"}; ${ending}`;
+}
+
+/** What a placed check asks about, for the lesson's writer. */
+function checkBrief(placed: StepCheck): string {
+  const where = placed.steps.map((id) => `step ${id.slice(1)}`).join(", ");
+  const what = placed.terms.length
+    ? `on ${placed.terms.map((t) => `"${t}"`).join(", ")} (taught in ${where})`
+    : `on what ${where} establishes`;
+  const why = placed.gates
+    ? "the next step rests on it"
+    : "the lesson's last check, before the homework, covering what no check has yet";
+  const many =
+    placed.steps.length > 1 ? "; one question that needs them together where it can" : "";
+  return `${what}, because ${why}${many}`;
+}
+
+/**
+ * Where the lesson's checks go (design §7.3): a check at the point of need. Before a step that
+ * rests on terms this lesson taught and no check has covered, the step before it ends with a check
+ * on those terms, however far back they were taught. The last step always ends with one, on
+ * everything still unchecked, since the homework rests on the whole lesson. Every other step has
+ * none and opens with the step before it.
+ */
+export function placeChecks(outline: LessonOutline): LessonStepInfo[] {
+  const id = (index: number) => `s${String(index + 1)}`;
+  const checks: (StepCheck | null)[] = outline.steps.map(() => null);
+  // Terms taught so far that no check has covered: the term as written, and the step teaching it.
+  const pending = new Map<string, { term: string; step: number }>();
+  const close = (at: number, due: { term: string; step: number }[], gates: boolean) => {
+    const steps = [...new Set(due.map((d) => d.step))].sort((a, b) => a - b);
+    checks[at] = {
+      steps: (steps.length ? steps : [at]).map(id),
+      terms: due.map((d) => d.term),
+      gates,
+    };
+    for (const d of due) pending.delete(norm(d.term));
+  };
+  outline.steps.forEach((step, i) => {
+    const due = [...new Set(step.restsOn.map(norm))].flatMap((t) => pending.get(t) ?? []);
+    // Nothing is pending before the first step, so a due check always has a step before it.
+    if (due.length > 0) close(i - 1, due, true);
+    for (const term of step.introduces) pending.set(norm(term), { term, step: i });
   });
+  if (outline.steps.length > 0) close(outline.steps.length - 1, [...pending.values()], false);
+  return outline.steps.map((_, i) => ({ id: id(i), check: checks[i] ?? null }));
 }

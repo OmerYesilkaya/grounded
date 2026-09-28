@@ -23,7 +23,10 @@ export interface LessonViewProps {
 const OPEN: StepProgress = { status: "open", thread: [] };
 const stepAnchor = (stepId: string) => `step-${stepId}`;
 
-/** Steps up to and including the first whose check hasn't landed (or was continued past). */
+/**
+ * Steps up to and including the first whose check hasn't landed (or was continued past). A step
+ * without a check opens with the step before it.
+ */
 function unlockedSteps(
   steps: readonly LessonStep[],
   progress: LessonViewProps["progress"],
@@ -32,13 +35,13 @@ function unlockedSteps(
   for (const step of steps) {
     shown.push(step);
     const status = progress[step.id]?.status ?? "open";
-    if (status !== "passed" && status !== "settling") break;
+    if (status !== "passed" && status !== "settling" && status !== "unchecked") break;
   }
   return shown;
 }
 
 /**
- * The lesson reading view: steps unlock as their checks land, a timeline in the left gutter, the
+ * The lesson reading view: steps unlock as the checks before them land, a timeline in the left gutter, the
  * reading column centred, and the right margin reserved for aside cards. Controlled: the server
  * decides verdicts; this only shows state and reports what the learner does.
  */
@@ -95,22 +98,24 @@ export function LessonView(props: LessonViewProps) {
                   {stepProgress.note}
                 </div>
               )}
-              <CheckCard
-                check={step.check}
-                progress={stepProgress}
-                onAnswer={(text) => {
-                  props.onAnswer(step.id, text);
-                }}
-                onDontKnow={() => {
-                  props.onDontKnow(step.id);
-                }}
-                onPause={() => {
-                  props.onPause(step.id);
-                }}
-                onContinue={() => {
-                  props.onContinue(step.id);
-                }}
-              />
+              {step.check && (
+                <CheckCard
+                  check={step.check}
+                  progress={stepProgress}
+                  onAnswer={(text) => {
+                    props.onAnswer(step.id, text);
+                  }}
+                  onDontKnow={() => {
+                    props.onDontKnow(step.id);
+                  }}
+                  onPause={() => {
+                    props.onPause(step.id);
+                  }}
+                  onContinue={() => {
+                    props.onContinue(step.id);
+                  }}
+                />
+              )}
               {index === shown.length - 1 && lockedCount > 0 && (
                 <p className="my-8 rounded-xl border border-dashed border-border-strong p-5 text-center font-sans text-sm text-subtle-foreground">
                   {lockedCount} more {lockedCount === 1 ? "step" : "steps"} · each opens when the
@@ -153,23 +158,24 @@ function useCurrentStep(shown: readonly LessonStep[]): string | null {
   return current;
 }
 
-/** When a check lands and a step opens, glide to it once the verdict has been read. */
+/**
+ * When a check lands and steps open, glide to the first of them once the verdict has been read. The
+ * glide goes to the latest step opened by a check; a step that follows one without a check arrives
+ * as it is written, under what the learner is reading, and gets no glide.
+ */
 function useScrollToNewStep(shown: readonly LessonStep[]): void {
-  const count = useRef(shown.length);
-  const newest = shown.at(-1)?.id;
+  const target = shown.findLast((_, i) => Boolean(shown[i - 1]?.check))?.id ?? null;
+  const seen = useRef(target);
   useEffect(() => {
-    if (shown.length <= count.current || !newest) {
-      count.current = shown.length;
-      return;
-    }
-    count.current = shown.length;
+    if (!target || target === seen.current) return;
+    seen.current = target;
     const timer = window.setTimeout(() => {
       document
-        .getElementById(stepAnchor(newest))
+        .getElementById(stepAnchor(target))
         ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
     }, 1400);
     return () => {
       window.clearTimeout(timer);
     };
-  }, [shown.length, newest]);
+  }, [target]);
 }

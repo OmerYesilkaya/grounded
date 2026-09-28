@@ -98,7 +98,8 @@ export function validate(blocks: readonly Block[], context: ValidateContext): Is
 /** Validates a lesson step, heading included, on the lesson surface. */
 export function validateStep(step: LessonStep, context: Omit<ValidateContext, "surface">): Issue[] {
   const heading: Block = { id: `${step.id}.b1`, type: "heading", depth: 2, children: step.heading };
-  return validate([heading, ...step.body, step.check], { ...context, surface: "lesson" });
+  const blocks = step.check ? [heading, ...step.body, step.check] : [heading, ...step.body];
+  return validate(blocks, { ...context, surface: "lesson" });
 }
 
 function walk(blocks: readonly Block[], visit: (block: Block) => void): void {

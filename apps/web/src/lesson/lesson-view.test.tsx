@@ -63,6 +63,49 @@ describe("LessonView: revealing steps", () => {
     ).toBeInTheDocument();
   });
 
+  it("opens a step without a check together with the step after it, and asks nothing on it", () => {
+    const mixed = parseLesson(
+      "## Background\n\nBody one.\n\n## Needs it\n\nBody two.\n\n:::check\nQuestion two?\n:::\n\n## Later\n\nBody three.",
+    ).steps;
+    renderLesson(
+      { s1: { status: "unchecked", thread: [] }, s2: { status: "open", thread: [] } },
+      { steps: mixed, totalSteps: 3 },
+    );
+    const article = screen.getByRole("article");
+    expect(
+      within(article)
+        .getAllByRole("heading", { level: 2 })
+        .map((h) => h.textContent),
+    ).toEqual(["Background", "Needs it"]);
+    expect(within(article).getAllByRole("textbox")).toHaveLength(1);
+    expect(screen.getByText("Question two?")).toBeInTheDocument();
+  });
+
+  it("doesn't glide to a step that arrives under one without a check as it is written", () => {
+    vi.useFakeTimers();
+    try {
+      const [first, second] = parseLesson(
+        "## Background\n\nBody one.\n\n## Needs it\n\nBody two.\n\n:::check\nQuestion two?\n:::",
+      ).steps;
+      if (!first || !second) throw new Error("fixture lesson is short");
+      const props: LessonViewProps = {
+        steps: [first],
+        totalSteps: 2,
+        progress: { s1: { status: "unchecked", thread: [] } },
+        onAnswer: vi.fn(),
+        onDontKnow: vi.fn(),
+        onPause: vi.fn(),
+        onContinue: vi.fn(),
+      };
+      const { rerender } = render(<LessonView {...props} />);
+      rerender(<LessonView {...props} steps={[first, second]} />);
+      vi.advanceTimersByTime(2000);
+      expect(scrollIntoView).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("continues past a step left settling, and marks it", () => {
     renderLesson({ s1: { status: "settling", thread: [] } });
     expect(
