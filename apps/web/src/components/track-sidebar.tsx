@@ -1,6 +1,7 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useTracks } from "@/lib/tracks";
 import { AccountMenu } from "./account-menu";
+import { Brand } from "./brand";
 import { cn } from "@/lib/utils";
 
 const PHASE_LABEL: Record<string, string> = {
@@ -20,8 +21,8 @@ export function TrackSidebar({ email }: { email: string }) {
     <aside className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-r bg-background max-md:hidden">
       {/* As tall as the session's Chat / Lesson bar, so the two read as one header band. */}
       <div className="flex h-13 shrink-0 items-center border-b px-3.5">
-        <Link to="/" className="font-brand text-lg leading-none text-primary">
-          Grounded
+        <Link to="/">
+          <Brand className="text-lg" />
         </Link>
       </div>
       <div className="flex flex-col gap-2.5 px-3.5 pt-3.5 pb-2.5">

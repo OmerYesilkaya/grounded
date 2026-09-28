@@ -645,6 +645,8 @@ A refined "typographic index":
 - Dark by default, light mode, "follow system".
 - Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat), Notable for the
   wordmark only.
+- The brand is lucide's `layer-arrow-up` mark beside the Notable wordmark, both in the accent colour
+  (the `Brand` component). The same mark, in each theme's accent, is the favicon.
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
 - Sharp, not soft: corners stay tight (a 6px base radius; small controls 2–4px). Circles stay only
   for dots and icon buttons.
