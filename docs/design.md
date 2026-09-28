@@ -149,6 +149,9 @@ about, test and debug.
   a check answer still waiting for a verdict gets the tutor's "That didn't go through… Answer again"
   (unless its check job is still queued), and a lesson that stopped being written, outlined or not,
   is marked failed (unless its job is still queued); each such session gets an `error` event.
+  A lesson job that fails for any reason (the provider included) marks its lesson failed itself
+  before telling the learner why, so an unfinished lesson is always one whose job died, and a failed
+  one is never reported twice.
   Nothing is re-run: jobs are attempted once. A check job grades only an answer still waiting, so
   one that starts late never contradicts recovery. Running recovery again changes nothing. Open
   gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed; a worker

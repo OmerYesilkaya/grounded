@@ -9,9 +9,11 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
+import { MockLanguageModelV4 } from "ai/test";
 import { v7 as uuidv7 } from "uuid";
 import { beforeEach, describe, expect, it } from "vitest";
 import { publish, type ActivityEvent } from "./engine/events.js";
+import { ProviderCallError } from "./engine/model-call.js";
 import { recoverAbandonedWork } from "./engine/recovery.js";
 import { checkFailedText } from "./engine/session-tasks.js";
 import { createFlows } from "./test/flows.js";
@@ -294,5 +296,23 @@ describe("recovery after a worker dies mid-job", () => {
       delete from graphile_worker._private_jobs where payload->>'sessionId' = ${sessionId}`);
     expect(await recoverAbandonedWork(t.db)).toMatchObject([{ sessionId, lesson: true }]);
     expect((await snapshot(cookie, sessionId)).state.lesson.status).toBe("failed");
+  });
+
+  it("leaves a lesson whose job failed alone: the job marked it failed and said why", async () => {
+    const { cookie, sessionId } = await planned();
+    await idle(sessionId);
+    const outOfCredit = new ProviderCallError("no-credit", "Your OpenAI account is out of credit.");
+    models.script(
+      "lesson",
+      new MockLanguageModelV4({ doGenerate: () => Promise.reject(outOfCredit) }),
+    );
+    await t.request(`/api/sessions/${sessionId}/approve-plan`, { method: "POST", cookie });
+    await t.waitFor(async () => (await eventsOf(sessionId, "error")).length > 0);
+    await idle(sessionId);
+    expect((await snapshot(cookie, sessionId)).state.lesson.status).toBe("failed");
+
+    // The next worker start finds nothing to recover, so the learner isn't told a second time.
+    expect(await recoverAbandonedWork(t.db)).toEqual([]);
+    expect(await eventsOf(sessionId, "error")).toEqual([{ message: outOfCredit.message }]);
   });
 });

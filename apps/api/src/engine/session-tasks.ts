@@ -39,7 +39,7 @@ import { writeChatMessage } from "./chat.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import type { JobQueue } from "./queue.js";
-import { applyEvent, completeIfDone, loadSession } from "./session-store.js";
+import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import { applyActions, loadTrackContext } from "./track-state.js";
 
 export interface SessionTaskDependencies {
@@ -183,13 +183,32 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     return { session, system, thread, terms, introduced };
   };
 
+  /**
+   * However writing a lesson fails (the provider, a missing key, anything else), its job marks it
+   * failed before the learner is told why. A lesson left unfinished is then always one whose job died,
+   * so recovery (recovery.ts) never reports a failed lesson a second time.
+   */
+  const markLessonFailed = async ({ sessionId }: SessionJob) => {
+    try {
+      await applyEvent(db, sessionId, { type: "lesson-failed" });
+    } catch (rejected) {
+      // No lesson is being written, so there is nothing to mark.
+      if (!(rejected instanceof RejectedEvent)) throw rejected;
+    }
+  };
+
+  /** Runs a job; `onFailure` settles what it leaves behind before the error is reported. */
   const guarded =
-    (run: (job: SessionJob) => Promise<void>): Task =>
+    (
+      run: (job: SessionJob) => Promise<void>,
+      onFailure?: (job: SessionJob) => Promise<void>,
+    ): Task =>
     async (payload) => {
       const job = payload as SessionJob;
       try {
         await run(job);
       } catch (error) {
+        await onFailure?.(job);
         const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
         const message = known
           ? error.message
@@ -307,15 +326,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           for (const failed of failedSteps)
             await publish(db, sessionId, "lesson-step-failed", failed);
         }
-      } catch (error) {
-        if (error instanceof ProviderCallError) throw error;
-        await applyEvent(db, sessionId, { type: "lesson-failed" });
-        throw error;
       } finally {
         await outlining.done();
         await writing?.done();
       }
-    }),
+    }, markLessonFailed),
 
     check: guarded(async ({ sessionId, stepId }) => {
       if (!stepId) throw new Error("check job without a step");
