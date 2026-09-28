@@ -20,7 +20,7 @@ import {
 } from "@grounded/db";
 import { generateText, streamText, type Instructions, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
-import { log } from "../log.js";
+import { content, log } from "../log.js";
 import { batcher, publish, startActivity, withActivity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
@@ -147,7 +147,13 @@ async function composeMessage(
   let { blocks } = first;
   if (first.errors.length > 0) {
     log.info(
-      { messageId, kind: options.kind, surface, issues: first.errors.map((i) => i.code) },
+      {
+        messageId,
+        kind: options.kind,
+        surface,
+        issues: first.errors.map((i) => i.code),
+        ...content({ issues: first.errors.map((i) => i.message) }),
+      },
       "message broke rules; rewriting it",
     );
     const rewrite = await withActivity(

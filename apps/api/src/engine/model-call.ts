@@ -1,5 +1,6 @@
 import type {
   LanguageModelV4,
+  LanguageModelV4CallOptions,
   LanguageModelV4StreamPart,
   LanguageModelV4Usage,
 } from "@ai-sdk/provider";
@@ -13,7 +14,13 @@ import {
   type ProviderId,
 } from "@grounded/providers";
 import { APICallError, RetryError, wrapLanguageModel, type Tool } from "ai";
-import { log } from "../log.js";
+import { content, log } from "../log.js";
+import {
+  describePrompt,
+  describeReply,
+  ReplyCollector,
+  type ReplyContent,
+} from "./call-content.js";
 import {
   CALL_RETRIES,
   callLimitsFor,
@@ -114,11 +121,13 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       /**
        * Records and logs one attempt: its usage, how it ended and how long it took since startedAt.
        * A failure's line has the cause (status and the provider's error body, never the request).
+       * With LOG_CONTENT on, the line also has what the call asked and what it answered (so far).
        */
       const record = async (
         usage: LanguageModelV4Usage | null,
         failure: { kind: ProviderErrorKind; error: unknown; elapsedMs: number } | null,
         startedAt: number,
+        exchange: { params: LanguageModelV4CallOptions; reply?: () => ReplyContent },
       ) => {
         const durationMs = Date.now() - startedAt;
         const tokens = {
@@ -135,6 +144,10 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           model: modelId,
           ...tokens,
           durationMs,
+          ...content(() => ({
+            ...describePrompt(exchange.params.prompt, exchange.params.responseFormat),
+            ...(exchange.reply ? { reply: exchange.reply() } : {}),
+          })),
         };
         if (!failure) log.info(line, "model call");
         else
@@ -158,6 +171,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
         error: unknown,
         deadline: Deadline,
         startedAt: number,
+        exchange: Parameters<typeof record>[3],
       ): Promise<ProviderCallError> => {
         const converted = providerErrorFrom(provider, error);
         const cause = RetryError.isInstance(error) ? error.lastError : error;
@@ -165,6 +179,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           null,
           { kind: converted.kind, error: cause, elapsedMs: deadline.elapsedMs },
           startedAt,
+          exchange,
         );
         return converted;
       };
@@ -177,6 +192,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
        */
       const attempt = async <T>(
         deadline: Deadline,
+        params: LanguageModelV4CallOptions,
         run: () => PromiseLike<T>,
       ): Promise<{ result: T; startedAt: number }> => {
         for (let retry = 0; ; retry++) {
@@ -186,7 +202,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           } catch (error) {
             deadline.unwatch();
             if (deadline.callerAborted()) throw error;
-            const converted = await failed(error, deadline, startedAt);
+            const converted = await failed(error, deadline, startedAt, { params });
             const delay = retryDelayMs * 2 ** retry;
             const retryable = APICallError.isInstance(error) && error.isRetryable;
             if (!retryable || retry >= CALL_RETRIES || deadline.remainingMs <= delay)
@@ -212,10 +228,13 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);
             try {
-              const { result, startedAt } = await attempt(deadline, () =>
+              const { result, startedAt } = await attempt(deadline, params, () =>
                 model.doGenerate({ ...params, abortSignal: deadline.signal }),
               );
-              await record(result.usage, null, startedAt);
+              await record(result.usage, null, startedAt, {
+                params,
+                reply: () => describeReply(result.content),
+              });
               return result;
             } finally {
               deadline.dispose();
@@ -225,7 +244,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             const deadline = new Deadline(params.abortSignal, limits.streamMs);
             let connected;
             try {
-              connected = await attempt(deadline, () => {
+              connected = await attempt(deadline, params, () => {
                 deadline.watch(limits.thinkMs);
                 return model.doStream({ ...params, abortSignal: deadline.signal });
               });
@@ -238,15 +257,17 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             // The connection's watch carries on until the first part: it has thinkMs in all.
             let silence: number | undefined;
             let recorded = false;
+            const reply = new ReplyCollector();
+            const exchange = { params, reply: () => reply.content() };
             const finish = async (usage: LanguageModelV4Usage) => {
               if (recorded) return;
               recorded = true;
-              await record(usage, null, startedAt);
+              await record(usage, null, startedAt, exchange);
             };
             const fail = async (error: unknown) => {
               if (recorded) return providerErrorFrom(provider, error);
               recorded = true;
-              return failed(error, deadline, startedAt);
+              return failed(error, deadline, startedAt, exchange);
             };
             // Pulled, so the watch covers only the wait for the model, never a slow reader.
             const stream = new ReadableStream<LanguageModelV4StreamPart>({
@@ -274,6 +295,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
                 }
                 const part = next.value;
                 silence = silenceAfter(part, limits);
+                reply.add(part);
                 if (part.type === "finish") await finish(part.usage);
                 if (part.type === "error") {
                   controller.enqueue({ type: "error", error: await fail(part.error) });

@@ -1,12 +1,13 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { joinSystemPrompt, type SystemPrompt } from "@grounded/core";
 import { credentials, usageEvents, users } from "@grounded/db";
-import { generateText, simulateReadableStream, streamText } from "ai";
+import { generateText, Output, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { APICallError } from "@ai-sdk/provider";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { z } from "zod";
 import { captureLogs } from "../log.js";
 import { createTestHarness } from "../test/harness.js";
 import type { CallLimits } from "./call-limits.js";
@@ -197,6 +198,73 @@ describe("callModel", () => {
     await expect(
       caller.model({ userId: user.id, purpose: "probe", role: "strong" }),
     ).rejects.toThrow("Add your AI key in Settings first.");
+  });
+});
+
+describe("call content in the log (LOG_CONTENT)", () => {
+  const chunks: LanguageModelV4StreamPart[] = [
+    { type: "reasoning-start", id: "r" },
+    { type: "reasoning-delta", id: "r", delta: "They want arcs first." },
+    { type: "reasoning-end", id: "r" },
+    { type: "text-start", id: "t" },
+    { type: "text-delta", id: "t", delta: "We'll start " },
+    { type: "text-delta", id: "t", delta: "with arcs." },
+    { type: "text-end", id: "t" },
+    { type: "finish", finishReason: finish, usage },
+  ];
+  const streamed = async (userId: string) => {
+    const { caller } = callerWith(
+      new MockLanguageModelV4({ doStream: { stream: simulateReadableStream({ chunks }) } }),
+    );
+    const result = streamText({
+      model: await caller.model({ userId, purpose: "plan", role: "strong" }),
+      system: "the method",
+      messages: [
+        { role: "user", content: "teach me" },
+        { role: "assistant", content: "what do you know?" },
+        { role: "user", content: "Present the corrected plan." },
+      ],
+    });
+    await result.text;
+  };
+
+  it("gives each call's last turn and its reply, when on", async () => {
+    const logs = captureLogs("trace", { withContent: true });
+    onTestFinished(logs.restore);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+
+    const { caller } = callerWith(new MockLanguageModelV4({ doGenerate: reply('{"actions":[]}') }));
+    await generateText({
+      model: await caller.model({ userId, purpose: "plan", role: "strong" }),
+      prompt: "(For the app) Record the plan.",
+      output: Output.object({ schema: z.object({ actions: z.array(z.string()) }) }),
+    });
+    await streamed(userId);
+
+    expect(logs.lines.filter((l) => l.message === "model call").map((l) => l.content)).toEqual([
+      {
+        messages: 1,
+        lastTurn: { role: "user", text: "(For the app) Record the plan." },
+        json: true,
+        reply: { text: '{"actions":[]}' },
+      },
+      {
+        messages: 4,
+        lastTurn: { role: "user", text: "Present the corrected plan." },
+        json: false,
+        reply: { text: "We'll start with arcs.", reasoning: "They want arcs first." },
+      },
+    ]);
+  });
+
+  it("gives none of it when off", async () => {
+    const logs = captureLogs();
+    onTestFinished(logs.restore);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    await streamed(userId);
+
+    expect(logs.lines.filter((l) => l.message === "model call")).toHaveLength(1);
+    expect(logs.text()).not.toMatch(/corrected plan|arcs/);
   });
 });
 

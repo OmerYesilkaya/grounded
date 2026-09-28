@@ -25,7 +25,7 @@ import {
   type TermStatus,
   type TrackPlan,
 } from "@grounded/db";
-import { log } from "../log.js";
+import { content, log } from "../log.js";
 
 export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
 
@@ -214,6 +214,7 @@ export async function applyActions(
         source: options.source,
         rejected: errors.length,
         actions: actions.map((a) => a.type),
+        ...content({ reasons: errors, batch: actions }),
       },
       "track edits rejected",
     );

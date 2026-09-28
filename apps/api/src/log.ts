@@ -21,6 +21,10 @@ import PinoPretty from "pino-pretty";
  * Never log a key (plain or sealed), a magic-link token outside development, or anything a learner
  * or the tutor wrote: ids, counts, codes and the app's own messages only. Errors are logged through
  * serializeError, which keeps the fields that diagnose a failure and none that carry content.
+ *
+ * The one exception is LOG_CONTENT=true, an operator's switch for diagnosing what a model was asked
+ * and answered: lines then also carry the fields passed through `content()`, under `content`, and
+ * errors keep the messages that quote content. Off, `content()` adds nothing.
  */
 
 export type { Logger };
@@ -53,6 +57,27 @@ function levelFrom(env: NodeJS.ProcessEnv): string {
   if (!(LEVELS as readonly string[]).includes(level))
     throw new Error(`Invalid LOG_LEVEL "${level}": use one of ${LEVELS.join(", ")}.`);
   return level;
+}
+
+function contentFrom(env: NodeJS.ProcessEnv): boolean {
+  const value = env.LOG_CONTENT?.trim().toLowerCase();
+  if (!value || value === "false") return false;
+  if (value === "true") return true;
+  throw new Error(`Invalid LOG_CONTENT "${value}": use true or false.`);
+}
+
+let contentLogging = contentFrom(process.env);
+
+/** Whether lines carry content (LOG_CONTENT). */
+export const logsContent = (): boolean => contentLogging;
+
+/**
+ * Content for a line, under `content`, when LOG_CONTENT is on; nothing otherwise. Pass a function
+ * when the content is costly to build: it runs only when it is logged.
+ */
+export function content(fields: LogFields | (() => LogFields)): LogFields {
+  if (!contentLogging) return {};
+  return { content: typeof fields === "function" ? fields() : fields };
 }
 
 const production = process.env.NODE_ENV === "production";
@@ -111,12 +136,13 @@ export function setLogService(service: string): void {
 
 /**
  * For tests: sends every line, as parsed JSON, to `lines` at `level` until restored. Lines are the
- * JSON production writes, whatever the environment.
+ * JSON production writes, whatever the environment; `withContent` turns LOG_CONTENT on meanwhile.
  */
-export function captureLogs(level = "trace") {
+export function captureLogs(level = "trace", options: { withContent?: boolean } = {}) {
   const lines: LogFields[] = [];
   const text: string[] = [];
-  const previous = { destination, level: log.level };
+  const previous = { destination, level: log.level, contentLogging };
+  contentLogging = options.withContent ?? false;
   destination = {
     write(line: string) {
       text.push(line);
@@ -131,6 +157,7 @@ export function captureLogs(level = "trace") {
     restore: () => {
       destination = previous.destination;
       log.level = previous.level;
+      contentLogging = previous.contentLogging;
     },
   };
 }
@@ -166,7 +193,10 @@ export function serializeError(error: unknown, depth = 0): SerializedError {
   if (!(error instanceof Error)) return { type: typeof error, message: clip(String(error), 200) };
   const serialized: SerializedError = {
     type: error.name,
-    message: quotesContent(error) ? "(withheld: it quotes content)" : clip(error.message, 1000),
+    message:
+      quotesContent(error) && !contentLogging
+        ? "(withheld: it quotes content)"
+        : clip(error.message, contentLogging ? 20_000 : 1000),
   };
   // Frames only: the stack's first lines repeat the message.
   const frames = error.stack
