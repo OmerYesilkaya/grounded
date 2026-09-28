@@ -17,10 +17,10 @@
     "@grounded/crypto": "workspace:^",
     "drizzle-orm": "^0.45.3",
     "postgres": "^3.4.9",
+    "tsx": "^4.23.15",
     "uuid": "^14.0.2"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.31.11",
-    "tsx": "^4.23.15"
+    "drizzle-kit": "^0.31.11"
   }
 }

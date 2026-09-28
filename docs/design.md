@@ -154,7 +154,16 @@ about, test and debug.
   gaps: there is no "write the lesson again" path yet, so a failed lesson stays failed; a worker
   that dies while others keep running is recovered at the next worker start, not sooner.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
-  to AWS or elsewhere needs no rewrite.
+  to AWS or elsewhere needs no rewrite. One image (`Dockerfile`) runs both processes: the API by
+  default, the worker with `node --import tsx src/worker.ts`. The API runs its TypeScript through tsx
+  (no build step: the packages export their sources), and serves the built web app itself
+  (`WEB_DIST_DIR`), so the app and `/api` share one origin as they do behind Vite in development.
+  Migrations run before each API deploy; `/healthz` answers once the database is reachable. Both
+  processes stop gently on `SIGTERM`: the API ends its streams (browsers reconnect and replay), the
+  worker finishes its jobs. Postgres needs a direct connection, not a transaction-mode pooler: jobs
+  and streams rely on `LISTEN/NOTIFY`.
+- **Railway now**: a Postgres database and two services from this repo, `api` and `worker`, each
+  pointed at its config file in `railway/`. Setup steps are in the README.
 - **Every row is owned by a user; ids are UUIDv7.**
 
 ### 4.3 Auth and keys

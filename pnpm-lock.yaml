@@ -80,6 +80,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       uuid:
         specifier: ^14.0.2
         version: 14.0.2
@@ -243,6 +246,9 @@ importers:
       postgres:
         specifier: ^3.4.9
         version: 3.4.9
+      tsx:
+        specifier: ^4.23.15
+        version: 4.23.15
       uuid:
         specifier: ^14.0.2
         version: 14.0.2
@@ -250,9 +256,6 @@ importers:
       drizzle-kit:
         specifier: ^0.31.11
         version: 0.31.11
-      tsx:
-        specifier: ^4.23.15
-        version: 4.23.15
 
   packages/providers:
     dependencies:

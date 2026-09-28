@@ -5,10 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=../../.env src/server.ts",
+    "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit",
     "cli": "tsx --env-file-if-exists=../../.env src/cli.ts",
     "import-track": "tsx --env-file-if-exists=../../.env src/import/cli.ts",
-    "worker": "tsx watch --env-file-if-exists=../../.env src/worker.ts"
+    "worker": "tsx watch --env-file-if-exists=../../.env src/worker.ts",
+    "start:worker": "node --import tsx src/worker.ts"
   },
   "dependencies": {
     "@ai-sdk/provider": "^4.0.18",
@@ -23,6 +25,7 @@
     "graphile-worker": "^0.18.0",
     "hono": "^4.13.9",
     "postgres": "^3.4.9",
+    "tsx": "^4.23.15",
     "uuid": "^14.0.2",
     "zod": "^4.6.5"
   }
