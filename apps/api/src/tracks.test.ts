@@ -15,6 +15,7 @@ import {
   PLAN_TEXT,
   planAttempt,
   probeFinished,
+  storedMessages,
 } from "./test/flows.js";
 
 const models = scriptedModels();
@@ -24,7 +25,7 @@ beforeEach(() => {
   models.reset();
 });
 
-const { activities } = createFlows(t, models);
+const { activities, until } = createFlows(t, models);
 
 const GOAL =
   "I want to learn how to pass backend and fullstack interviews.\n\nI've built APIs for a few years but never studied the theory.";
@@ -305,6 +306,8 @@ describe("the tutor reading what the learner brought", () => {
     const { cookie, trackId } = await trackWithFiles();
     const sessionId = await startSession(cookie, trackId);
     await probeCall();
+    // The learner answers the first question once it's there, as they would.
+    await until(cookie, sessionId, storedMessages(1));
     models.script("probe-decision", probeFinished());
     models.script("plan", planAttempt(PLAN_TEXT));
     await t.request(`/api/sessions/${sessionId}/messages`, {

@@ -148,7 +148,12 @@ describe("checks", () => {
       }),
     );
     await answer(cookie, sessionId, "s1", { text: "the new value" });
-    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 2);
+    // The note is written after the fresh question.
+    await until(
+      cookie,
+      sessionId,
+      (s) => tutorReplies(s, "s1").length === 2 && s.lesson?.notes.s1 !== undefined,
+    );
 
     const s = await snapshot(cookie, sessionId);
     expect(tutorReplies(s, "s1").map((m) => m.verdict)).toEqual(["missed", null]);

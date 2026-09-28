@@ -172,6 +172,12 @@ describe("logs", () => {
     });
     expect((await answer(cookie, sessionId, CHECK_ANSWER)).status).toBe(202);
     await until(cookie, sessionId, (s) => s.state.currentStep === "s2");
+    // The job logs that it finished after the state it wrote, so wait for the line itself.
+    await t.waitFor(() =>
+      Promise.resolve(
+        withMsg(captured.lines, "job finished").filter((l) => l.task === "check").length > 0,
+      ),
+    );
 
     const { lines } = captured;
     const text = captured.text();
