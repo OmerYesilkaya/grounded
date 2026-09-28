@@ -21,11 +21,20 @@ export interface Snapshot {
     kind: string;
     text: string | null;
     blocks: { type: string }[] | null;
+    /** A tutor message still being written. */
+    streaming?: true;
   }[];
   lesson: { steps: { id: string }[]; totalSteps: number; notes: Record<string, string> } | null;
   checks: { stepId: string; role: string; text: string | null; verdict: string | null }[];
   activities: ActivityEvent[];
 }
+
+/**
+ * Whether the snapshot holds this many messages, all stored. A message still being written counts
+ * among the messages too, so waiting on the count alone can end before it is stored.
+ */
+export const storedMessages = (count: number) => (s: Snapshot) =>
+  s.messages.length === count && s.messages.every((m) => !m.streaming);
 
 export const FIRST_QUESTION =
   "In your own words: what happens when a program adds one to a number?";
@@ -87,7 +96,7 @@ export function createFlows(t: Harness, models: Models) {
     const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
     expect(started.status).toBe(201);
     const { id } = (await started.json()) as { id: string };
-    await until(cookie, id, (s) => s.messages.length === 1);
+    await until(cookie, id, storedMessages(1));
     return { cookie, trackId, sessionId: id };
   };
 

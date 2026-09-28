@@ -9,6 +9,7 @@ import { scriptedModels } from "./test/scripted-models.js";
 import { readSse } from "./test/sse.js";
 import {
   createFlows,
+  storedMessages,
   FIRST_QUESTION,
   PLAN_ACTIONS,
   PLAN_TEXT,
@@ -144,7 +145,7 @@ describe("probe and plan", () => {
       cookie,
       body: JSON.stringify({ text: "es addiert einfach eins" }),
     });
-    await until(cookie, sessionId, (s) => s.messages.length === 3);
+    await until(cookie, sessionId, storedMessages(3));
 
     expect((await activities(sessionId)).map((a) => a.label).slice(1)).toEqual([
       "Noting what your answers showed",
@@ -296,7 +297,7 @@ describe("probe and plan", () => {
     const { id } = (await (
       await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie })
     ).json()) as { id: string };
-    await until(cookie, id, (s) => s.messages.length === 1);
+    await until(cookie, id, storedMessages(1));
 
     const [message] = await t.db
       .select()
@@ -341,7 +342,7 @@ describe("empty replies", () => {
       cookie,
       body: JSON.stringify({ text: "it just adds one" }),
     });
-    await until(cookie, sessionId, (s) => s.messages.length === 3);
+    await until(cookie, sessionId, storedMessages(3));
 
     expect(await storedTutorTexts(sessionId)).toEqual([
       FIRST_QUESTION,
