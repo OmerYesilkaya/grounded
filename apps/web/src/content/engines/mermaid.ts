@@ -14,6 +14,9 @@ export const mermaidDiagramEngine: DiagramEngine = {
         startOnLoad: false,
         securityLevel: "strict",
         theme: "base",
+        // Mermaid 12 defaults most diagrams to the "neo" look, which drops a light-grey shadow
+        // under every node. Classic keeps nodes flat.
+        look: "classic",
         fontFamily: "Montserrat, system-ui, sans-serif",
         themeVariables: {
           background: colors.background,

@@ -650,7 +650,8 @@ A refined "typographic index":
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
 - Sharp, not soft: corners stay tight (a 6px base radius; small controls 2–4px). Circles stay only
   for dots and icon buttons.
-- Colour tokens defined once; Mermaid's theme generated from them.
+- Colour tokens defined once; Mermaid's theme generated from them. Diagrams use Mermaid's classic
+  look: flat nodes, no drop shadows.
 - Streamed text appears as if written: the page reveals it at a reading pace (~90 characters a
   second, faster when far behind, always caught up within 1.5 s), fading in the newest words; a
   message turns into its rendered blocks once all of it is shown. The server's batching stays as it
