@@ -1,6 +1,7 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { vegaChartEngine } from "./engines/vega";
 import { mermaidDiagramEngine } from "./engines/mermaid";
+import { useTheme } from "@/lib/theme";
 
 export type Theme = "dark" | "light";
 
@@ -47,14 +48,16 @@ export function ContentProvider(props: {
   children: ReactNode;
 }) {
   const { diagrams, charts, media, theme, children } = props;
+  // Diagrams and charts draw in the page's theme unless told otherwise (design §9.3).
+  const pageTheme = useTheme();
   const value = useMemo(
     () => ({
       diagrams: diagrams ?? mermaidDiagramEngine,
       charts: charts ?? vegaChartEngine,
       media: media ?? noMedia,
-      theme: theme ?? "dark",
+      theme: theme ?? pageTheme,
     }),
-    [diagrams, charts, media, theme],
+    [diagrams, charts, media, theme, pageTheme],
   );
   return <ContentContext value={value}>{children}</ContentContext>;
 }

@@ -1,7 +1,8 @@
 import { parseBlocks } from "@grounded/content";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { setThemeChoice } from "@/lib/theme";
 import { Blocks } from "./blocks";
 import {
   ContentProvider,
@@ -53,6 +54,31 @@ describe("Blocks: diagrams", () => {
     });
     expect(await screen.findByText("Diagram unavailable")).toBeInTheDocument();
     expect(screen.getByText("Three moves.")).toBeInTheDocument();
+  });
+
+  it("draws in the page's theme, and again when the learner changes it", async () => {
+    const diagrams = fakeDiagrams();
+    renderWith(fence("diagram", "caption: Three moves.\n---\nflowchart TB\n  A --> C"), {
+      diagrams,
+    });
+    await screen.findByText("A --> C");
+    expect(diagrams.render).toHaveBeenLastCalledWith(
+      expect.any(String),
+      expect.objectContaining({ theme: "dark" }),
+    );
+
+    act(() => {
+      setThemeChoice("light");
+    });
+    await vi.waitFor(() => {
+      expect(diagrams.render).toHaveBeenLastCalledWith(
+        expect.any(String),
+        expect.objectContaining({ theme: "light" }),
+      );
+    });
+    act(() => {
+      setThemeChoice("dark");
+    });
   });
 });
 

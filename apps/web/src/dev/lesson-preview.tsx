@@ -1,8 +1,9 @@
 import { parseBlocks, parseLesson } from "@grounded/content";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ContentProvider, type Theme } from "@/content/environment";
+import { ContentProvider } from "@/content/environment";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
+import { setThemeChoice, useTheme } from "@/lib/theme";
 import { FIXTURE_LESSON } from "./fixture-lesson";
 
 const lesson = parseLesson(FIXTURE_LESSON);
@@ -17,7 +18,7 @@ const tutor = (markdown: string, verdict?: "landed" | "missed") => ({
  * a repair; "I don't know" twice offers the pause / continue choice; everything else lands.
  */
 export function LessonPreview() {
-  const [theme, setTheme] = useState<Theme>("dark");
+  const theme = useTheme();
   const [progress, setProgress] = useState<Record<string, StepProgress>>({});
   const [misses, setMisses] = useState<Record<string, number>>({});
 
@@ -74,16 +75,14 @@ export function LessonPreview() {
   };
 
   return (
-    <ContentProvider theme={theme}>
+    <ContentProvider>
       <div className="sticky top-0 z-10 flex h-13 items-center justify-between border-b bg-background/90 px-4 backdrop-blur">
         <span className="font-sans text-sm text-muted-foreground">Dev preview · lesson view</span>
         <Button
           variant="outline"
           size="sm"
           onClick={() => {
-            const next = theme === "dark" ? "light" : "dark";
-            document.documentElement.dataset.theme = next;
-            setTheme(next);
+            setThemeChoice(theme === "dark" ? "light" : "dark");
           }}
         >
           {theme === "dark" ? "Light" : "Dark"}

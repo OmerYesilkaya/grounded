@@ -707,11 +707,16 @@ A refined "typographic index":
 - **At scale (15+):** ordered by recent activity, six shown, the rest under "N more tracks"; search
   filters tracks and lessons live.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
-  key, sign out).
+  key, theme, sign out).
 
 ### 9.3 Look
 
-- Dark by default, light mode, "follow system".
+- Dark by default, light mode, "follow system" (decided 2026-09-29, #50): three icons in the
+  account menu, the menu staying open so the change is seen. The choice is remembered per browser
+  (`localStorage`, `apps/web/src/lib/theme.ts`), not per learner, so the sign-in page already wears
+  it and nothing waits on the API; `index.html` applies it before the first paint. "Follow system"
+  tracks `prefers-color-scheme` live, and a choice made in another tab is taken up. Diagrams,
+  charts and highlighted code are drawn in the page's theme and redrawn when it changes.
 - Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat), Notable for the
   wordmark only.
 - The brand is lucide's `layer-arrow-up` mark beside the Notable wordmark, both in the accent colour
@@ -854,7 +859,7 @@ progress, so a step is done when its issues are closed.
 2. Repo setup: git, pnpm workspaces, lint/format/test tooling, CI, Docker, Postgres locally.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
    components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict. Owed:
-   server-side media (#49), the cheap model's review (#50), the theme choice (#54).
+   server-side media (#51), the cheap model's review (#52).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),

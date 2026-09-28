@@ -2,7 +2,8 @@
 @import "tw-animate-css";
 
 /* Dark by default. Values come from the lesson-page prototype; names follow shadcn so its
-   components pick them up. The "follow system" option sets data-theme from JavaScript. */
+   components pick them up. data-theme on <html> comes from the learner's choice, "follow system"
+   included: lib/theme.ts sets it (index.html already before the first paint). */
 @custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 :root {

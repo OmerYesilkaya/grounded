@@ -11,6 +11,19 @@
     />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Grounded</title>
+    <script>
+      // The learner's theme before the first paint, so a light page never flashes dark. The same
+      // key and rules as src/lib/theme.ts, which takes over once the app loads.
+      try {
+        const choice = localStorage.getItem("grounded:theme");
+        const light =
+          choice === "light" ||
+          (choice === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+        document.documentElement.dataset.theme = light ? "light" : "dark";
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
