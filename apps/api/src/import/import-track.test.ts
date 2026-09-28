@@ -423,7 +423,9 @@ describe("importTrack: refusals", () => {
 
   it("refuses when the learner already has a track with that title", async () => {
     const user = await learner();
-    await t.db.insert(tracks).values({ userId: user.id, title: "cooking BASICS" });
+    await t.db
+      .insert(tracks)
+      .values({ userId: user.id, title: "cooking BASICS", goal: "cooking BASICS" });
     const outcome = await run({ write: true });
     expect(outcome).toEqual({
       status: "refused",

@@ -1,4 +1,4 @@
-import { initialSession, type SessionEvent } from "@grounded/core";
+import { initialSession, needsNaming, standInTitle, type SessionEvent } from "@grounded/core";
 import {
   and,
   asc,
@@ -28,7 +28,7 @@ interface Env {
 }
 
 // No language: the tutor infers it from the learner's messages and records it (set-language).
-const trackInput = z.object({ title: z.string().trim().min(1).max(120) });
+const trackInput = z.object({ goal: z.string().trim().min(1).max(4000) });
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
 
 /** Tracks and sessions (design §7): the session HTTP API. Jobs do the model work. */
@@ -57,14 +57,22 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
 
   app.post("/api/tracks", async (c) => {
     const parsed = trackInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Give the track a name." }, 400);
+    if (!parsed.success)
+      return c.json({ error: "Say what you want to learn, in at most 4,000 characters." }, 400);
+    const { goal } = parsed.data;
+    // Words that already are a name are the name; the tutor names anything longer (design §9.5).
+    const naming = needsNaming(goal);
     const [track] = await db
       .insert(tracks)
-      .values({ userId: c.get("user").id, ...parsed.data })
+      .values({ userId: c.get("user").id, goal, title: standInTitle(goal), titlePending: naming })
       .returning();
     if (!track) throw new Error("track insert returned nothing");
     addLogContext({ trackId: track.id });
-    return c.json({ id: track.id, title: track.title, language: track.language }, 201);
+    if (naming) await queue.enqueue("name-track", { trackId: track.id });
+    return c.json(
+      { id: track.id, title: track.title, naming: track.titlePending, language: track.language },
+      201,
+    );
   });
 
   app.get("/api/tracks", async (c) => {
@@ -96,6 +104,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
         return {
           id: t.id,
           title: t.title,
+          naming: t.titlePending,
           language: t.language,
           openSession: session ? { id: session.id, phase: session.state.phase } : null,
           importedLesson: lesson ? { title: lesson.title } : null,

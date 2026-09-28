@@ -8,9 +8,9 @@ import {
   redirect,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
-import type { TrackSummary } from "@/components/track-sidebar";
 import { api, type Credential } from "@/lib/api";
 import { authClient } from "@/lib/auth-client";
+import { tracksQuery } from "@/lib/tracks";
 import { ImportedLessonPage } from "./pages/imported-lesson";
 import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
@@ -52,10 +52,7 @@ const homeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/",
   beforeLoad: async () => {
-    const tracks = await queryClient.query({
-      queryKey: ["tracks"],
-      queryFn: () => api<TrackSummary[]>("/api/tracks"),
-    });
+    const tracks = await queryClient.query(tracksQuery);
     const [first] = tracks;
     if (!first) throw redirect({ to: "/tracks/new" });
     if (first.openSession)

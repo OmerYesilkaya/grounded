@@ -346,7 +346,7 @@ about, test and debug.
 | `users`, `allowlist`       | account; who may sign in                                                                              |
 | `credentials`              | provider, encrypted key, credential source                                                            |
 | `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
-| `tracks`                   | subject, teaching language, status, research notes, plan and its notes, "where you left off"          |
+| `tracks`                   | name, the learner's words (goal), teaching language, status, research notes, plan and notes, left off |
 | `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
 | `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
 | `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
@@ -438,7 +438,8 @@ stored. Before the first plan, research runs as its own call with the provider's
 notes go into the plan's prompt.
 
 **The probe decides first, then writes.** The session opens with the first probe question, written
-from what the learner said they want to learn (the track's title, given in the opening turn). Every
+from what the learner said they want to learn (their words as typed when they created the track,
+`tracks.goal`, given in the opening turn). Every
 later probe turn starts with the structured call: what the answers showed (term evidence, fix-list
 items, the teaching language) and whether probing is finished. If not, the next question is written
 with those records in its prompt. If it is, no probe message is written: the session moves to planning,
@@ -586,6 +587,20 @@ A refined "typographic index":
 - The check card stacks vertically below ~600px, with full-width touch targets (the prototype's check
   card is not responsive — fix in the real component).
 - Building homework is a desktop activity; reading, checks and asides must be good on a phone.
+
+### 9.5 A new track (decided 2026-09-28)
+
+- **One box: "What do you want to learn?"** A composer that starts five lines tall and grows, for as
+  many words as the learner likes (up to 4,000 characters): where they want to get to, where they
+  start from, what it is for. Enter starts a new line; ⌘/Ctrl+Enter creates the track. The words are
+  kept as typed (`tracks.goal`) and open every session of the track (§7.1).
+- **The tutor names the track.** Words that already are a name (one line, at most 60 characters) are
+  the name. Anything longer gets a stand-in at once, the first line cut at a word, and a job
+  (`name-track`, the cheap model, purpose `track-name`) asks for a short name in the learner's
+  language ("Backend interviews", not "I want to pass backend interviews"). The track list checks
+  again every second while a track is being named (`naming` in `GET /api/tracks`). If the call fails,
+  the stand-in stays. Naming is a job, not part of the request (§4.2), so creating a track never waits
+  on a model.
 
 ## 10. Operating without an admin page
 

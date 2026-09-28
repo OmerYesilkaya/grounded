@@ -14,7 +14,12 @@ async function newTrack() {
   if (!user) throw new Error("no user");
   const [track] = await t.db
     .insert(tracks)
-    .values({ userId: user.id, title: "How software works", language: "English" })
+    .values({
+      userId: user.id,
+      title: "How software works",
+      goal: "How software works",
+      language: "English",
+    })
     .returning();
   if (!track) throw new Error("no track");
   return track.id;

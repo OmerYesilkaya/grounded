@@ -97,7 +97,7 @@ async function keyedLearner() {
   const track = await t.request("/api/tracks", {
     method: "POST",
     cookie,
-    body: JSON.stringify({ title: TITLE }),
+    body: JSON.stringify({ goal: TITLE }),
   });
   const { id: trackId } = (await track.json()) as { id: string };
   return { cookie, userId: user.id, trackId, token, sealedKey: credential.sealedKey };

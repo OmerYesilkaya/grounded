@@ -18,7 +18,7 @@ async function signedIn(email: string) {
 async function trackWithImportedLesson(userId: string) {
   const [track] = await t.db
     .insert(tracks)
-    .values({ userId, title: "How software works" })
+    .values({ userId, title: "How software works", goal: "How software works" })
     .returning();
   if (!track) throw new Error("no track");
   await t.db
@@ -53,7 +53,7 @@ describe("the imported last lesson", () => {
 
     const [plain] = await t.db
       .insert(tracks)
-      .values({ userId: owner.userId, title: "Other" })
+      .values({ userId: owner.userId, title: "Other", goal: "Other" })
       .returning();
     const none = await t.request(`/api/tracks/${plain?.id ?? ""}/imported-lesson`, {
       cookie: owner.cookie,

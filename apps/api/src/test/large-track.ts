@@ -148,7 +148,7 @@ export async function createLargeTrack(
   if (!user) throw new Error("no user");
   const [track] = await db
     .insert(tracks)
-    .values({ userId: user.id, title: "How software works" })
+    .values({ userId: user.id, title: "How software works", goal: "How software works" })
     .returning();
   if (!track) throw new Error("no track");
   const imported = await applyActions(db, track.id, importActions(), {

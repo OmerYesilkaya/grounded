@@ -17,11 +17,20 @@ export interface ComposerProps {
   onSubmit: (text: string) => void;
   /** The textarea's accessible name. */
   label: string;
+  /** The textarea's id, for a visible `<label htmlFor>` elsewhere on the page. */
+  id?: string;
   /** The send button's accessible name; also its text unless `submitIcon` is set. */
   submitLabel: string;
   /** Show the send button as a round arrow, the way chat composers do. */
   submitIcon?: boolean;
   placeholder?: string;
+  /** How many lines the box shows while empty (default 1). */
+  minRows?: number;
+  /**
+   * enter (default): Enter sends, Shift+Enter starts a new line, as in chat. mod-enter: for longer
+   * writing, Enter starts a new line and ⌘/Ctrl+Enter sends.
+   */
+  submitShortcut?: "enter" | "mod-enter";
   /** Neither editing nor sending. */
   disabled?: boolean;
   /** Editing stays open, sending is held back (e.g. while the last message is on its way). */
@@ -41,8 +50,9 @@ export interface ComposerProps {
 }
 
 /**
- * The message box for the chat and for check answers: grows with its content up to a maximum
- * height, then scrolls. Enter sends, Shift+Enter starts a new line.
+ * The message box for the chat, for check answers and for a new track: grows with its content up
+ * to a maximum height, then scrolls. Enter sends, Shift+Enter starts a new line (or, with
+ * `submitShortcut="mod-enter"`, Enter starts a line and ⌘/Ctrl+Enter sends).
  *
  * A plain textarea for now; answers move to a Tiptap editor with homework (design §7.4, step 7).
  */
@@ -51,9 +61,12 @@ export function Composer({
   onChange,
   onSubmit,
   label,
+  id,
   submitLabel,
   submitIcon = false,
   placeholder,
+  minRows = 1,
+  submitShortcut = "enter",
   disabled = false,
   submitDisabled = false,
   actions,
@@ -80,6 +93,7 @@ export function Composer({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) return;
+    if (submitShortcut === "mod-enter" && !(event.metaKey || event.ctrlKey)) return;
     // The Enter that confirms an IME composition (Japanese, Chinese, Korean…) is not a send.
     // Safari ends the composition before this keydown, so only the legacy keyCode 229 tells.
     // eslint-disable-next-line @typescript-eslint/no-deprecated
@@ -104,8 +118,9 @@ export function Composer({
     >
       <textarea
         ref={textareaRef}
+        id={id}
         aria-label={label}
-        rows={1}
+        rows={minRows}
         value={value}
         disabled={disabled}
         placeholder={placeholder}

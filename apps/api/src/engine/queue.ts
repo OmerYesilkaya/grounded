@@ -107,7 +107,7 @@ export function reportHandledFailure(error: unknown): void {
 /**
  * Wraps each task so that every job logs its start and its end (finished or failed, with the
  * error's cause chain, and how long it took), in a log context of its own: the job id, the task,
- * the payload's session and step, and the id of the request that queued it.
+ * the payload's session, track and step, and the id of the request that queued it.
  */
 export function loggingJobs(tasks: TaskList): TaskList {
   const wrapped: TaskList = {};
@@ -138,7 +138,7 @@ export function loggingJobs(tasks: TaskList): TaskList {
 function idsIn(payload: unknown): LogFields {
   if (typeof payload !== "object" || payload === null) return {};
   const ids: LogFields = {};
-  for (const key of ["sessionId", "stepId", "requestId"])
+  for (const key of ["sessionId", "trackId", "stepId", "requestId"])
     if (key in payload) ids[key] = (payload as Record<string, unknown>)[key];
   return ids;
 }

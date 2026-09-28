@@ -160,7 +160,15 @@ export const tracks = pgTable("tracks", {
   userId: uuid("user_id")
     .notNull()
     .references(() => users.id, { onDelete: "cascade" }),
+  /**
+   * The track's short name, shown in the track list: the learner's words when they are short, else
+   * named by the tutor (design §9.5), which starts from the words' first line cut short.
+   */
   title: text("title").notNull(),
+  /** What the learner wrote they want to learn, as typed; the session's opening turn carries it. */
+  goal: text("goal").notNull(),
+  /** The tutor is still naming the track; `title` is the stand-in until it is done. */
+  titlePending: boolean("title_pending").notNull().default(false),
   /** The language lessons are taught in; null until the tutor infers it from the learner. */
   language: text("language"),
   plan: jsonb("plan").$type<TrackPlan>().notNull().default({ arcs: [], notes: "" }),

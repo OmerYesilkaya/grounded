@@ -263,6 +263,8 @@ export interface TrackContext
     Pick<PromptContext, "termsNotListed"> {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
+  /** What the learner wrote they want to learn, as typed (the session's opening turn). */
+  goal: string;
   /** Every term with its status now: what the server validates the tutor's writing against. */
   current: { term: string; status: TermStatus }[];
 }
@@ -379,6 +381,7 @@ export async function loadTrackContext(
   const current = rows.map((r) => ({ term: r.term, status: r.status }));
   const whole = {
     track: { title: track.title, language: track.language },
+    goal: track.goal,
     terms: listed,
     plan: track.plan,
     fixList: fixItems,

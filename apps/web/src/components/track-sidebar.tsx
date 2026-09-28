@@ -1,16 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
-import { api } from "@/lib/api";
+import { useTracks } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
-
-export interface TrackSummary {
-  id: string;
-  title: string;
-  language: string | null;
-  openSession: { id: string; phase: string } | null;
-  /** The last lesson imported from the learner's earlier setup, if any. */
-  importedLesson: { title: string } | null;
-}
 
 const PHASE_LABEL: Record<string, string> = {
   probe: "Session · getting started",
@@ -22,10 +12,7 @@ const PHASE_LABEL: Record<string, string> = {
 
 /** The track list: the "typographic index" from the prototype (design §9.2). */
 export function TrackSidebar() {
-  const tracks = useQuery({
-    queryKey: ["tracks"],
-    queryFn: () => api<TrackSummary[]>("/api/tracks"),
-  });
+  const tracks = useTracks();
   const params = useParams({ strict: false });
 
   return (

@@ -86,7 +86,7 @@ export function createFlows(t: Harness, models: Models) {
     const response = await t.request("/api/tracks", {
       method: "POST",
       cookie,
-      body: JSON.stringify({ title: "Concurrency" }),
+      body: JSON.stringify({ goal: "Concurrency" }),
     });
     const track = (await response.json()) as { id: string };
     return { cookie, trackId: track.id };

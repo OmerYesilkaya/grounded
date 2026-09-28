@@ -34,3 +34,4 @@ export { loadMethod } from "./method-file.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
 export { planActionsSchema, probeDecisionSchema } from "./decisions.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
+export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";

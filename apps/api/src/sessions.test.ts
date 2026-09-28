@@ -400,7 +400,7 @@ describe("creating a track", () => {
     const created = await t.request("/api/tracks", {
       method: "POST",
       cookie,
-      body: JSON.stringify({ title: "Geometry" }),
+      body: JSON.stringify({ goal: "Geometry" }),
     });
     expect(created.status).toBe(201);
     expect(await created.json()).toMatchObject({ title: "Geometry", language: null });

@@ -245,7 +245,7 @@ async function write(
   track: LearningTrack,
   actions: readonly TrackAction[],
 ): Promise<string> {
-  const [row] = await db.insert(tracks).values({ userId, title }).returning();
+  const [row] = await db.insert(tracks).values({ userId, title, goal: title }).returning();
   if (!row) throw new Error("track insert returned nothing");
   try {
     if (track.latestLesson) {

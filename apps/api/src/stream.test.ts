@@ -36,7 +36,7 @@ async function signedInSession(email = "ada@example.com", state = initialSession
   if (!user) throw new Error("no user");
   const [track] = await t.db
     .insert(tracks)
-    .values({ userId: user.id, title: "Concurrency", language: "English" })
+    .values({ userId: user.id, title: "Concurrency", goal: "Concurrency", language: "English" })
     .returning();
   if (!track) throw new Error("no track");
   const [session] = await t.db

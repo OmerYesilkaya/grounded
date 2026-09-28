@@ -1,16 +1,13 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
-import type { TrackSummary } from "@/components/track-sidebar";
 import { api, ApiError } from "@/lib/api";
+import { useTracks } from "@/lib/tracks";
 
 export function TrackPage({ trackId }: { trackId: string }) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-  const tracks = useQuery({
-    queryKey: ["tracks"],
-    queryFn: () => api<TrackSummary[]>("/api/tracks"),
-  });
+  const tracks = useTracks();
   const track = tracks.data?.find((t) => t.id === trackId);
   const start = useMutation({
     mutationFn: () => api<{ id: string }>(`/api/tracks/${trackId}/sessions`, { method: "POST" }),

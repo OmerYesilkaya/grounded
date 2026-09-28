@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { TrackSummary } from "@/components/track-sidebar";
+import type { TrackSummary } from "@/lib/tracks";
 import { api } from "@/lib/api";
 import { ImportedLessonPage } from "./imported-lesson";
 import { TrackPage } from "./track";
@@ -35,6 +35,7 @@ const HTML = "<!doctype html><title>SQL</title><script>alert(1)</script><p>Joins
 const track = (importedLesson: TrackSummary["importedLesson"]): TrackSummary => ({
   id: "t1",
   title: "How software works",
+  naming: false,
   language: "English",
   openSession: null,
   importedLesson,

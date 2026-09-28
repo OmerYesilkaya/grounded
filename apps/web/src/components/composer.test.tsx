@@ -49,6 +49,23 @@ describe("Composer", () => {
     expect(onSubmit).toHaveBeenCalledWith("hello");
   });
 
+  it("for longer writing, starts a line on Enter and sends on ⌘/Ctrl+Enter", async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+    render(<Harness onSubmit={onSubmit} submitShortcut="mod-enter" minRows={4} />);
+    const box = screen.getByRole("textbox", { name: "Message" });
+    expect(box).toHaveAttribute("rows", "4");
+
+    await user.type(box, "first{Enter}second");
+    expect(box).toHaveValue("first\nsecond");
+    expect(onSubmit).not.toHaveBeenCalled();
+
+    await user.type(box, "{Meta>}{Enter}{/Meta}");
+    expect(onSubmit).toHaveBeenCalledWith("first\nsecond");
+    await user.type(box, "{Control>}{Enter}{/Control}");
+    expect(onSubmit).toHaveBeenCalledTimes(2);
+  });
+
   it("does not send on the Enter that confirms an IME composition", () => {
     const onSubmit = vi.fn();
     render(<Harness onSubmit={onSubmit} />);
