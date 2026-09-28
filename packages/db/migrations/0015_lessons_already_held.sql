@@ -1,0 +1,1 @@
+ALTER TABLE "lessons" ADD COLUMN "already_held" jsonb DEFAULT '{}'::jsonb NOT NULL;

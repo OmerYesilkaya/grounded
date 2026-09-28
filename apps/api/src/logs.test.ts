@@ -166,6 +166,7 @@ describe("logs", () => {
           reply: "Right.",
           actions: [],
           freshQuestion: null,
+          alreadyHeld: null,
           note: null,
         }),
       ],

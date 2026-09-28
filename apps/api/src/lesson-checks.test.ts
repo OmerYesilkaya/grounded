@@ -59,8 +59,11 @@ const verdict = (v: {
   reply: string;
   freshQuestion?: string;
   note?: string;
+  alreadyHeld?: string;
 }) => ({
-  thenGenerate: [JSON.stringify({ actions: [], freshQuestion: null, note: null, ...v })],
+  thenGenerate: [
+    JSON.stringify({ actions: [], freshQuestion: null, note: null, alreadyHeld: null, ...v }),
+  ],
 });
 
 async function inLesson() {
@@ -362,6 +365,51 @@ describe("closing the session", () => {
     const leftOff = models.used.find((u) => u.purpose === "left-off")?.model.doGenerateCalls[0];
     expect(JSON.stringify(leftOff?.prompt)).toContain("Predict what a counter shows");
     expect(JSON.stringify(leftOff?.prompt)).toContain("We built why a counter can lose an update");
+  });
+
+  it("carries what the learner already held into the later checks, the homework and the close", async () => {
+    const { cookie, sessionId } = await inLesson();
+    const HELD = 'Knew adding one is three moves: "I know this, no need to explain."';
+    models.script(
+      "check",
+      verdict({
+        verdict: "landed",
+        reply: "Noted; the next session starts above it.",
+        alreadyHeld: HELD,
+      }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+    );
+    models.script("homework", { text: "Explain it to a friend." });
+    models.script("close", { text: "We built it." });
+    models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
+    models.script("left-off", { text: LEFT_OFF });
+    await answer(cookie, sessionId, "s1", { text: "I know this, no need to explain." });
+    await until(cookie, sessionId, (s) => s.state.steps.s1?.status === "passed");
+    for (const id of ["s2", "s3"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+    await until(cookie, sessionId, (s) => s.state.phase === "closed");
+
+    const promptOf = (purpose: string) => {
+      const model = models.used.find((u) => u.purpose === purpose)?.model;
+      return JSON.stringify(model?.doGenerateCalls[0]?.prompt ?? model?.doStreamCalls[0]?.prompt);
+    };
+    const secondCheck = JSON.stringify(
+      models.used.filter((u) => u.purpose === "check")[1]?.model.doGenerateCalls[0]?.prompt,
+    );
+    expect(secondCheck).toContain(
+      "What the learner showed they already held, earlier in this lesson",
+    );
+    expect(secondCheck).toContain("Knew adding one is three moves");
+    for (const purpose of ["homework", "close", "term-sweep", "left-off"]) {
+      expect(promptOf(purpose), purpose).toContain("What happened at the lesson's checks");
+      expect(promptOf(purpose), purpose).toContain(
+        "Already held before the lesson taught it: Knew adding one is three moves",
+      );
+    }
+    expect(promptOf("homework")).toContain("Learner: I know this, no need to explain.");
   });
 
   it("leaves no summary from before the session when this one's can't be written", async () => {

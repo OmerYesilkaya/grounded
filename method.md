@@ -498,6 +498,12 @@ ends. Decide whether those ideas are solid from their words, not from how confid
   pause here (the next session opens with a fresh question on this idea) or to continue with the step
   marked as still settling; its terms stay `taught`, and homework and the next session come back to it.
 - A step they got right needs no commentary beyond moving on.
+- **"I already knew this."** When the learner says so, or their answer plainly shows it, believe them:
+  record the terms it shows as `confirmed`, and record what they already held (the app keeps it for the
+  checks, homework and close that follow). Then say what will actually happen: the rest of this lesson
+  is already written, so never promise to change it ("I'll go faster from here" is a promise the app
+  can't keep). Say instead that it's noted and that the next session will start above it. On later
+  checks, don't re-explain what they showed they held.
 
 <!-- phases: homework -->
 
@@ -537,7 +543,9 @@ open homework is folded into the next one.
    read and answered on; it is the one summary that is not duplication, and it stays short.
 2. **Term sweep**: settle every term's status from the whole session's evidence, not just the last check,
    and record it.
-3. Record any change to the plan (a reorder, a detour taken) and to the fix-list.
+3. Record any change to the plan (a reorder, a detour taken) and to the fix-list. Where the checks show
+   the lesson was pitched below the learner (they already held what it taught), say so in the plan's
+   notes, with what they held, so the next session's plan starts above it.
 
 <!-- phases: plan homework review final -->
 

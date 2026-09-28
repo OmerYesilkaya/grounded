@@ -409,7 +409,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized |
 | `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees                                             |
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
-| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes                                     |
+| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
 | `usage_events`                                   | per model call                                                                                                                           |
 | `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
@@ -578,6 +578,13 @@ HTML/SVG). To be measured, then adjusted.
   **Pause here** (next time opens with a fresh question on this idea — the incubation option) or
   **Continue anyway** (step flagged "settling", its terms stay `taught`, homework and the next session
   re-test it). After the last check, continue freely with the step flagged.
+- **"I already knew this."** The grader records what the learner showed they held before the lesson
+  taught it (`lessons.already_held`, by step; logged, so it can be counted: the lesson was pitched
+  below them there). The later checks of the lesson hear it and don't re-explain it; the reply never
+  promises to change the rest of the lesson, which is already written. The calls after the lesson
+  (homework, the recap, the term sweep, "where you left off") get the whole check record: each answered
+  check, what it covered, its thread, where it leaked and what was already held. So the next session's
+  plan starts above it, through the plan's notes and "where you left off".
 - Why checks at the point of need: a step nothing rests on yet doesn't need to be solid before the next
   one, and a check there only interrupts reading; asking a few steps after an idea was taught is also
   better practice for remembering it than asking straight away (spaced retrieval).

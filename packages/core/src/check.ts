@@ -13,6 +13,11 @@ export const checkVerdictSchema = z.object({
   freshQuestion: z.string().nullable(),
   /** Missed: where the step leaked, in two or three sentences, for the note under the step; else null. */
   note: z.string().nullable(),
+  /**
+   * When the learner says, or their answer plainly shows, that they held this before the lesson
+   * taught it ("I already know this"): what they held, in a sentence, with their words; else null.
+   */
+  alreadyHeld: z.string().nullable(),
   /** Term changes from how the learner used the terms, with their words as evidence. */
   actions: z.array(trackActionSchema),
 });

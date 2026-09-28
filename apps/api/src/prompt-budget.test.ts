@@ -128,6 +128,7 @@ const scenarios: Record<
             verdict: "landed",
             reply: "Yes.",
             freshQuestion: null,
+            alreadyHeld: null,
             note: null,
           }),
         ],

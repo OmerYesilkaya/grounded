@@ -123,6 +123,7 @@ export function createDemoModels(): ModelAccess {
                   "Close, but that says what happened, not why. Worker B copied the value out **before** worker A put its 6 back, so B added one to an old 5.",
                 freshQuestion:
                   "Two workers each take one away from a balance of 10 at the same time. What is the worst final value, and why?",
+                alreadyHeld: null,
                 note: "The second worker copied the value out before the first put its result back, so it worked from an old copy.",
                 actions: [],
               }
@@ -130,6 +131,7 @@ export function createDemoModels(): ModelAccess {
                 verdict: "landed",
                 reply: "That's it.",
                 freshQuestion: null,
+                alreadyHeld: null,
                 note: null,
                 actions: [],
               },

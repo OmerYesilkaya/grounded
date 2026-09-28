@@ -359,6 +359,11 @@ export const lessons = pgTable("lessons", {
   stepSources: jsonb("step_sources").$type<Record<string, string>>().notNull().default({}),
   /** "After the check" notes, by step id. */
   notes: jsonb("notes").$type<Record<string, string>>().notNull().default({}),
+  /**
+   * What the learner showed they held before the lesson taught it ("I knew this"), by the step whose
+   * check it came up at: the lesson was pitched below them there (design §7.3).
+   */
+  alreadyHeld: jsonb("already_held").$type<Record<string, string>>().notNull().default({}),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

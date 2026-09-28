@@ -36,6 +36,7 @@ import {
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
 import { systemMessages } from "./call-options.js";
+import { alreadyHeldSoFar, checkRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
   conversationFor,
@@ -82,6 +83,9 @@ const PLAN_ATTEMPTS = 3;
 const SWEEP_ATTEMPTS = 3;
 
 const RESEARCH_STEPS = 6;
+
+/** The phases after the lesson, whose calls carry what happened at its checks. */
+const AFTER_CHECKS_PHASES: readonly Phase[] = ["homework", "close"];
 
 const PROBE_DECISION_PROMPT =
   "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, you won't write another probe message: the plan comes next, in its own message.";
@@ -137,7 +141,18 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       (await isFirstSession(db, sessionId, session.trackId))
         ? await broughtFiles(db, files, session.trackId)
         : null;
-    const track = originals ? withoutBrought(loaded) : loaded;
+    const brought = originals ? withoutBrought(loaded) : loaded;
+    // The calls after the lesson hear what happened at its checks: the answers, what leaked, and what
+    // the learner showed they already held.
+    const checks = AFTER_CHECKS_PHASES.includes(phase)
+      ? await checksSoFar(sessionId, session)
+      : null;
+    const track = checks
+      ? {
+          ...brought,
+          extra: [{ heading: "What happened at the lesson's checks", body: checks }],
+        }
+      : brought;
     const terms: TrackTerm[] = track.current;
     const history = await db
       .select()
@@ -193,16 +208,36 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     return row;
   };
 
+  const threadsOf = (sessionId: string) =>
+    db
+      .select()
+      .from(checkMessages)
+      .where(eq(checkMessages.sessionId, sessionId))
+      .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
+
+  /** The lesson's check record (check-record.ts), or null when there is no lesson or no answer yet. */
+  const checksSoFar = async (sessionId: string, session: { state: SessionState }) => {
+    const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, sessionId));
+    if (!lesson) return null;
+    return checkRecord({
+      steps: session.state.lesson.steps,
+      headings: (lesson.outline?.steps ?? []).map((s) => s.heading),
+      sources: lesson.stepSources,
+      threads: await threadsOf(sessionId),
+      notes: lesson.notes,
+      alreadyHeld: lesson.alreadyHeld,
+    });
+  };
+
   /** The prompt for grading or re-asking a step: the check phase's method plus the step and its thread. */
   const checkPrompt = async (sessionId: string, stepId: string, state: SessionState) => {
     const session = await loadSession(db, sessionId);
     const track = await loadTrackContext(db, session.trackId, { sessionId, phase: "check" });
     const lesson = await lessonRow(sessionId);
-    const thread = await db
-      .select()
-      .from(checkMessages)
-      .where(sql`${checkMessages.sessionId} = ${sessionId} and ${checkMessages.stepId} = ${stepId}`)
-      .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
+    const thread = (await threadsOf(sessionId)).filter((m) => m.stepId === stepId);
+    const held = alreadyHeldSoFar(
+      Object.fromEntries(Object.entries(lesson.alreadyHeld).filter(([id]) => id !== stepId)),
+    );
     const index = state.lesson.steps.findIndex((s) => s.id === stepId);
     const placed = state.lesson.steps[index]?.check;
     // A check covers every step whose ideas it asks about, not only the one it ends.
@@ -228,6 +263,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               .map((m) => `${m.role === "learner" ? "Learner" : "Tutor"}: ${m.text ?? ""}`)
               .join("\n") || "(none)",
         },
+        ...(held
+          ? [
+              {
+                heading: "What the learner showed they already held, earlier in this lesson",
+                body: held,
+              },
+            ]
+          : []),
         {
           heading: "Where this step stands",
           body: [
@@ -551,6 +594,17 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           await applyActions(db, session.trackId, verdict.actions, {
             source: `check ${stepId}`,
           });
+        // The lesson was pitched below the learner here: kept for the calls after the lesson, and
+        // countable (design §7.3).
+        if (verdict.alreadyHeld) {
+          log.info({ stepId }, "the learner already held what a check covered");
+          await db
+            .update(lessons)
+            .set({
+              alreadyHeld: sql`${lessons.alreadyHeld} || ${JSON.stringify({ [stepId]: verdict.alreadyHeld })}::jsonb`,
+            })
+            .where(eq(lessons.sessionId, sessionId));
+        }
         const next = await applyEvent(db, sessionId, {
           type: "check-verdict",
           stepId,

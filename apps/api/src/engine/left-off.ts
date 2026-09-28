@@ -16,7 +16,7 @@ import { withActivity } from "./events.js";
 export const LEFT_OFF_CATCH_UP = 4000;
 
 const WHAT_IT_HOLDS =
-  "It is for your own later calls, which see it in place of the plan's notes; the notes stay in the app. Keep it compact, at most about 300 words of plain lines: the open threads (questions and tangents still open), owed work (homework or exams assigned and not yet reviewed, checks still owed), what to re-check (ideas still settling, leaks, misconceptions to re-test), and where the next session picks up. Name terms exactly as the term list does. Leave out what is settled and what the term list, fix-list or arcs already say. Reply with the summary only.";
+  "It is for your own later calls, which see it in place of the plan's notes; the notes stay in the app. Keep it compact, at most about 300 words of plain lines: the open threads (questions and tangents still open), owed work (homework or exams assigned and not yet reviewed, checks still owed), what to re-check (ideas still settling, leaks, misconceptions to re-test), where the lesson was pitched below the learner (what they already held, so the next plan starts above it), and where the next session picks up. Name terms exactly as the term list does. Leave out what is settled and what the term list, fix-list or arcs already say. Reply with the summary only.";
 
 /** At the close, after the recap and the term sweep. */
 export const LEFT_OFF_PROMPT = `(For the app; the learner doesn't see this.) The session is closed. Write where the learner left off on this track, from the plan's notes and this session. ${WHAT_IT_HOLDS}`;

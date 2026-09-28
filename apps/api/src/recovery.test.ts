@@ -207,6 +207,7 @@ describe("recovery after a worker dies mid-job", () => {
           reply: "That's it.",
           actions: [],
           freshQuestion: null,
+          alreadyHeld: null,
           note: null,
         }),
       ],
