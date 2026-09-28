@@ -208,9 +208,18 @@ function renderTrack(context: PromptContext): string {
   return parts.join("\n\n");
 }
 
+/**
+ * Several terms in a line. A term's name may hold commas and semicolons of its own (a track
+ * imported from long notes has names like "index; B-tree (…); measured 4 levels at 10M"), so the
+ * names are set apart by a mark no name uses, and a model copying one copies all of it.
+ */
+const termNames = (names: readonly string[]) => names.join(" · ");
+
 function termTable(terms: readonly TermRow[]): string[] {
+  const cell = (text: string) => text.replaceAll("|", "\\|");
   const rows = terms.map(
-    (t) => `| ${t.term} | ${t.status} | ${t.restsOn.length ? t.restsOn.join(", ") : "—"} |`,
+    (t) =>
+      `| ${cell(t.term)} | ${t.status} | ${t.restsOn.length ? cell(termNames(t.restsOn)) : "—"} |`,
   );
   return ["| term | status | rests on |", "| --- | --- | --- |", ...rows];
 }
@@ -230,7 +239,7 @@ function counted(counts: Partial<Record<TermStatus, number>>) {
 
 function arcLine(arc: PlanArc): string {
   const title = arc.current ? `${arc.title} (the current arc)` : arc.title;
-  if (!arc.tally) return `${title}: ${arc.terms.join(", ")}`;
+  if (!arc.tally) return `${title}: ${termNames(arc.terms)}`;
   const { text } = counted(arc.tally);
   return `${title}: ${String(arc.terms.length)} terms${text ? ` (${text})` : ""}`;
 }

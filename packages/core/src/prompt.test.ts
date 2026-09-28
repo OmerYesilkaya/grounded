@@ -68,12 +68,25 @@ describe("assemblePrompt", () => {
     );
     expect(prompt).toContain("Subject: How software works\nTeaching language: English");
     expect(prompt).toContain("| memory | confirmed | — |");
-    expect(prompt).toContain("| race condition | planned | memory, worker |");
+    expect(prompt).toContain("| race condition | planned | memory · worker |");
     expect(prompt).toContain("- worker (confirmed in Operating systems)");
     expect(prompt).toContain("1. Concurrency: race condition");
     expect(prompt).toContain("Reordered: backend first.");
     expect(prompt).toContain("- [open] Thinks adding one is a single step");
     expect(prompt).toContain("- Abstract ideas land after one concrete example first.");
+  });
+
+  it("sets term names apart, so one that holds commas reads as one term", () => {
+    const long = "index; B-tree (pages → rows); measured 4 levels at 10M, 5 pages per lookup";
+    const prompt = assemblePrompt(method, "lesson", {
+      terms: [
+        { term: long, status: "confirmed", restsOn: [] },
+        { term: "a | b", status: "planned", restsOn: [long, "memory"] },
+      ],
+      plan: { arcs: [{ title: "Storage", terms: [long, "a | b"] }], notes: "" },
+    });
+    expect(prompt).toContain(`| a \\| b | planned | ${long} · memory |`);
+    expect(prompt).toContain(`1. Storage: ${long} · a | b`);
   });
 
   it("orders the prompt stable-first: method, then the track's state, then the call's own parts", () => {

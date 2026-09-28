@@ -277,7 +277,10 @@ about, test and debug.
   The track's state renders the same way on every load (terms and fix-list in creation order, what
   a term rests on in the term list's order), so two calls of a track and phase are byte-identical
   up to their own parts, and two calls of different phases through the all-phase sections (decided
-  2026-09-28).
+  2026-09-28). Where a line lists several terms (what a term rests on, an arc's terms) they are
+  set apart by " · ", not commas: a term imported from long notes may hold commas and semicolons
+  of its own ("index; B-tree (…); measured 4 levels at 10M, 5 pages per lookup"), and a model
+  reading a comma-joined list took two terms for one or one for two (#27).
 - **The track's part holds the track as the session began** (`loadTrackContext` with the session):
   the term list with each term's status as of the session's start (its last `term_events` change
   before then) and the fix-list as it stood then. What changed since (a term's new status, a term
