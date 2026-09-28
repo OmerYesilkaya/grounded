@@ -181,6 +181,35 @@ describe("applyActions", () => {
   });
 });
 
+describe("applyActions: from a call that saw only part of the plan", () => {
+  it("leaves the plan as it is and applies the rest of the batch", async () => {
+    const trackId = await newTrack();
+    const plan = { arcs: [{ title: "Concurrency", terms: ["memory"] }], notes: "Backend first." };
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "set-plan", ...plan },
+      ],
+      { source: "plan" },
+    );
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "set-plan", arcs: [], notes: "" },
+        { type: "set-term-status", term: "memory", status: "confirmed", evidence: "holds 5" },
+      ],
+      { source: "probe", plan: "none" },
+    );
+    expect(result).toEqual({ ok: true });
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.plan).toEqual(plan);
+    expect(context.terms).toEqual([{ term: "memory", status: "confirmed", restsOn: [] }]);
+  });
+});
+
 describe("applyActions: teaching language", () => {
   it("records the language the tutor inferred", async () => {
     const trackId = await newTrack();
@@ -247,11 +276,24 @@ describe("loadTrackContext: in a session", () => {
         { type: "add-planned-term", term: "worker", restsOn: [] },
         { type: "add-fix-item", text: "Thinks adding one is one step" },
         { type: "add-fix-item", text: "Thinks memory can add" },
+        {
+          type: "set-plan",
+          arcs: [{ title: "Concurrency", terms: ["memory", "worker"] }],
+          notes: "",
+        },
       ],
       { source: "plan" },
     );
     const sessionId = await openSession(trackId);
     const before = await loadTrackContext(t.db, trackId, { sessionId });
+    expect(before.terms).toEqual([
+      { term: "memory", status: "planned", restsOn: [] },
+      { term: "worker", status: "planned", restsOn: [] },
+    ]);
+    expect(before.fixList).toEqual([
+      { text: "Thinks adding one is one step", status: "open" },
+      { text: "Thinks memory can add", status: "open" },
+    ]);
     expect(before.changes).toEqual({ terms: [], fixList: [] });
 
     await applyActions(
@@ -284,6 +326,67 @@ describe("loadTrackContext: in a session", () => {
       { term: "worker", status: "planned" },
       { term: "race condition", status: "planned" },
     ]);
+  });
+
+  it("lists the current arc and the terms the last three sessions touched, with what they rest on", async () => {
+    const trackId = await newTrack();
+    const names = ["bit", "memory", "register", "packet", "TCP", "lock", "working copy"];
+    const imported = await applyActions(
+      t.db,
+      trackId,
+      [
+        ...names.flatMap((term) => [
+          { type: "add-planned-term" as const, term, restsOn: [] },
+          {
+            type: "set-term-status" as const,
+            term,
+            status: "confirmed" as const,
+            evidence: "From the ledger.",
+          },
+        ]),
+        { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
+        {
+          type: "set-plan",
+          arcs: [
+            { title: "Basics", terms: names },
+            { title: "Concurrency", terms: ["lost update"] },
+          ],
+          notes: "",
+        },
+      ],
+      { source: "imported" },
+    );
+    expect(imported).toEqual({ ok: true });
+    // Four earlier sessions, each touching one term; only the last three count as recent.
+    for (const term of ["bit", "memory", "packet", "lock"]) {
+      await openSession(trackId);
+      const touched = await applyActions(
+        t.db,
+        trackId,
+        [{ type: "set-term-status", term, status: "taught", evidence: "shaky" }],
+        { source: "close" },
+      );
+      expect(touched).toEqual({ ok: true });
+      await t.db.update(learningSessions).set({ closedAt: new Date() });
+    }
+    const sessionId = await openSession(trackId);
+
+    const context = await loadTrackContext(t.db, trackId, { sessionId, phase: "probe" });
+    expect(context.terms.map((t) => t.term)).toEqual([
+      "memory",
+      "packet",
+      "lock",
+      "working copy",
+      "lost update",
+    ]);
+    expect(context.termsNotListed).toEqual({ taught: 1, confirmed: 2 });
+    expect(context.plan.arcs).toEqual([
+      { title: "Basics", terms: names, tally: { taught: 4, confirmed: 3 } },
+      { title: "Concurrency", terms: ["lost update"], current: true },
+    ]);
+    // The plan's calls see every arc's terms: their set-plan replaces the plan.
+    const planning = await loadTrackContext(t.db, trackId, { sessionId, phase: "plan" });
+    expect(planning.plan.arcs[0]).toEqual({ title: "Basics", terms: names });
   });
 
   it("outside a session, gives the track as it is now", async () => {

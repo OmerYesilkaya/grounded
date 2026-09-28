@@ -250,6 +250,26 @@ about, test and debug.
   verdict or the plan's new terms don't change the track's part: it stays cached all session. The
   subject, language and plan are shown as they are now (they change about once a session). What the
   tutor writes is still validated against the track as it is now.
+- **A session's prompts carry what matters of the track, not all of it** (`selectTrackView` in
+  `packages/core/src/track-view.ts`; decided 2026-09-28, #13), computed from the track as the
+  session began, so it holds all session:
+  - The **current arc** is the first arc in plan order with a `planned` term: the ground the next
+    lesson covers. Arcs are the plan's order, so a recorded reorder moves it too.
+  - A term was **touched recently** when a `term_events` change was recorded for it in the three
+    sessions of the track before this one (`RECENT_SESSIONS`), from the first of them to this one's
+    start. An import's changes come before the track's first session, so they are never recent;
+    in a track's second session, everything its first session planned is.
+  - The **term list** holds the current arc's terms and the recently touched ones, plus everything
+    those rest on, transitively (real maps are shallow: on the imported track a term and all it
+    rests on are 3 terms on average, 12 at most). The rest is one line: how many more terms the
+    track has, by status, and that they are not to be used as known terms. The server still
+    validates every action and message against the whole list, so an omitted term can't be added
+    twice or used before it is taught.
+  - The **plan** lists the current arc's terms; every other arc is its title and a tally ("17
+    terms (15 confirmed, 2 taught)"). The phases that record the plan (plan, close, final:
+    `WHOLE_PLAN_PHASES`) see every arc's terms, since a `set-plan` replaces the whole plan. The
+    other calls saw part of it, so a `set-plan` from them (the probe's decision, a check's verdict)
+    is left out and the rest of the batch applies.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one

@@ -103,7 +103,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
   const contextFor = async (sessionId: string, phase: Phase) => {
     const session = await loadSession(db, sessionId);
-    const track = await loadTrackContext(db, session.trackId, { sessionId });
+    const track = await loadTrackContext(db, session.trackId, { sessionId, phase });
     const terms: TrackTerm[] = track.current;
     const history = await db
       .select()
@@ -142,7 +142,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   /** The prompt for grading or re-asking a step: the check phase's method plus the step and its thread. */
   const checkPrompt = async (sessionId: string, stepId: string, state: SessionState) => {
     const session = await loadSession(db, sessionId);
-    const track = await loadTrackContext(db, session.trackId, { sessionId });
+    const track = await loadTrackContext(db, session.trackId, { sessionId, phase: "check" });
     const lesson = await lessonRow(sessionId);
     const thread = await db
       .select()
@@ -247,7 +247,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             }),
         );
         if (output.actions.length) {
-          await applyActions(db, session.trackId, output.actions, { source: "probe" });
+          await applyActions(db, session.trackId, output.actions, {
+            source: "probe",
+            plan: "none",
+          });
           // The question is written with what was just recorded (the teaching language, the fix-list).
           context = await contextFor(sessionId, "probe");
         }
@@ -401,7 +404,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         }
 
         if (verdict.actions.length)
-          await applyActions(db, session.trackId, verdict.actions, { source: `check ${stepId}` });
+          await applyActions(db, session.trackId, verdict.actions, {
+            source: `check ${stepId}`,
+            plan: "none",
+          });
         const next = await applyEvent(db, sessionId, {
           type: "check-verdict",
           stepId,

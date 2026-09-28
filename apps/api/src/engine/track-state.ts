@@ -1,4 +1,12 @@
-import type { FixItem, PromptContext, TermRow, TrackAction } from "@grounded/core";
+import {
+  selectTrackView,
+  WHOLE_PLAN_PHASES,
+  type FixItem,
+  type Phase,
+  type PromptContext,
+  type TermRow,
+  type TrackAction,
+} from "@grounded/core";
 import {
   and,
   desc,
@@ -102,13 +110,20 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
  * Applies the model's structured edits to a track. The whole batch is validated against the track
  * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
  * on, and nothing is written.
+ *
+ * `plan` says what the call saw of the plan. "whole" (the default): every arc with its terms, so a
+ * set-plan may replace the plan. "none": the arcs other than the current one only as tallies
+ * (design §4.4), so a set-plan would drop what it didn't see; it is left out, and the rest of the
+ * batch applies.
  */
 export async function applyActions(
   db: Db,
   trackId: string,
-  actions: readonly TrackAction[],
-  options: { source: string },
+  batch: readonly TrackAction[],
+  options: { source: string; plan?: "whole" | "none" },
 ): Promise<ApplyResult> {
+  const actions =
+    options.plan === "none" ? batch.filter((action) => action.type !== "set-plan") : batch;
   const existing = await db.select().from(terms).where(eq(terms.trackId, trackId));
   const openFixItems = await db
     .select()
@@ -223,9 +238,10 @@ export async function applyActions(
   return { ok: true };
 }
 
-export interface TrackContext extends Required<
-  Pick<PromptContext, "track" | "terms" | "plan" | "fixList">
-> {
+export interface TrackContext
+  extends
+    Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
+    Pick<PromptContext, "termsNotListed"> {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
   /** Every term with its status now: what the server validates the tutor's writing against. */
@@ -235,12 +251,14 @@ export interface TrackContext extends Required<
 /**
  * The track as the prompt sees it (method.md, "What the app gives you"). For a session's calls
  * (`sessionId`), the term list and fix-list are as the session began and the changes since come
- * apart, so the prompt's track part stays byte-identical all session (design §4.4).
+ * apart, so the prompt's track part stays byte-identical all session; and the term list and the
+ * plan's arcs carry what matters now, not the whole track (selectTrackView; design §4.4). Without
+ * a session, the whole track as it is now.
  */
 export async function loadTrackContext(
   db: Db,
   trackId: string,
-  options: { sessionId?: string } = {},
+  options: { sessionId?: string; phase?: Phase } = {},
 ): Promise<TrackContext> {
   const [track] = await db.select().from(tracks).where(eq(tracks.id, trackId));
   if (!track) throw new Error(`track ${trackId} not found`);
@@ -339,12 +357,55 @@ export async function loadTrackContext(
     if (status !== f.status) changes.fixList.push(item);
   }
 
-  return {
+  const current = rows.map((r) => ({ term: r.term, status: r.status }));
+  const whole = {
     track: { title: track.title, language: track.language },
     terms: listed,
     plan: track.plan,
     fixList: fixItems,
-    ...(options.sessionId ? { changes } : {}),
-    current: rows.map((r) => ({ term: r.term, status: r.status })),
+    current,
   };
+  if (!options.sessionId) return whole;
+
+  const view = selectTrackView({
+    terms: listed,
+    arcs: track.plan.arcs,
+    touched: await touchedBefore(db, trackId, began),
+    wholePlan: options.phase !== undefined && WHOLE_PLAN_PHASES.includes(options.phase),
+  });
+  return {
+    ...whole,
+    terms: view.terms,
+    termsNotListed: view.termsNotListed,
+    plan: { ...track.plan, arcs: view.arcs },
+    changes,
+  };
+}
+
+/** How many earlier sessions count as recent: the terms they touched are listed (design §4.4). */
+export const RECENT_SESSIONS = 3;
+
+/**
+ * The terms touched recently: any change recorded in the RECENT_SESSIONS sessions of the track
+ * before this one, from the first of them up to this one's start. Changes from before the track's
+ * first session (an import) are not recent.
+ */
+async function touchedBefore(
+  db: Db,
+  trackId: string,
+  began: ReturnType<typeof sql>,
+): Promise<string[]> {
+  const recent = sql`(select min(created_at) from (select ${learningSessions.createdAt} as created_at from ${learningSessions} where ${learningSessions.trackId} = ${trackId} and ${learningSessions.createdAt} < ${began} order by ${learningSessions.createdAt} desc limit ${RECENT_SESSIONS}) as recent)`;
+  const touched = await db
+    .selectDistinct({ term: terms.term })
+    .from(termEvents)
+    .innerJoin(terms, eq(terms.id, termEvents.termId))
+    .where(
+      and(
+        eq(terms.trackId, trackId),
+        sql`${termEvents.createdAt} >= ${recent}`,
+        sql`${termEvents.createdAt} < ${began}`,
+      ),
+    );
+  return touched.map((t) => t.term);
 }

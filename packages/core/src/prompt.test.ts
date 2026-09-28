@@ -115,6 +115,30 @@ describe("assemblePrompt", () => {
     expect(joinSystemPrompt(grading).slice(prefix.length)).toBe(grading.call);
   });
 
+  it("marks the current arc, tallies arcs shown without their terms, and counts terms not listed", () => {
+    const prompt = assemblePrompt(method, "probe", {
+      plan: {
+        arcs: [
+          { title: "Memory", terms: ["bit", "memory"], tally: { confirmed: 1, assumed: 1 } },
+          { title: "Concurrency", terms: ["race condition"], current: true },
+          { title: "Networks", terms: ["packet", "TCP", "QUIC"], tally: { planned: 3 } },
+        ],
+      },
+      terms: [{ term: "race condition", status: "planned", restsOn: [] }],
+      termsNotListed: { confirmed: 97, planned: 30 },
+    });
+    expect(prompt).toContain(
+      [
+        "1. Memory: 2 terms (1 confirmed, 1 assumed)",
+        "2. Concurrency (the current arc): race condition",
+        "3. Networks: 3 terms (3 planned)",
+      ].join("\n"),
+    );
+    expect(prompt).toContain(
+      "| race condition | planned | — |\n\nNot listed here: 127 more terms of this track (30 planned, 97 confirmed), away from the current arc and from what recent sessions touched. Don't use them as known terms.",
+    );
+  });
+
   it("gives the session's changes in the call's part, so the track's part stays the same", () => {
     const changes = {
       terms: [{ term: "memory", status: "taught" as const, restsOn: [] }],

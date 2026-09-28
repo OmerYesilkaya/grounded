@@ -55,13 +55,24 @@ export interface FixItem {
   status: "open" | "closed";
 }
 
+export interface PlanArc {
+  title: string;
+  terms: readonly string[];
+  /** The arc the track has reached (design §4.4). */
+  current?: boolean;
+  /** Shown in place of the arc's terms: how many it has at each status. */
+  tally?: Partial<Record<TermStatus, number>>;
+}
+
 /** Everything the app knows that a call may need (method.md, "What the app gives you"). */
 export interface PromptContext {
   /** language is null until the tutor has inferred it from the learner's messages. */
   track?: { title: string; language: string | null };
   terms?: readonly TermRow[];
+  /** The track's terms the term list leaves out (design §4.4), counted by status. */
+  termsNotListed?: Partial<Record<TermStatus, number>>;
   borrowed?: readonly { term: string; fromTrack: string }[];
-  plan?: { arcs: readonly { title: string; terms: readonly string[] }[]; notes?: string };
+  plan?: { arcs: readonly PlanArc[]; notes?: string };
   fixList?: readonly FixItem[];
   teachingNotes?: readonly string[];
   /**
@@ -127,7 +138,7 @@ export function assemblePrompt(method: Method, phase: Phase, context: PromptCont
  */
 function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
-  const { track, terms, borrowed, plan, fixList, teachingNotes } = context;
+  const { track, terms, termsNotListed, borrowed, plan, fixList, teachingNotes } = context;
   if (track) {
     const language =
       track.language ??
@@ -135,12 +146,23 @@ function renderTrack(context: PromptContext): string {
     parts.push(`## Track\n\nSubject: ${track.title}\nTeaching language: ${language}`);
   }
   if (plan) {
-    const arcs = plan.arcs.map(
-      (arc, i) => `${String(i + 1)}. ${arc.title}: ${arc.terms.join(", ")}`,
-    );
+    const arcs = plan.arcs.map((arc, i) => `${String(i + 1)}. ${arcLine(arc)}`);
     parts.push(["## Plan", "", ...arcs, ...(plan.notes ? ["", plan.notes] : [])].join("\n"));
   }
-  if (terms?.length) parts.push(["## Term list", "", ...termTable(terms)].join("\n"));
+  const unlisted = counted(termsNotListed ?? {});
+  if (terms?.length || unlisted.total > 0) {
+    const table = terms?.length ? termTable(terms) : [];
+    const rest = unlisted.total
+      ? [
+          `Not listed here: ${String(unlisted.total)} more terms of this track (${unlisted.text}), away from the current arc and from what recent sessions touched. Don't use them as known terms.`,
+        ]
+      : [];
+    parts.push(
+      ["## Term list", "", ...table, ...(table.length && rest.length ? [""] : []), ...rest].join(
+        "\n",
+      ),
+    );
+  }
   if (borrowed?.length) {
     parts.push(
       [
@@ -165,6 +187,24 @@ function termTable(terms: readonly TermRow[]): string[] {
 }
 
 const fixLine = (f: FixItem) => `- [${f.status}] ${f.text}`;
+
+const STATUS_ORDER: readonly TermStatus[] = ["planned", "taught", "confirmed", "assumed"];
+
+/** "3 planned, 12 confirmed", in the statuses' order, with the total. */
+function counted(counts: Partial<Record<TermStatus, number>>) {
+  const present = STATUS_ORDER.filter((s) => (counts[s] ?? 0) > 0);
+  return {
+    total: present.reduce((sum, s) => sum + (counts[s] ?? 0), 0),
+    text: present.map((s) => `${String(counts[s] ?? 0)} ${s}`).join(", "),
+  };
+}
+
+function arcLine(arc: PlanArc): string {
+  const title = arc.current ? `${arc.title} (the current arc)` : arc.title;
+  if (!arc.tally) return `${title}: ${arc.terms.join(", ")}`;
+  const { text } = counted(arc.tally);
+  return `${title}: ${String(arc.terms.length)} terms${text ? ` (${text})` : ""}`;
+}
 
 /** The session's changes to the term list and fix-list: newer than the track's part. */
 function renderChanges({ changes }: PromptContext): string[] {
