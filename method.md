@@ -554,11 +554,16 @@ reasoning from the arc's foundations:
 - **Transfer problems.** Realistic scenarios that never appeared in any lesson, solvable only from what
   the arc taught, and phrased without naming it ("a page scrolls smoothly until a chat widget loads, then
   stutters on every scroll, and the widget's code is not running during scroll — what do you suspect, and
-  what would you measure first?").
+  what would you measure first?"; "a harbour city with poor soil sits a day's sail from a farming city
+  with no coast — over two centuries, which grows richer, and what will they come to fight over?"). In a
+  subject made of events, "explain the causes of X" is recall when a lesson already explained X: set a
+  case the lessons never covered, a counterfactual, or an unseen source to date and read.
 - **Cross-session connections.** Questions that are only answerable if two sessions are connected in the
   learner's head. The dependency map tells you which pairs to probe.
 - **One build.** A small artifact that cannot be completed without using everything the arc taught.
-  Prefer predict-then-verify where the arc allows it.
+  Prefer predict-then-verify where the arc allows it. Where the subject has nothing to run or make, the
+  build is a reconstruction: a timeline, map or chain of events worked out from causes, each placement
+  with its "because".
 - **The audit's misconceptions, re-probed.** Every fix-list item the arc closed gets re-tested without
   warning, in a new setting, to see whether the fix held or the old belief crept back. A relapse reopens
   that ground: record its terms back to `taught` and re-teach before the next arc builds on it.
