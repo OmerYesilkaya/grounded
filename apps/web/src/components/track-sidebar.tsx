@@ -1,5 +1,6 @@
 import { Link, useParams } from "@tanstack/react-router";
 import { useTracks } from "@/lib/tracks";
+import { AccountMenu } from "./account-menu";
 import { cn } from "@/lib/utils";
 
 const PHASE_LABEL: Record<string, string> = {
@@ -11,7 +12,7 @@ const PHASE_LABEL: Record<string, string> = {
 };
 
 /** The track list: the "typographic index" from the prototype (design §9.2). */
-export function TrackSidebar() {
+export function TrackSidebar({ email }: { email: string }) {
   const tracks = useTracks();
   const params = useParams({ strict: false });
 
@@ -71,6 +72,9 @@ export function TrackSidebar() {
           <p className="py-2.5 text-[12.5px] text-subtle-foreground">No tracks yet.</p>
         )}
       </nav>
+      <div className="shrink-0 border-t px-1.5 py-1.5">
+        <AccountMenu email={email} />
+      </div>
     </aside>
   );
 }
