@@ -183,7 +183,9 @@ about, test and debug.
   the app's own messages. Errors are serialized field by field (type, message, stack frames, a
   provider's status and error body, the cause chain), never whole: an SDK error carries the request,
   and so the prompt. A message that quotes content (a failed JSON parse of the model's output) is
-  withheld.
+  withheld. A test runs a session through the real model caller, with a failing call and an
+  unparseable reply, and asserts that its key, sealed key, magic-link token, title and answers never
+  appear in the log.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite. One image (`Dockerfile`) runs both processes: the API by
   default, the worker with `node --import tsx src/worker.ts`. The API runs its TypeScript through tsx
