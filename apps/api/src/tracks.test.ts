@@ -1,5 +1,15 @@
 import { ATTACHMENT_LIMITS, initialSession } from "@grounded/core";
-import { eq, learningSessions, lessons, trackFiles, tracks, users } from "@grounded/db";
+import {
+  eq,
+  learningSessions,
+  lessons,
+  sessionEvents,
+  terms,
+  trackFiles,
+  tracks,
+  usageEvents,
+  users,
+} from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
@@ -454,5 +464,67 @@ describe("the track list", () => {
       "Touched yesterday",
       "Untouched for a month",
     ]);
+  });
+});
+
+describe("deleting a track", () => {
+  const withFiles = async (cookie: string) => {
+    const body = new FormData();
+    body.set("goal", "How software works");
+    body.append("files", new File([PNG.slice()], "whiteboard.png"));
+    body.append("files", new File([DOCX.slice()], "notes.docx"));
+    const response = await t.request("/api/tracks", { method: "POST", cookie, body });
+    return ((await response.json()) as TrackRow).id;
+  };
+  const remove = (cookie: string, trackId: string) =>
+    t.request(`/api/tracks/${trackId}`, { method: "DELETE", cookie });
+
+  it("deletes everything in it and its files' bytes, and keeps the learner's usage", async () => {
+    const cookie = await signedIn();
+    const userId = await learnerId();
+    const trackId = await withFiles(cookie);
+    const keys = (await t.db.select().from(trackFiles).where(eq(trackFiles.trackId, trackId))).map(
+      (file) => file.storageKey,
+    );
+    const sessionId = await sessionAt(userId, trackId, 1, { terms: [["working copy"]] });
+    await t.db.insert(terms).values({ trackId, term: "working copy", status: "taught" });
+    await t.db.insert(sessionEvents).values({ sessionId, type: "state", data: initialSession() });
+    await t.db.insert(usageEvents).values({
+      userId,
+      provider: "anthropic",
+      model: "m",
+      purpose: "lesson",
+      inputTokens: 10,
+      outputTokens: 20,
+    });
+    const kept = await trackAt(userId, "Another track", 2);
+
+    expect((await remove(cookie, trackId)).status).toBe(204);
+    expect(await t.db.select().from(tracks).where(eq(tracks.id, trackId))).toEqual([]);
+    expect(
+      await t.db.select().from(learningSessions).where(eq(learningSessions.trackId, trackId)),
+    ).toEqual([]);
+    expect(await t.db.select().from(lessons).where(eq(lessons.sessionId, sessionId))).toEqual([]);
+    expect(
+      await t.db.select().from(sessionEvents).where(eq(sessionEvents.sessionId, sessionId)),
+    ).toEqual([]);
+    expect(await t.db.select().from(terms).where(eq(terms.trackId, trackId))).toEqual([]);
+    expect(await t.db.select().from(trackFiles).where(eq(trackFiles.trackId, trackId))).toEqual([]);
+    expect(keys).toHaveLength(2);
+    expect(t.files.keys().filter((key) => keys.includes(key))).toEqual([]);
+    expect(await t.db.select().from(usageEvents)).toHaveLength(1);
+    expect((await trackList(cookie)).map((track) => track.id)).toEqual([kept]);
+  });
+
+  it("is only for the track's learner", async () => {
+    const cookie = await signedIn();
+    const trackId = await withFiles(cookie);
+    await invite(t.db, "eve@example.com");
+    const eve = await t.signIn("eve@example.com");
+    expect((await remove(eve, trackId)).status).toBe(404);
+    expect((await remove(eve, "not-an-id")).status).toBe(404);
+    expect(await t.db.select().from(tracks).where(eq(tracks.id, trackId))).toHaveLength(1);
+    expect((await remove(cookie, trackId)).status).toBe(204);
+    expect((await remove(cookie, trackId)).status).toBe(404);
   });
 });

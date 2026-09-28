@@ -1,4 +1,4 @@
-import { asc, eq, inArray, trackFiles, tracks, type Db } from "@grounded/db";
+import { and, asc, eq, inArray, trackFiles, tracks, type Db } from "@grounded/db";
 import { v7 as uuidv7 } from "uuid";
 import { log } from "../log.js";
 import type { Attachment } from "./attachments.js";
@@ -56,6 +56,38 @@ export async function createTrack(
       log.warn({ trackId, left }, "files of a track that wasn't created are left in the store");
     throw error;
   }
+}
+
+/**
+ * Deletes a learner's track (design §4.5): the row, and by cascade everything in it (sessions and
+ * their lessons, messages and events, terms, the fix-list, file rows, the imported lesson), then its
+ * files' bytes, which the database can't reach. The rows go first, so no row ever names bytes that
+ * are gone; bytes that can't be deleted are logged and left, reachable by nothing. False when the
+ * learner has no such track.
+ */
+export async function deleteTrack(
+  db: Db,
+  store: FileStore,
+  { userId, trackId }: { userId: string; trackId: string },
+): Promise<boolean> {
+  const keys = await db.transaction(async (tx) => {
+    const files = await tx
+      .select({ key: trackFiles.storageKey })
+      .from(trackFiles)
+      .innerJoin(tracks, eq(tracks.id, trackFiles.trackId))
+      .where(and(eq(trackFiles.trackId, trackId), eq(tracks.userId, userId)));
+    const deleted = await tx
+      .delete(tracks)
+      .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)))
+      .returning({ id: tracks.id });
+    return deleted.length ? files.map((f) => f.key) : null;
+  });
+  if (!keys) return false;
+  const removed = await Promise.allSettled(keys.map((key) => store.delete(key)));
+  const left = removed.filter((r) => r.status === "rejected").length;
+  if (left) log.warn({ trackId, left }, "files of a deleted track are left in the store");
+  log.info({ files: keys.length }, "track deleted");
+  return true;
 }
 
 /** The tracks' files, by track, in the order they were attached; what the browser may see of them. */

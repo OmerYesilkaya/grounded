@@ -6,7 +6,7 @@ import { z } from "zod";
 import type { JobQueue } from "../engine/queue.js";
 import { readAttachments, type UploadedFile } from "../files/attachments.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
-import { createTrack } from "../files/track-files.js";
+import { createTrack, deleteTrack } from "../files/track-files.js";
 import { addLogContext } from "../log.js";
 import { trackList } from "../track-list.js";
 
@@ -132,4 +132,17 @@ export function registerTrackRoutes(
 
   /** The track list (design §9.2): every track with its items, the most recently active first. */
   app.get("/api/tracks", async (c) => c.json(await trackList(db, c.get("user").id)));
+
+  /**
+   * Deletes a track with everything in it and its files' bytes (design §4.5). A job still queued or
+   * running on it ends quietly (engine/gone.ts).
+   */
+  app.delete("/api/tracks/:id", async (c) => {
+    const trackId = c.req.param("id");
+    if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    addLogContext({ trackId });
+    const deleted = await deleteTrack(db, files, { userId: c.get("user").id, trackId });
+    if (!deleted) return c.json({ error: "Not found." }, 404);
+    return c.body(null, 204);
+  });
 }

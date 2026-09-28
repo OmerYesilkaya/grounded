@@ -17,7 +17,8 @@ config value.
 **v1**
 
 - Sign-in (allowlist + magic link), key entry, provider/model choice.
-- Tracks; the full session loop (probe → plan → lesson → inline checks → homework → close).
+- Tracks (created and deleted by the learner); the full session loop (probe → plan → lesson →
+  inline checks → homework → close).
 - Lessons rendered by our own block renderer (no HTML), with asides as margin cards.
 - Homework (typed kinds, image upload, review on submit), arc exams, the final.
 - Learner profile (teaching notes, used in every call; visible and editable) and simple per-track stats.
@@ -405,8 +406,19 @@ about, test and debug.
   contents aren't known. The first session's lesson and later calls carry it without its files, so
   the phase budgets (§4.4) hold: the budget fixture carries a summary of about 3,300 characters.
 - **A learner can download their own files** (`GET /api/tracks/:id/files/:fileId`), always as an
-  attachment with `nosniff`, never shown inline. Deleting a track (#26) must delete its files from the
-  store too; the rows go with the track by cascade, the bytes don't.
+  attachment with `nosniff`, never shown inline.
+- **A learner can delete a track** (decided 2026-09-29, #26; `DELETE /api/tracks/:id`,
+  `deleteTrack` in `apps/api/src/files/track-files.ts`). The track row goes, and by cascade
+  everything in it: sessions with their messages, events, lessons and check threads, terms and their
+  events and edges, the fix-list, `track_files` rows, the imported lesson. Then its files' bytes are
+  deleted from the store, which the database can't reach; rows first, so no row ever names bytes
+  that are gone, and bytes that can't be deleted are logged and left, reachable by nothing.
+  `usage_events` stay: they belong to the learner, not the track, and record what was spent.
+  **A job on the track** (a lesson being written, a check being graded, the track being named) is
+  not waited for or cancelled: one still queued doesn't start, and one running stops at its next
+  write, since what it adds has nothing left to belong to, and ends as done rather than failed,
+  nobody being left to tell (`apps/api/src/engine/gone.ts`). The model call in flight still
+  finishes and is paid for; it is recorded in `usage_events` like any other.
 
 ## 5. Data model
 
