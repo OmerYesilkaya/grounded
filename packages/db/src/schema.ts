@@ -133,6 +133,11 @@ export const usageEvents = pgTable(
     /** Failed calls are recorded too, with the kind of failure the learner was shown. */
     status: text("status").$type<"ok" | "error">().notNull().default("ok"),
     errorKind: text("error_kind"),
+    /**
+     * How long this attempt took, from the request to its last part (a stream's finish) or its
+     * failure. Null for calls recorded before it was measured.
+     */
+    durationMs: integer("duration_ms"),
     createdAt: createdAt(),
   },
   (table) => [index("usage_events_user_time").on(table.userId, table.createdAt)],

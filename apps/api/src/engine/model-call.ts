@@ -110,9 +110,11 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       const apiKey = vault.open(credential.sealedKey, request.userId);
       const limits = limitsFor(request.purpose);
 
+      /** Records one attempt: its usage, how it ended and how long it took since startedAt. */
       const record = async (
         usage: LanguageModelV4Usage | null,
         errorKind: ProviderErrorKind | null,
+        startedAt: number,
       ) => {
         await db.insert(usageEvents).values({
           userId: request.userId,
@@ -124,32 +126,42 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           outputTokens: usage?.outputTokens.total ?? 0,
           status: errorKind ? "error" : "ok",
           errorKind,
+          durationMs: Date.now() - startedAt,
         });
       };
       /** Logs and records a failed attempt; returns the error with the learner's plain message. */
-      const failed = async (error: unknown, deadline: Deadline): Promise<ProviderCallError> => {
+      const failed = async (
+        error: unknown,
+        deadline: Deadline,
+        startedAt: number,
+      ): Promise<ProviderCallError> => {
         const converted = providerErrorFrom(provider, error);
         // The learner sees a plain message; the operator needs the cause (never the learner's text).
         console.error(
           `model call failed: ${provider}/${modelId} (${request.purpose}) after ${(deadline.elapsedMs / 1000).toFixed(1)} s → ${converted.kind}: ${describeFailure(error)}`,
         );
-        await record(null, converted.kind);
+        await record(null, converted.kind, startedAt);
         return converted;
       };
       /**
        * Runs the call, retrying retryable failures here rather than in the SDK: a retry gets only the
        * time the call has left, and whatever fails reaches the job as a ProviderCallError (the SDK
        * would wrap it in a RetryError). A timeout is final, and the caller's own abort passes
-       * through unchanged, unrecorded: it is not a provider failure.
+       * through unchanged, unrecorded: it is not a provider failure. Returns the result with the start
+       * of the attempt that produced it.
        */
-      const attempt = async <T>(deadline: Deadline, run: () => PromiseLike<T>): Promise<T> => {
+      const attempt = async <T>(
+        deadline: Deadline,
+        run: () => PromiseLike<T>,
+      ): Promise<{ result: T; startedAt: number }> => {
         for (let retry = 0; ; retry++) {
+          const startedAt = Date.now();
           try {
-            return await deadline.race(run());
+            return { result: await deadline.race(run()), startedAt };
           } catch (error) {
             deadline.unwatch();
             if (deadline.callerAborted()) throw error;
-            const converted = await failed(error, deadline);
+            const converted = await failed(error, deadline, startedAt);
             const delay = retryDelayMs * 2 ** retry;
             const retryable = APICallError.isInstance(error) && error.isRetryable;
             if (!retryable || retry >= CALL_RETRIES || deadline.remainingMs <= delay)
@@ -175,10 +187,10 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);
             try {
-              const result = await attempt(deadline, () =>
+              const { result, startedAt } = await attempt(deadline, () =>
                 model.doGenerate({ ...params, abortSignal: deadline.signal }),
               );
-              await record(result.usage, null);
+              await record(result.usage, null, startedAt);
               return result;
             } finally {
               deadline.dispose();
@@ -186,9 +198,9 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           },
           wrapStream: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.streamMs);
-            let result;
+            let connected;
             try {
-              result = await attempt(deadline, () => {
+              connected = await attempt(deadline, () => {
                 deadline.watch(limits.thinkMs);
                 return model.doStream({ ...params, abortSignal: deadline.signal });
               });
@@ -196,6 +208,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
               deadline.dispose();
               throw error;
             }
+            const { result, startedAt } = connected;
             const reader = result.stream.getReader();
             // The connection's watch carries on until the first part: it has thinkMs in all.
             let silence: number | undefined;
@@ -203,12 +216,12 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             const finish = async (usage: LanguageModelV4Usage) => {
               if (recorded) return;
               recorded = true;
-              await record(usage, null);
+              await record(usage, null, startedAt);
             };
             const fail = async (error: unknown) => {
               if (recorded) return providerErrorFrom(provider, error);
               recorded = true;
-              return failed(error, deadline);
+              return failed(error, deadline, startedAt);
             };
             // Pulled, so the watch covers only the wait for the model, never a slow reader.
             const stream = new ReadableStream<LanguageModelV4StreamPart>({

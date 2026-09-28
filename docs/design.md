@@ -190,7 +190,9 @@ about, test and debug.
   and is logged and recorded. Retries of retryable failures happen in the middleware too, only
   within the time the call has left, so a learner never waits past the limit.
 - **Usage** (input/output/cached tokens, model, purpose) is recorded for every call from day one and
-  shown simply per session and per month.
+  shown simply per session and per month. Each attempt also records its duration (`duration_ms`,
+  from the request to a stream's finish or the failure), so the effect of caching and reasoning
+  effort shows per purpose.
 - **Prompts are ordered stable-first** (`assembleSystemPrompt` in `packages/core/src/prompt.ts`), so
   a provider can reuse the cached start of the previous call: the phase's method sections, then the
   track's slowly changing state (subject and language, plan, term list, borrowed terms, fix-list,

@@ -387,6 +387,70 @@ describe("model call time limits", () => {
   });
 });
 
+describe("call duration", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("records how long a call took, each attempt on its own", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    // A clock the model moves: the first attempt takes 1 s and fails, the retry takes 2 s.
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    let calls = 0;
+    const slow = new MockLanguageModelV4({
+      doGenerate: () => {
+        if (++calls === 1) {
+          now += 1000;
+          return Promise.reject(networkError());
+        }
+        now += 2000;
+        return Promise.resolve(reply("Done."));
+      },
+    });
+    const { caller } = callerWith(slow, { ...tight, generateMs: 60_000 });
+    const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+    await generateText({ model, prompt: "grade" });
+
+    const events = await t.db.select().from(usageEvents);
+    // The retry's own time, not counting the first attempt's.
+    expect(events.map((e) => [e.status, e.durationMs]).sort()).toEqual([
+      ["error", 1000],
+      ["ok", 2000],
+    ]);
+  });
+
+  it("records a stream's time up to its finish", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const streaming = new MockLanguageModelV4({
+      // Built when the call starts, so its pause falls inside the call.
+      doStream: () =>
+        Promise.resolve({
+          stream: paced(
+            [
+              { type: "text-start", id: "t" },
+              { type: "text-delta", id: "t", delta: "One" },
+              40,
+              { type: "text-delta", id: "t", delta: " two." },
+              { type: "text-end", id: "t" },
+              { type: "finish", finishReason: finish, usage },
+            ],
+            "close",
+          ),
+        }),
+    });
+    const { caller } = callerWith(streaming);
+    const model = await caller.model({ userId, purpose: "probe", role: "strong" });
+
+    expect(await streamText({ model, prompt: "hi" }).text).toBe("One two.");
+
+    const [event] = await t.db.select().from(usageEvents);
+    expect(event?.durationMs).toBeGreaterThanOrEqual(35);
+  });
+});
+
 describe("reasoning effort per purpose", () => {
   it("thinks little for the small structured records, and leaves every other call at the default", async () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
