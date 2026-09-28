@@ -195,8 +195,11 @@ about, test and debug.
   processes stop gently on `SIGTERM`: the API ends its streams (browsers reconnect and replay), the
   worker finishes its jobs. Postgres needs a direct connection, not a transaction-mode pooler: jobs
   and streams rely on `LISTEN/NOTIFY`.
-- **Railway now**: a Postgres database and two services from this repo, `api` and `worker`, each
-  pointed at its config file in `railway/`. Setup steps are in the README.
+- **Railway now**, described in `.railway/railway.ts` (Railway's infrastructure as code; its older
+  per-service config files are closed to new services) and applied with `railway config apply`: a
+  Postgres database and two services built from the image, `@grounded/api` and `@grounded/worker`, all
+  in one region so queries don't cross an ocean. A push to `main` deploys both once CI passes; no watch
+  patterns, since any change can affect either. Secrets stay on Railway (`preserve()` in the file).
 - **Every row is owned by a user; ids are UUIDv7.**
 
 ### 4.3 Auth and keys
