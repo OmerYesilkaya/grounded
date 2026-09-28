@@ -79,7 +79,9 @@ export function CheckCard({
             ),
           )}
           {progress.grading && (
-            <div className="text-[13px] text-subtle-foreground">Checking your answer…</div>
+            <div className="text-[13px] text-subtle-foreground">
+              <span className="text-shimmer">Checking your answer…</span>
+            </div>
           )}
         </div>
       )}

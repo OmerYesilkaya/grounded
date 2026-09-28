@@ -131,7 +131,18 @@ describe("LessonView: answering a check", () => {
       s1: { status: "open", thread: [{ from: "learner", text: "5" }], grading: true },
     });
     expect(screen.getByRole("textbox", { name: "Your answer" })).toBeDisabled();
-    expect(screen.getByText("Checking your answer…")).toBeInTheDocument();
+    expect(screen.getByText("Checking your answer…")).toHaveClass("text-shimmer");
+  });
+
+  it("stops shimmering once the verdict is in", () => {
+    renderLesson({
+      s1: {
+        status: "open",
+        thread: [{ from: "learner", text: "5" }, tutor("Close.", "missed")],
+      },
+    });
+    expect(screen.queryByText("Checking your answer…")).toBeNull();
+    expect(screen.getByText("Not quite there yet")).not.toHaveClass("text-shimmer");
   });
 
   it("offers pausing or continuing when the idea is still shaky", async () => {

@@ -407,6 +407,9 @@ A refined "typographic index":
   late-rendering blocks and a growing composer keep the latest line above the composer. A learner
   who scrolls up to reread stays put, with a "Jump to latest" button; sending goes to the bottom.
   Scrolls glide, except under reduced motion.
+- Labels for work in progress ("Thinking…", the activity line, "Checking your answer…") shimmer: a
+  band of light sweeps through the letters themselves, never outside them; plain text under reduced
+  motion, and never on finished text.
 
 ### 9.4 Phones (requirements; not prototyped)
 

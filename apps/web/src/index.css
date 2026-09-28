@@ -98,6 +98,36 @@
   }
 }
 
+/* In-progress labels ("Thinking…", "Checking your answer…"): a band of light sweeps through the
+   glyphs themselves. The gradient runs from the element's own text colour (currentColor, since only
+   the fill is made transparent) to --foreground and back, clipped to the text, so nothing paints
+   outside the letters and the layout is untouched. Put it on an inline or fit-content element: the
+   band spans the element's box. Under reduced motion it stays plain text in its own colour. */
+@utility text-shimmer {
+  @media (prefers-reduced-motion: no-preference) {
+    background-image: linear-gradient(
+      90deg,
+      currentColor 40%,
+      var(--foreground) 50%,
+      currentColor 60%
+    );
+    background-size: 300% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: shimmer 2s linear infinite;
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
 @layer base {
   * {
     @apply border-border;
