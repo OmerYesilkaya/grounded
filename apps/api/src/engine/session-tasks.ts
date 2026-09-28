@@ -38,7 +38,8 @@ import { systemMessages } from "./call-options.js";
 import { writeChatMessage } from "./chat.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
-import type { JobQueue } from "./queue.js";
+import { addLogContext } from "../log.js";
+import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import { applyActions, loadTrackContext } from "./track-state.js";
 
@@ -206,6 +207,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     async (payload) => {
       const job = payload as SessionJob;
       try {
+        const { userId, trackId } = await loadSession(db, job.sessionId);
+        addLogContext({ userId, trackId });
         await run(job);
       } catch (error) {
         await onFailure?.(job);
@@ -215,6 +218,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           : "Something went wrong on our side. Try again in a moment.";
         await publish(db, job.sessionId, "error", { message });
         if (!known) throw error;
+        reportHandledFailure(error);
       }
     };
 

@@ -11,6 +11,7 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
+import { log, withLogContext } from "../log.js";
 import { messagesBeingWritten } from "./chat.js";
 import { publish, runningActivities } from "./events.js";
 import { applyEvent, loadSession } from "./session-store.js";
@@ -51,21 +52,17 @@ export async function recoverAbandonedWork(db: Db): Promise<RecoveredSession[]> 
     .where(isNull(learningSessions.closedAt));
   const recovered: RecoveredSession[] = [];
   for (const { id } of open) {
-    const result = await unlessWorkedOn(db, id, () => recoverSession(db, id));
-    if (result) recovered.push(result);
+    const result = await withLogContext({ sessionId: id }, () =>
+      unlessWorkedOn(db, id, () => recoverSession(db, id)),
+    );
+    if (!result) continue;
+    // One line per session: what the job that died left half-done.
+    const { sessionId, ...what } = result;
+    log.warn({ sessionId, ...what }, "recovered a session a dead job left half-done");
+    recovered.push(result);
   }
+  log.info({ open: open.length, recovered: recovered.length }, "recovery done");
   return recovered;
-}
-
-/** One line for the log. */
-export function describeRecovery(r: RecoveredSession): string {
-  const what = [
-    r.messages > 0 && `retracted ${String(r.messages)} unfinished message(s)`,
-    r.activities > 0 && `ended ${String(r.activities)} running activit(ies)`,
-    r.checks.length > 0 && `asked for the answer to ${r.checks.join(", ")} again`,
-    r.lesson && "marked the unfinished lesson failed",
-  ].filter((part) => part !== false);
-  return `recovered session ${r.sessionId}: ${what.join("; ")}`;
 }
 
 /** Recovers one session no live job is working on; null when nothing was left half-done. */

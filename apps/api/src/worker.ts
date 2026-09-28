@@ -5,11 +5,13 @@ import { createLanguageModel } from "@grounded/providers";
 import { createDemoModels } from "./dev/demo-models.js";
 import { createModelCaller } from "./engine/model-call.js";
 import { createJobQueue, migrateQueue, startWorker } from "./engine/queue.js";
-import { describeRecovery, recoverAbandonedWork } from "./engine/recovery.js";
+import { recoverAbandonedWork } from "./engine/recovery.js";
 import { createTasks } from "./engine/tasks.js";
 import { readEnv } from "./env.js";
+import { log, setLogService } from "./log.js";
 
 /** The worker process: runs generation jobs, separately from the API (design §4.2). */
+setLogService("worker");
 const env = readEnv();
 const { db } = createDb(env.DATABASE_URL);
 const vault = createKeyVault({
@@ -20,7 +22,7 @@ const queue = createJobQueue(env.DATABASE_URL);
 
 // Before taking jobs, clean up after workers that died mid-job.
 await migrateQueue(env.DATABASE_URL);
-for (const recovered of await recoverAbandonedWork(db)) console.log(describeRecovery(recovered));
+await recoverAbandonedWork(db);
 
 const runner = await startWorker(
   env.DATABASE_URL,
@@ -37,12 +39,13 @@ const runner = await startWorker(
     concurrency: 4,
     // Without its work locks, this worker's running jobs look dead to recovery: exit, and be recovered.
     onLocksLost: () => {
-      console.error("worker lost the connection holding its work locks; exiting");
+      log.fatal("exiting: the next worker start recovers what this one was doing");
       process.exit(1);
     },
   },
 );
-console.log(
+log.info(
+  { concurrency: 4, demoModels: env.DEMO_MODELS === "true" },
   env.DEMO_MODELS === "true" ? "worker running with DEMO models (no real calls)" : "worker running",
 );
 const stop = () => {

@@ -1,6 +1,7 @@
 import { sql, type Db } from "@grounded/db";
 import type { TaskList } from "graphile-worker";
 import postgres from "postgres";
+import { log } from "../log.js";
 
 /*
  * Which sessions a live job is working on. graphile-worker can't say: a job whose worker died stays
@@ -34,7 +35,9 @@ export function createWorkLocks(connectionString: string, onLost: () => void): W
     max: 1,
     max_lifetime: null,
     onclose: () => {
-      if (!closing) onLost();
+      if (closing) return;
+      log.error("the connection holding this worker's work locks closed");
+      onLost();
     },
   });
   return {

@@ -1,9 +1,17 @@
-import { describe, expect, it, onTestFinished } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { invite } from "./allowlist.js";
 import { captureLogs, type LogFields } from "./log.js";
+import { createFlows, FIRST_QUESTION } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
+import { scriptedModels } from "./test/scripted-models.js";
 
-const t = createTestHarness();
+const models = scriptedModels();
+const t = createTestHarness({ models: models.access });
+const { learner } = createFlows(t, models);
+
+beforeEach(() => {
+  models.reset();
+});
 
 /** Everything logged from here to the end of the test, at every level. */
 function logs() {
@@ -48,5 +56,26 @@ describe("request lines", () => {
     );
     expect(token).toBeTruthy();
     expect(captured.text()).not.toContain(token);
+  });
+
+  it("carry the request id into the jobs it queues", async () => {
+    const captured = logs();
+    const { cookie, trackId } = await learner();
+    models.script("probe", { text: FIRST_QUESTION });
+    const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
+    const { id: sessionId } = (await started.json()) as { id: string };
+    await t.waitFor(() =>
+      Promise.resolve(
+        withMsg(captured.lines, "job finished").some((l) => l.sessionId === sessionId),
+      ),
+    );
+
+    const requestId = started.headers.get("x-request-id");
+    const job = captured.lines.filter((l) => l.task === "probe-turn");
+    expect(job.map((l) => l.message)).toEqual(
+      expect.arrayContaining(["job started", "job finished"]),
+    );
+    for (const line of job)
+      expect(line).toMatchObject({ requestId, sessionId, jobId: expect.any(String) as string });
   });
 });

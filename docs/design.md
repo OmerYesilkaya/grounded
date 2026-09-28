@@ -162,9 +162,15 @@ about, test and debug.
   `warn`, `error`, `silent`; tests are silent). Every line carries the ids of the context it was
   written in, kept in an `AsyncLocalStorage` rather than passed around: a request's `requestId` (a
   proxy's `x-request-id` is kept, and the response answers with it) and the `userId`, `sessionId`
-  and `trackId` it touches. The API writes one line per request (method, route, path without its
-  query, status, duration), with the reason for a 4xx or 5xx; an error no handler caught is logged
-  with its cause chain and answered with a plain 500.
+  and `trackId` it touches. A job's lines carry its `jobId`, `task`, `sessionId` (and `stepId`), its
+  session's `userId` and `trackId`, and the `requestId` of the request that queued it, so a job
+  traces back to the click that started it. The API writes one line per request (method, route, path
+  without its query, status, duration), with the reason for a 4xx or 5xx; an error no handler caught
+  is logged with its cause chain and answered with a plain 500. Each job logs its start (and how
+  long it waited) and its end: finished, or failed with the error's cause chain and its duration
+  (`handled: true` when the learner was told and the job counts as done). graphile-worker's warnings
+  and errors go through the same logger, its chatter at `debug`; recovery logs one line per session
+  it cleaned up.
   **Never logged:** keys (plain or sealed), magic-link tokens outside development, or anything a
   learner or the tutor wrote, the track's title included: lines hold ids, counts, issue codes and
   the app's own messages. Errors are serialized field by field (type, message, stack frames, a
