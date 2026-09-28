@@ -780,6 +780,8 @@ and whenever `method.md` changes. Built after the first working session.
 
 - Product name: **Grounded**.
 - Omer's manual ChatGPT test of `test/method.md`: passed.
+- Omer's quality test of the Anthropic models (Opus 5.5, Sonnet 5, Haiku 4.5): passed (2026-09-28);
+  they are offered in production.
 - The method changes in §3.2: approved.
 - Cost: Omer's measurement puts it at minimal with GPT-6 Luna; acceptable to proceed. Per-model cost is
   still recorded (§4.4) and reviewed as the model list grows.

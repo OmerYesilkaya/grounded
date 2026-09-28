@@ -18,28 +18,31 @@ export interface ModelEntry {
 
 export const MODELS: readonly ModelEntry[] = [
   {
+    // Passed Omer's quality test (2026-09-28).
     id: "claude-opus-5-5",
     provider: "anthropic",
     label: "Claude Opus 5.5",
     roles: ["strong"],
     price: { input: 4, cachedInput: 0.2, output: 20 },
-    gate: "pending",
+    gate: "manual",
   },
   {
+    // Passed Omer's quality test (2026-09-28).
     id: "claude-sonnet-5",
     provider: "anthropic",
     label: "Claude Sonnet 5",
     roles: ["strong"],
     price: { input: 2, cachedInput: 0.2, output: 10 },
-    gate: "pending",
+    gate: "manual",
   },
   {
+    // Passed Omer's quality test (2026-09-28).
     id: "claude-haiku-4-5-20251001",
     provider: "anthropic",
     label: "Claude Haiku 4.5",
     roles: ["cheap"],
     price: { input: 1, cachedInput: 0.1, output: 5 },
-    gate: "pending",
+    gate: "manual",
   },
   {
     // Tested by Omer with the chat-app method and costed as acceptable (2026-09-27).

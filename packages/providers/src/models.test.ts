@@ -12,12 +12,16 @@ describe("model list", () => {
   });
 
   it("offers only evaluated models unless ungated ones are allowed", () => {
-    const gated = offeredModels("anthropic", { includeUngated: false }).map((m) => m.id);
-    const all = offeredModels("anthropic", { includeUngated: true }).map((m) => m.id);
-    expect(gated).toEqual(
-      MODELS.filter((m) => m.provider === "anthropic" && m.gate !== "pending").map((m) => m.id),
-    );
-    expect(all.length).toBeGreaterThanOrEqual(gated.length);
+    for (const provider of ["anthropic", "openai", "google"] as const) {
+      const gated = offeredModels(provider, { includeUngated: false });
+      const all = offeredModels(provider, { includeUngated: true });
+      expect(gated.every((m) => m.gate !== "pending" && m.roles.includes("strong"))).toBe(true);
+      expect(all.map((m) => m.id)).toEqual(expect.arrayContaining(gated.map((m) => m.id)));
+    }
+    expect(offeredModels("anthropic", { includeUngated: false }).map((m) => m.id)).toEqual([
+      "claude-opus-5-5",
+      "claude-sonnet-5",
+    ]);
     expect(offeredModels("openai", { includeUngated: false }).map((m) => m.id)).toContain(
       "gpt-6-luna",
     );
