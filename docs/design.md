@@ -646,6 +646,8 @@ A refined "typographic index":
 - Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat), Notable for the
   wordmark only.
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
+- Sharp, not soft: corners stay tight (a 6px base radius; small controls 2–4px). Circles stay only
+  for dots and icon buttons.
 - Colour tokens defined once; Mermaid's theme generated from them.
 - Streamed text appears as if written: the page reveals it at a reading pace (~90 characters a
   second, faster when far behind, always caught up within 1.5 s), fading in the newest words; a
