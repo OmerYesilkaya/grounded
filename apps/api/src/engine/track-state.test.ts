@@ -836,3 +836,159 @@ describe("loadTrackContext: in a session", () => {
     expect(context.terms).toEqual([{ term: "memory", status: "planned", restsOn: [] }]);
   });
 });
+
+describe("borrowed terms (#54)", () => {
+  /** The learner's second track, "Operating systems", holding "process" and "thread". */
+  const withOtherTrack = async () => {
+    const trackId = await newTrack();
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    const [other] = await t.db
+      .insert(tracks)
+      .values({
+        userId: track?.userId ?? "",
+        title: "Operating systems",
+        goal: "Operating systems",
+      })
+      .returning();
+    const otherId = other?.id ?? "";
+    await applyActions(
+      t.db,
+      otherId,
+      [
+        { type: "add-planned-term", term: "process", restsOn: [] },
+        { type: "set-term-status", term: "process", status: "confirmed", evidence: "Said so." },
+        { type: "set-term-status", term: "thread", status: "assumed", evidence: "Knew it." },
+        { type: "add-planned-term", term: "scheduler", restsOn: [] },
+      ],
+      { source: "check s1" },
+    );
+    return { trackId, otherId };
+  };
+
+  it("borrows a term held in another track, in this track's words, and plans on it", async () => {
+    const { trackId } = await withOtherTrack();
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        // Resting on a term borrowed later in the batch.
+        { type: "add-planned-term", term: "race condition", restsOn: ["iş parçacığı"] },
+        { type: "borrow-term", term: "iş parçacığı", from: "Thread" },
+        { type: "borrow-term", term: "process", from: "process" },
+      ],
+      { source: "plan" },
+    );
+    expect(result).toEqual({ ok: true });
+
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.borrowed).toEqual([
+      { term: "iş parçacığı", fromTrack: "Operating systems", as: "thread" },
+      { term: "process", fromTrack: "Operating systems" },
+    ]);
+    expect(context.terms).toEqual([
+      { term: "race condition", status: "planned", restsOn: ["iş parçacığı"] },
+    ]);
+    expect(context.current).toEqual([
+      { term: "iş parçacığı", status: "borrowed" },
+      { term: "process", status: "borrowed" },
+      { term: "race condition", status: "planned" },
+    ]);
+  });
+
+  it("rejects a term no other track holds, and keeps a term's own status here", async () => {
+    const { trackId } = await withOtherTrack();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "process", restsOn: [] },
+        { type: "set-term-status", term: "process", status: "taught", evidence: "Half." },
+      ],
+      { source: "plan" },
+    );
+    const rejected = await applyActions(
+      t.db,
+      trackId,
+      [{ type: "borrow-term", term: "scheduler", from: "scheduler" }],
+      { source: "plan" },
+    );
+    expect(rejected).toEqual({
+      ok: false,
+      errors: [
+        `"scheduler" isn't held in any of the learner's other tracks; plan "scheduler" as a term to teach instead.`,
+      ],
+    });
+
+    const kept = await applyActions(
+      t.db,
+      trackId,
+      [{ type: "borrow-term", term: "process", from: "process" }],
+      { source: "plan" },
+    );
+    expect(kept).toEqual({ ok: true });
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.borrowed).toEqual([]);
+    expect(context.current).toEqual([{ term: "process", status: "taught" }]);
+  });
+
+  it("demotes a borrowed term that didn't hold here only, and notes why on the track it came from", async () => {
+    const { trackId, otherId } = await withOtherTrack();
+    await applyActions(t.db, trackId, [{ type: "borrow-term", term: "thread", from: "thread" }], {
+      source: "plan",
+    });
+    await applyActions(
+      t.db,
+      trackId,
+      [{ type: "set-term-status", term: "thread", status: "taught", evidence: "Mixed it up." }],
+      { source: "check s2" },
+    );
+
+    const here = await loadTrackContext(t.db, trackId);
+    expect(here.borrowed).toEqual([]);
+    expect(here.terms).toEqual([{ term: "thread", status: "taught", restsOn: [] }]);
+    const there = await loadTrackContext(t.db, otherId);
+    expect(there.current).toContainEqual({ term: "thread", status: "assumed" });
+    const events = await t.db
+      .select()
+      .from(termEvents)
+      .where(eq(termEvents.source, "another track"));
+    expect(events.map((e) => [e.fromStatus, e.toStatus, e.evidence])).toEqual([
+      [
+        "assumed",
+        "assumed",
+        `Didn't hold in "How software works", which borrowed it: Mixed it up.`,
+      ],
+    ]);
+  });
+
+  it("offers the plan what the other tracks hold, never a term borrowed there", async () => {
+    const { trackId, otherId } = await withOtherTrack();
+    await applyActions(
+      t.db,
+      trackId,
+      [{ type: "set-term-status", term: "memory", status: "assumed", evidence: "Knew it." }],
+      { source: "check s1" },
+    );
+    // The other track borrows "memory" from this one: it isn't offered back.
+    const borrowed = await applyActions(
+      t.db,
+      otherId,
+      [{ type: "borrow-term", term: "memory", from: "memory" }],
+      { source: "plan" },
+    );
+    expect(borrowed).toEqual({ ok: true });
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    const [session] = await t.db
+      .insert(learningSessions)
+      .values({ trackId, userId: track?.userId ?? "", state: initialSession() })
+      .returning();
+    const sessionId = session?.id ?? "";
+
+    const planning = await loadTrackContext(t.db, trackId, { sessionId, phase: "plan" });
+    expect(planning.heldElsewhere).toEqual([
+      { track: "Operating systems", terms: ["process", "thread"] },
+    ]);
+    const lesson = await loadTrackContext(t.db, trackId, { sessionId, phase: "lesson" });
+    expect(lesson.heldElsewhere).toBeUndefined();
+  });
+});

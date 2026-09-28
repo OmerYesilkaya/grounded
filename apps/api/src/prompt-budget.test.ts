@@ -1,12 +1,14 @@
 import type { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import { initialSession, loadMethod, type SessionState } from "@grounded/core";
-import { checkMessages, eq, learningSessions, lessons } from "@grounded/db";
+import { checkMessages, eq, learningSessions, lessons, terms, tracks } from "@grounded/db";
 import type { JobHelpers } from "graphile-worker";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAsideTasks } from "./engine/aside-tasks.js";
 import { createAside, recordAsideMessage } from "./engine/asides.js";
 import { estimateTokens, PROMPT_BUDGETS, type BudgetedPhase } from "./engine/prompt-budget.js";
 import { createSessionTasks } from "./engine/session-tasks.js";
+import { loadSession } from "./engine/session-store.js";
+import { HELD_ELSEWHERE_LIMIT } from "./engine/track-state.js";
 import { offlineWeb } from "./media/web.js";
 import { planAttempt, probeGoesOn } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -104,6 +106,23 @@ const scenarios: Record<
   },
   plan: {
     state: { ...initialSession(), phase: "plan" },
+    // Another track, whose held terms the plan's prompt lists for borrowing (#54): more of them
+    // than it lists.
+    setup: async (sessionId) => {
+      const { userId } = await loadSession(t.db, sessionId);
+      const [other] = await t.db
+        .insert(tracks)
+        .values({ userId, title: "Operating systems", goal: "Operating systems" })
+        .returning();
+      await t.db.insert(terms).values(
+        Array.from({ length: HELD_ELSEWHERE_LIMIT + 50 }, (_, i) => ({
+          trackId: other?.id ?? "",
+          term: `scheduling idea number ${String(i + 1)}`,
+          status: "confirmed" as const,
+        })),
+      );
+      return undefined;
+    },
     script: () => {
       models.script(
         "plan",

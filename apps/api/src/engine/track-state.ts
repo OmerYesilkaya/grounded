@@ -14,6 +14,7 @@ import {
   eq,
   fixListItems,
   inArray,
+  isNull,
   learningSessions,
   sql,
   termDependencies,
@@ -25,6 +26,7 @@ import {
   type TermStatus,
   type TrackPlan,
 } from "@grounded/db";
+import type { TrackTerm } from "@grounded/content";
 import { content, log } from "../log.js";
 
 export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
@@ -48,11 +50,19 @@ export interface TrackShape {
   openFixItems: Set<string>;
   arcs: Arcs;
   notes: string;
+  /** What the learner holds in their other tracks, by lowercased name: what borrow-term may borrow. */
+  heldElsewhere: Map<string, HeldTerm>;
 }
 
 /** An empty track: the shape a batch is validated against before the track exists (an import). */
 export function emptyTrackShape(): TrackShape {
-  return { terms: new Map(), openFixItems: new Set(), arcs: [], notes: "" };
+  return {
+    terms: new Map(),
+    openFixItems: new Set(),
+    arcs: [],
+    notes: "",
+    heldElsewhere: new Map(),
+  };
 }
 
 /** The edits only a call that saw the whole plan may make (`rewritePlan` on applyActions). */
@@ -167,7 +177,8 @@ export type RejectionCode =
   | "unplaced-term"
   | "not-a-heading"
   | "no-section"
-  | "ambiguous-section";
+  | "ambiguous-section"
+  | "not-held-elsewhere";
 
 /** An edit of a batch that doesn't validate: which one (its index in the batch) and why. */
 export interface Rejection {
@@ -262,6 +273,24 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       case "add-plan-notes":
         shape.notes = addedNotes(shape.notes, action.notes);
         break;
+      case "borrow-term": {
+        if (!shape.heldElsewhere.has(key(action.from))) {
+          reject(
+            "not-held-elsewhere",
+            `"${action.from}" isn't held in any of the learner's other tracks; plan "${action.term}" as a term to teach instead.`,
+          );
+          break;
+        }
+        // A term this track already has keeps its own status unless it is only planned (#54).
+        const here = known.get(key(action.term));
+        if (!here || here.status === "planned")
+          known.set(key(action.term), {
+            id: here?.id ?? null,
+            term: here?.term ?? action.term.trim(),
+            status: "confirmed",
+          });
+        break;
+      }
     }
   });
   for (const { index, arc, term } of placed) {
@@ -295,9 +324,14 @@ async function checkBatch(
   batch: readonly TrackAction[],
   options: { source: string; rewritePlan?: boolean },
 ): Promise<CheckedBatch> {
-  const actions = options.rewritePlan
+  const allowed = options.rewritePlan
     ? batch
     : batch.filter((action) => !PLAN_REWRITES.has(action.type));
+  // Borrowed terms first, so a planned term may rest on one borrowed later in the batch.
+  const actions = [
+    ...allowed.filter((a) => a.type === "borrow-term"),
+    ...allowed.filter((a) => a.type !== "borrow-term"),
+  ];
   if (actions.length < batch.length)
     log.info(
       { trackId, source: options.source, dropped: batch.length - actions.length },
@@ -316,7 +350,11 @@ async function checkBatch(
     openFixItems: new Set(openFixItems.map((f) => f.text)),
     arcs: track?.plan.arcs ?? [],
     notes: track?.plan.notes ?? "",
+    heldElsewhere: new Map(),
   };
+  if (actions.some((a) => a.type === "borrow-term"))
+    for (const held of (await heldElsewhere(db, trackId)).toReversed())
+      shape.heldElsewhere.set(key(held.term), held);
   const rejected = validateActions(shape, actions).flatMap((r) => {
     const action = actions[r.index];
     return action ? [{ ...r, action }] : [];
@@ -390,7 +428,7 @@ async function writeBatch(
   await db.transaction(async (tx) => {
     // The plan as it is now, held until the batch's changes to it are written.
     const [locked] = await tx
-      .select({ plan: tracks.plan })
+      .select({ plan: tracks.plan, title: tracks.title })
       .from(tracks)
       .where(eq(tracks.id, trackId))
       .for("update");
@@ -398,6 +436,7 @@ async function writeBatch(
     let planChanged = false;
     const idOf = new Map(existing.map((t) => [key(t.term), t.id]));
     const statusOf = new Map(existing.map((t) => [key(t.term), t.status]));
+    const borrowedFrom = new Map(existing.map((t) => [key(t.term), t.borrowedFrom]));
     const record = async (
       termId: string,
       from: TermStatus | null,
@@ -447,9 +486,66 @@ async function writeBatch(
             await addTerm(action.term, action.status, evidence);
             break;
           }
-          await tx.update(terms).set({ status: action.status }).where(eq(terms.id, termId));
+          // A status recorded here makes a borrowed term this track's own (#54).
+          await tx
+            .update(terms)
+            .set({ status: action.status, borrowedFrom: null })
+            .where(eq(terms.id, termId));
           await record(termId, statusOf.get(key(action.term)) ?? null, action.status, evidence);
           statusOf.set(key(action.term), action.status);
+          const source = borrowedFrom.get(key(action.term));
+          borrowedFrom.set(key(action.term), null);
+          // It didn't hold here: demoted here only, and the track it came from hears why, in its
+          // term's history (method.md, "Borrowed terms"); its status there was earned there.
+          if (source && action.status === "taught") {
+            const [held] = await tx
+              .select({ status: terms.status })
+              .from(terms)
+              .where(eq(terms.id, source));
+            if (held)
+              await tx.insert(termEvents).values({
+                termId: source,
+                fromStatus: held.status,
+                toStatus: held.status,
+                evidence: `Didn't hold in "${locked?.title ?? "another track"}", which borrowed it: ${evidence}`,
+                source: "another track",
+              });
+          }
+          break;
+        }
+        case "borrow-term": {
+          const held = shape.heldElsewhere.get(key(action.from));
+          if (!held) break;
+          const evidence = `Held in "${held.track}"${key(held.term) === key(action.term) ? "" : ` as "${held.term}"`}.`;
+          const termId = idOf.get(key(action.term));
+          if (!termId) {
+            const [row] = await tx
+              .insert(terms)
+              .values({
+                trackId,
+                term: action.term.trim(),
+                status: "confirmed",
+                borrowedFrom: held.id,
+              })
+              .returning();
+            if (!row) throw new Error("term insert returned nothing");
+            idOf.set(key(row.term), row.id);
+            statusOf.set(key(row.term), "confirmed");
+            borrowedFrom.set(key(row.term), held.id);
+            await record(row.id, null, "confirmed", evidence);
+            break;
+          }
+          if (statusOf.get(key(action.term)) !== "planned") {
+            log.info({ trackId, source }, "borrow-term skipped: the term has its own status here");
+            break;
+          }
+          await tx
+            .update(terms)
+            .set({ status: "confirmed", borrowedFrom: held.id })
+            .where(eq(terms.id, termId));
+          await record(termId, "planned", "confirmed", evidence);
+          statusOf.set(key(action.term), "confirmed");
+          borrowedFrom.set(key(action.term), held.id);
           break;
         }
         case "add-fix-item":
@@ -534,13 +630,18 @@ function addedNotes(notes: string, added: string): string {
 export interface TrackContext
   extends
     Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
-    Pick<PromptContext, "termsNotListed" | "brought"> {
+    Pick<PromptContext, "termsNotListed" | "brought" | "heldElsewhere"> {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
   /** What the learner wrote they want to learn, as typed (the session's opening turn). */
   goal: string;
-  /** Every term with its status now: what the server validates the tutor's writing against. */
-  current: { term: string; status: TermStatus }[];
+  /**
+   * Every term with its status now: what the server validates the tutor's writing against. A
+   * borrowed term is usable as held.
+   */
+  current: TrackTerm[];
+  /** Terms borrowed from the learner's other tracks, as they are now (design §5). */
+  borrowed: NonNullable<PromptContext["borrowed"]>;
 }
 
 /**
@@ -566,11 +667,38 @@ export async function loadTrackContext(
       id: terms.id,
       term: terms.term,
       status: terms.status,
+      borrowedFrom: terms.borrowedFrom,
       existed: sql<boolean>`${terms.createdAt} < ${began}`,
     })
     .from(terms)
     .where(eq(terms.trackId, trackId))
     .orderBy(terms.createdAt, terms.id);
+  // Borrowed terms are listed apart, as they are now: the plan borrows them, once a session, as the
+  // plan itself changes (design §4.4).
+  const sourceIds = rows.flatMap((r) => (r.borrowedFrom ? [r.borrowedFrom] : []));
+  const sources = new Map(
+    sourceIds.length
+      ? (
+          await db
+            .select({ id: terms.id, term: terms.term, track: tracks.title })
+            .from(terms)
+            .innerJoin(tracks, eq(tracks.id, terms.trackId))
+            .where(inArray(terms.id, sourceIds))
+        ).map((s) => [s.id, s])
+      : [],
+  );
+  const borrowed = rows.flatMap((r) => {
+    const source = r.borrowedFrom ? sources.get(r.borrowedFrom) : undefined;
+    if (!source) return [];
+    return [
+      {
+        term: r.term,
+        fromTrack: source.track,
+        ...(key(source.term) === key(r.term) ? {} : { as: source.term }),
+      },
+    ];
+  });
+  const isBorrowed = new Set(borrowed.map((b) => key(b.term)));
   // Each term's status as the session began: the last change recorded before then.
   const then = new Map(
     options.sessionId && rows.length
@@ -630,6 +758,7 @@ export async function loadTrackContext(
   const listed: TermRow[] = [];
   const changes = { terms: [] as TermRow[], fixList: [] as FixItem[] };
   for (const r of rows) {
+    if (isBorrowed.has(key(r.term))) continue;
     const row = { term: r.term, status: r.status, restsOn: restsOn.get(r.id) ?? [] };
     if (!r.existed) {
       changes.terms.push(row);
@@ -652,7 +781,10 @@ export async function loadTrackContext(
     if (status !== f.status) changes.fixList.push(item);
   }
 
-  const current = rows.map((r) => ({ term: r.term, status: r.status }));
+  const current = rows.map((r): TrackTerm => ({
+    term: r.term,
+    status: isBorrowed.has(key(r.term)) ? "borrowed" : r.status,
+  }));
   const files = await db
     .select({ name: trackFiles.name })
     .from(trackFiles)
@@ -667,6 +799,7 @@ export async function loadTrackContext(
     plan: track.plan,
     fixList: fixItems,
     current,
+    borrowed,
   };
   if (!options.sessionId) return whole;
 
@@ -683,14 +816,61 @@ export async function loadTrackContext(
     (phase !== undefined && NOTES_PHASES.includes(phase)) || track.leftOff === null
       ? { notes: track.plan.notes }
       : { leftOff: track.leftOff };
+  // The plan may borrow what the learner holds in their other tracks instead of teaching it (#54).
+  const elsewhere = phase === "plan" ? await heldElsewhere(db, trackId) : [];
+  const byTrack = Map.groupBy(elsewhere.slice(0, HELD_ELSEWHERE_LIMIT), (h) => h.track);
   return {
     ...whole,
     terms: view.terms,
     termsNotListed: view.termsNotListed,
     plan: { arcs: view.arcs, ...notes },
     changes,
+    ...(byTrack.size
+      ? {
+          heldElsewhere: [...byTrack].map(([track, held]) => ({
+            track,
+            terms: held.map((h) => h.term),
+          })),
+        }
+      : {}),
   };
 }
+
+/** A term the learner holds in another of their tracks (design §5). */
+export interface HeldTerm {
+  id: string;
+  term: string;
+  track: string;
+}
+
+/**
+ * What the learner holds in their tracks other than this one: terms confirmed or assumed there on
+ * that track's own evidence (a term borrowed there is listed by the track it came from). The most
+ * recently active track first, each track's terms in its term list's order.
+ */
+export async function heldElsewhere(db: Db, trackId: string): Promise<HeldTerm[]> {
+  const owner = db.select({ userId: tracks.userId }).from(tracks).where(eq(tracks.id, trackId));
+  return db
+    .select({ id: terms.id, term: terms.term, track: tracks.title })
+    .from(terms)
+    .innerJoin(tracks, eq(tracks.id, terms.trackId))
+    .where(
+      and(
+        sql`${tracks.userId} = (${owner})`,
+        sql`${tracks.id} <> ${trackId}`,
+        inArray(terms.status, ["confirmed", "assumed"]),
+        isNull(terms.borrowedFrom),
+      ),
+    )
+    .orderBy(desc(tracks.updatedAt), tracks.id, terms.createdAt, terms.id);
+}
+
+/**
+ * How many held terms of other tracks the plan's prompt lists at most (about 2,000 tokens), the
+ * most recently active tracks first: what it may borrow (#54). The server checks a borrow against
+ * all of them.
+ */
+export const HELD_ELSEWHERE_LIMIT = 300;
 
 /** How many earlier sessions count as recent: the terms they touched are listed (design §4.4). */
 export const RECENT_SESSIONS = 3;

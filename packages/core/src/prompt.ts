@@ -76,7 +76,16 @@ export interface PromptContext {
   terms?: readonly TermRow[];
   /** The track's terms the term list leaves out (design §4.4), counted by status. */
   termsNotListed?: Partial<Record<TermStatus, number>>;
-  borrowed?: readonly { term: string; fromTrack: string }[];
+  /**
+   * Terms held in another of the learner's tracks and borrowed here (design §5): usable as held.
+   * `as` is the other track's name for it, where it differs (another language).
+   */
+  borrowed?: readonly { term: string; fromTrack: string; as?: string }[];
+  /**
+   * What the learner holds in their other tracks, for the plan to borrow instead of teaching again
+   * (borrow-term): the plan's calls only.
+   */
+  heldElsewhere?: readonly { track: string; terms: readonly string[] }[];
   /**
    * notes: the plan's notes as written. leftOff: "where you left off", the close's compact summary
    * of them, which a call carries in their place (design §4.4).
@@ -159,7 +168,8 @@ export function assemblePrompt(method: Method, phase: Phase, context: PromptCont
  */
 function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
-  const { track, brought, terms, termsNotListed, borrowed, plan, fixList, teachingNotes } = context;
+  const { track, brought, terms, termsNotListed, borrowed, heldElsewhere, plan, fixList } = context;
+  const { teachingNotes } = context;
   if (track) {
     const language =
       track.language ??
@@ -197,7 +207,21 @@ function renderTrack(context: PromptContext): string {
       [
         "## Borrowed terms",
         "",
-        ...borrowed.map((b) => `- ${b.term} (confirmed in ${b.fromTrack})`),
+        "Held in another of the learner's tracks: use them as confirmed, and don't teach them again.",
+        "",
+        ...borrowed.map(
+          (b) => `- ${b.term} (confirmed in ${b.fromTrack}${b.as ? `, as "${b.as}"` : ""})`,
+        ),
+      ].join("\n"),
+    );
+  }
+  if (heldElsewhere?.length) {
+    parts.push(
+      [
+        "## Held in the learner's other tracks",
+        "",
+        "Where this track's path needs one of these ideas with the same meaning, borrow it (borrow-term: the term as this track names it, in its teaching language, and as the other track spells it) instead of planning to teach it. A name that means something else here is not the same idea.",
+        ...heldElsewhere.flatMap((t) => ["", `### ${t.track}`, "", termNames(t.terms)]),
       ].join("\n"),
     );
   }

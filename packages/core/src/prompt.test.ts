@@ -76,6 +76,18 @@ describe("assemblePrompt", () => {
     expect(prompt).toContain("- Abstract ideas land after one concrete example first.");
   });
 
+  it("names a borrowed term's other name, and lists what other tracks hold for the plan", () => {
+    const prompt = assemblePrompt(method, "plan", {
+      borrowed: [{ term: "iş parçacığı", fromTrack: "Operating systems", as: "thread" }],
+      heldElsewhere: [{ track: "Operating systems", terms: ["process", "thread"] }],
+    });
+    expect(prompt).toContain('- iş parçacığı (confirmed in Operating systems, as "thread")');
+    expect(prompt).toContain(
+      "## Held in the learner's other tracks\n\nWhere this track's path needs one of these ideas",
+    );
+    expect(prompt).toContain("### Operating systems\n\nprocess · thread");
+  });
+
   it("sets term names apart, so one that holds commas reads as one term", () => {
     const long = "index; B-tree (pages → rows); measured 4 levels at 10M, 5 pages per lookup";
     const prompt = assemblePrompt(method, "lesson", {

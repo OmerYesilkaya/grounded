@@ -294,7 +294,8 @@ about, test and debug.
   a provider can reuse the cached start of the previous call: the method's `all` sections (the same
   for every phase; `method.md` keeps them all at its top, so they are one leading run), then the
   phase's own method sections, then the track's slowly changing state (subject and language, plan,
-  term list, borrowed terms, fix-list, teaching notes, in that order), then what only this call
+  term list, borrowed terms, for the plan's calls what the other tracks hold, fix-list, teaching
+  notes, in that order), then what only this call
   carries (the step being checked, research notes, the probe's conclusion), then the conversation.
   The track's state renders the same way on every load (terms and fix-list in creation order, what
   a term rests on in the term list's order), so two calls of a track and phase are byte-identical
@@ -367,7 +368,7 @@ about, test and debug.
   ~10,000; plan ~30,000 → ~14,000 (every arc's terms); lesson and homework ~30,500 → ~10,500;
   check ~28,300 → ~8,300; close (recap, sweep, where you left off) ~29,000 → ~21,000 (the whole plan and
   the notes as written). The term sweep then got the session's conversation too (#17): ~19,900 →
-  ~22,000, about what the recap sends. Budgets sit about a fifth above: probe 12,000, plan 17,000, lesson and
+  ~22,000, about what the recap sends. Budgets sit about a fifth above: probe 12,000, plan 20,000 (17,000 until the plan carried up to 300 terms held in other tracks, #54: ~15,000 → ~17,200), lesson and
   homework 12,500, check 10,000, close 25,000. The method's sections are now the largest part
   (18–24 KB per phase), and they are the part every call reuses from the cache. An aside (#37)
   carries the whole lesson: ~13,300 with six steps of a real one's size (about 20 KB) and two
@@ -460,7 +461,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `credentials`                                    | provider, encrypted key, credential source                                                                                               |
 | `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off   |
 | `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                             |
-| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                                                                |
+| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                  |
 | `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                             |
 | `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                            |
 | `fix_list_items`                                 | the audit's misconceptions and their status                                                                                              |
@@ -478,7 +479,6 @@ Planned for v1, not built yet:
 | Table                   | Holds                                                                                                 | Issue    |
 | ----------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
 | `learner_profile_notes` | teaching notes: text, evidence refs, created/revised at; editable by the learner                      | #44      |
-| `borrowed_terms`        | term used in this track, confirmed in another                                                         | #52      |
 | `assignments`           | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
 | `submissions`           | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
 | `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
@@ -495,6 +495,32 @@ add planned term Y resting on Z, close fix-list item N) that the server validate
 changes and no event is recorded. Prompts show only part of the term list (§4.4), so a plan may
 plan a term that exists but wasn't shown; that used to reject the plan and cost a retry. The plan's
 record request says so. Everything it rests on must still be in the whole list.
+
+**Borrowed terms** (decided 2026-09-29, #54): a term the learner holds in another of their tracks
+is borrowed, usable here as held and not taught again (method.md, "Borrowed terms").
+
+- **The model proposes, the server checks.** Exact names can't decide it: a word means different
+  things in different subjects ("state" in history and in programming), and a track taught in
+  another language names the idea differently. So the plan's calls carry what the learner holds in
+  their other tracks (confirmed or assumed there on that track's own evidence; the most recently
+  active tracks first, at most 300 terms, `HELD_ELSEWHERE_LIMIT`), under "Held in the learner's
+  other tracks", and the plan's record borrows with **`borrow-term`** `{ term, from }`: `term` as this
+  track names it, `from` as the other track spells it. It is rejected (`not-held-elsewhere`) unless
+  another of the learner's tracks holds `from`, checked against all of them. Borrows are applied
+  first in their batch, so a planned term may rest on one borrowed later in it.
+- **A borrowed term is a row of this track's term list** (`terms.borrowed_from`, the term it came
+  from), not a table of its own: what rests on it, the map and every validator then work as for any
+  term. Its status is `confirmed`, with the event "Held in "Operating systems" (as "thread")." It
+  can borrow a term that is only `planned` here; a term with a status of its own here keeps it.
+  Prompts list borrowed terms apart, as they are now (the plan borrows once a session, as the plan
+  changes), under "Borrowed terms" with the track and the other name; the validators see them as
+  `borrowed`, a held status.
+- **It doesn't hold here → demoted here only.** Any status recorded for a borrowed term makes it
+  this track's own (the link is cleared). When it goes back to `taught`, the track it came from keeps
+  its status, which was earned there, and hears why: its term gets an event with its status
+  unchanged ("Didn't hold in "How software works", which borrowed it: …"), which also counts as a
+  recent touch there, so that track's next sessions list it. A borrow is taken as it was: a term
+  later demoted in its own track is not demoted where it was borrowed.
 
 A rejected edit is never dropped silently (decided 2026-09-29, #16). `validateActions` checks a batch
 against the track as each edit leaves it and returns, per rejected edit, its index, a reason the
@@ -547,7 +573,7 @@ The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes thro
 
 Which call is offered which edits (`packages/core/src/actions.ts`): the probe's decision, a check's
 verdict and an edit asked for again (`trackActionSchema`) get the term, fix-list, language and
-`add-to-arc` edits; the plan's record adds `add-plan-notes`; the close's sweep
+`add-to-arc` edits; the plan's record adds `add-plan-notes` and `borrow-term`; the close's sweep
 (`closeActionSchema`) adds `set-plan` and `edit-plan-notes`.
 
 **A session's plan never rewrites the plan** (decided 2026-09-28, #23). Its record (`planActionsSchema`)
@@ -1104,7 +1130,7 @@ progress, so a step is done when its issues are closed.
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),
-   the pictures of what rests on what (#47), research for the lesson (#51), borrowed terms (#52).
+   the pictures of what rests on what (#47), research for the lesson (#51).
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).

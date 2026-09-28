@@ -12,13 +12,14 @@ export type BudgetedPhase = Extract<
  * plan notes) with a normal session's chat (`prompt-budget.test.ts`, which fails when a change
  * pushes a call past it). Each is about a fifth above what the calls send now. Before #13's part 2
  * every one of these calls sent about 30,000.
- * - plan: the whole plan, every arc with its terms (it places its new terms in the arcs they belong to).
+ * - plan: the whole plan, every arc with its terms (it places its new terms in the arcs they belong to),
+ *   and up to 300 terms held in the learner's other tracks, to borrow (#54).
  * - close: the whole plan and the plan's notes as written, which only the close reads.
  * - aside: the whole lesson (six steps of a real one's size, about 20 KB) and two earlier asides.
  */
 export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {
   probe: 12_000,
-  plan: 17_000,
+  plan: 20_000,
   lesson: 12_500,
   check: 10_000,
   homework: 12_500,

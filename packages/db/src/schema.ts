@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  type AnyPgColumn,
   bigserial,
   boolean,
   index,
@@ -241,6 +242,14 @@ export const terms = pgTable(
       .references(() => tracks.id, { onDelete: "cascade" }),
     term: text("term").notNull(),
     status: text("status").$type<TermStatus>().notNull(),
+    /**
+     * A borrowed term (design §5): held in another of the learner's tracks, this one, and so usable
+     * here as held without being taught again. Its status is `confirmed`; any status recorded for it
+     * in this track makes it this track's own and clears the link.
+     */
+    borrowedFrom: uuid("borrowed_from").references((): AnyPgColumn => terms.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

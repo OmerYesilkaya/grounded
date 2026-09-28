@@ -1,0 +1,2 @@
+ALTER TABLE "terms" ADD COLUMN "borrowed_from" uuid;--> statement-breakpoint
+ALTER TABLE "terms" ADD CONSTRAINT "terms_borrowed_from_terms_id_fk" FOREIGN KEY ("borrowed_from") REFERENCES "public"."terms"("id") ON DELETE set null ON UPDATE no action;

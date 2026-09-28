@@ -50,6 +50,16 @@ const editPlanNotes = z.object({
   heading: z.string().min(1),
   text: z.string().nullable(),
 });
+/**
+ * Borrows a term the learner holds in another of their tracks (design §5): `term` as this track
+ * names it (in its teaching language), `from` as the other track's term list spells it. The server
+ * checks the other track holds it; the term is then usable here as held and isn't taught again.
+ */
+const borrowTerm = z.object({
+  type: z.literal("borrow-term"),
+  term: z.string().min(1),
+  from: z.string().min(1),
+});
 /** Notes for later sessions, added after the plan's notes (from a call that didn't see them). */
 const addPlanNotes = z.object({ type: z.literal("add-plan-notes"), notes: z.string() });
 
@@ -79,10 +89,12 @@ export const closeActionSchema = z.union([
 ]);
 
 /**
- * What the plan's record may return: the track actions, plus the notes it adds. A session's plan
- * never rewrites the plan (it places its terms with add-to-arc).
+ * What the plan's record may return: the track actions, plus the notes it adds and terms borrowed
+ * from the learner's other tracks. A session's plan never rewrites the plan (it places its terms
+ * with add-to-arc).
  */
 export const planActionSchema = z.union([
+  borrowTerm,
   setTermStatus,
   addPlannedTerm,
   addFixItem,
