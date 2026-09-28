@@ -86,26 +86,52 @@ export function addToArc(
   };
 }
 
+/** Why an edit was rejected, for logs that mustn't quote the term names and fix-list items it names. */
+export type RejectionCode =
+  | "unknown-term"
+  | "no-evidence"
+  | "term-exists"
+  | "unknown-rests-on"
+  | "no-open-fix-item"
+  | "no-language"
+  | "empty-arc"
+  | "unplaced-term";
+
+/** An edit of a batch that doesn't validate: which one (its index in the batch) and why. */
+export interface Rejection {
+  index: number;
+  code: RejectionCode;
+  /** What the model can act on; it quotes the edit's term names and fix-list items. */
+  reason: string;
+}
+
 /**
  * Checks a batch against the track as it would be after each edit, without writing anything. Returns
- * the reasons the model can act on; empty when the whole batch is valid. The shape is updated in place.
- * An add-to-arc's terms are checked against the term list as the whole batch leaves it, so a batch
- * may place a term before the edit that adds it.
+ * the edits that don't validate, with reasons the model can act on; empty when the whole batch is
+ * valid. The shape is updated in place by the valid edits only, so the batch without the rejected
+ * edits is valid too (an edit that needs a rejected one, like a status for a term whose adding was
+ * rejected, is rejected with it). An add-to-arc's terms are checked against the term list as the
+ * whole batch leaves it, so a batch may place a term before the edit that adds it.
  */
-export function validateActions(shape: TrackShape, actions: readonly TrackAction[]): string[] {
+export function validateActions(shape: TrackShape, actions: readonly TrackAction[]): Rejection[] {
   const { terms: known, openFixItems } = shape;
-  const errors: string[] = [];
-  const placed: { arc: string; term: string }[] = [];
-  for (const action of actions) {
+  const rejections: Rejection[] = [];
+  const placed: { index: number; arc: string; term: string }[] = [];
+  actions.forEach((action, index) => {
+    const reject = (code: RejectionCode, reason: string) => {
+      rejections.push({ index, code, reason });
+    };
     switch (action.type) {
       case "set-term-status": {
         const term = known.get(key(action.term));
         if (!term && action.status !== "assumed") {
-          errors.push(
+          reject(
+            "unknown-term",
             `"${action.term}" isn't in the term list; add it as a planned term first (or as assumed, if the learner already knew it).`,
           );
         } else if (!action.evidence.trim()) {
-          errors.push(
+          reject(
+            "no-evidence",
             `Changing "${term?.term ?? action.term}" needs the learner's words as evidence.`,
           );
         } else {
@@ -119,14 +145,18 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       }
       case "add-planned-term": {
         if (known.has(key(action.term))) {
-          errors.push(
+          reject(
+            "term-exists",
             `"${known.get(key(action.term))?.term ?? action.term}" is already in the term list.`,
           );
           break;
         }
         const missing = action.restsOn.find((r) => !known.has(key(r)));
         if (missing) {
-          errors.push(`"${action.term}" rests on "${missing}", which isn't in the term list.`);
+          reject(
+            "unknown-rests-on",
+            `"${action.term}" rests on "${missing}", which isn't in the term list.`,
+          );
           break;
         }
         known.set(key(action.term), { id: null, term: action.term.trim(), status: "planned" });
@@ -134,21 +164,22 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       }
       case "close-fix-item":
         if (!openFixItems.has(action.text))
-          errors.push(`There is no open fix-list item "${action.text}".`);
+          reject("no-open-fix-item", `There is no open fix-list item "${action.text}".`);
         else openFixItems.delete(action.text);
         break;
       case "add-fix-item":
         openFixItems.add(action.text);
         break;
       case "set-language":
-        if (!action.language.trim()) errors.push("set-language needs the name of a language.");
+        if (!action.language.trim())
+          reject("no-language", "set-language needs the name of a language.");
         break;
       case "add-to-arc":
         if (action.terms.length === 0) {
-          errors.push(`add-to-arc "${action.arc}" names no terms.`);
+          reject("empty-arc", `add-to-arc "${action.arc}" names no terms.`);
           break;
         }
-        placed.push(...action.terms.map((term) => ({ arc: action.arc, term })));
+        placed.push(...action.terms.map((term) => ({ index, arc: action.arc, term })));
         shape.arcs = addToArc(shape.arcs, action).arcs;
         break;
       case "set-plan":
@@ -157,33 +188,38 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       case "add-plan-notes":
         break;
     }
-  }
-  for (const { arc, term } of placed) {
+  });
+  for (const { index, arc, term } of placed) {
     if (!known.has(key(term)))
-      errors.push(
-        `"${term}" isn't in the term list; add it as a planned term to place it in "${arc}".`,
-      );
+      rejections.push({
+        index,
+        code: "unplaced-term",
+        reason: `"${term}" isn't in the term list; add it as a planned term to place it in "${arc}".`,
+      });
   }
-  return errors;
+  return rejections.toSorted((a, b) => a.index - b.index);
 }
 
-/**
- * Applies the model's structured edits to a track. The whole batch is validated against the track
- * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
- * on, and nothing is written.
- *
- * `rewritePlan` says whether a set-plan may replace the plan: only from a call that saw all of it,
- * every arc's terms and the notes as written (the close and the final, and an import; design §4.4).
- * From any other call a set-plan would drop what it didn't see or wasn't asked to change; it is
- * left out (logged), and the rest of the batch applies. A session's plan places its terms with
- * add-to-arc instead, and its add-plan-notes are added after the notes, for the close to fold in.
- */
-export async function applyActions(
+/** An edit of a batch applied in part that was rejected: the edit, and why. */
+export interface RejectedAction extends Rejection {
+  action: TrackAction;
+}
+
+interface CheckedBatch {
+  actions: readonly TrackAction[];
+  /** The track as the batch's valid edits leave it. */
+  shape: TrackShape;
+  existing: (typeof terms.$inferSelect)[];
+  rejected: RejectedAction[];
+}
+
+/** Checks a batch against the track as it is now (applyActions says what `rewritePlan` is). */
+async function checkBatch(
   db: Db,
   trackId: string,
   batch: readonly TrackAction[],
   options: { source: string; rewritePlan?: boolean },
-): Promise<ApplyResult> {
+): Promise<CheckedBatch> {
   const actions = options.rewritePlan
     ? batch
     : batch.filter((action) => action.type !== "set-plan");
@@ -205,22 +241,75 @@ export async function applyActions(
     openFixItems: new Set(openFixItems.map((f) => f.text)),
     arcs: track?.plan.arcs ?? [],
   };
-  const errors = validateActions(shape, actions);
-  if (errors.length > 0) {
-    // How many and which kinds of edit: the reasons quote term names and fix-list items.
+  const rejected = validateActions(shape, actions).flatMap((r) => {
+    const action = actions[r.index];
+    return action ? [{ ...r, action }] : [];
+  });
+  if (rejected.length > 0) {
+    // Which kinds of edit, and why by code: the reasons quote term names and fix-list items.
     log.warn(
       {
         trackId,
         source: options.source,
-        rejected: errors.length,
+        rejected: rejected.map((r) => ({ type: r.action.type, code: r.code })),
         actions: actions.map((a) => a.type),
-        ...content({ reasons: errors, batch: actions }),
+        ...content({ reasons: rejected.map((r) => r.reason), batch: actions }),
       },
       "track edits rejected",
     );
-    return { ok: false, errors };
   }
+  return { actions, shape, existing, rejected };
+}
 
+/**
+ * Applies the model's structured edits to a track. The whole batch is validated against the track
+ * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
+ * on, and nothing is written. (applyValidActions applies the valid part instead.)
+ *
+ * `rewritePlan` says whether a set-plan may replace the plan: only from a call that saw all of it,
+ * every arc's terms and the notes as written (the close and the final, and an import; design §4.4).
+ * From any other call a set-plan would drop what it didn't see or wasn't asked to change; it is
+ * left out (logged), and the rest of the batch applies. A session's plan places its terms with
+ * add-to-arc instead, and its add-plan-notes are added after the notes, for the close to fold in.
+ */
+export async function applyActions(
+  db: Db,
+  trackId: string,
+  batch: readonly TrackAction[],
+  options: { source: string; rewritePlan?: boolean },
+): Promise<ApplyResult> {
+  const checked = await checkBatch(db, trackId, batch, options);
+  if (checked.rejected.length > 0)
+    return { ok: false, errors: checked.rejected.map((r) => r.reason) };
+  await writeBatch(db, trackId, checked, options.source);
+  return { ok: true };
+}
+
+/**
+ * Applies the edits of a batch that validate, and returns the rest with why each was rejected
+ * (design §5): so one bad name doesn't cost the rest of what a call recorded. An edit that needs a
+ * rejected one is rejected with it. Options as for applyActions.
+ */
+export async function applyValidActions(
+  db: Db,
+  trackId: string,
+  batch: readonly TrackAction[],
+  options: { source: string; rewritePlan?: boolean },
+): Promise<{ rejected: RejectedAction[] }> {
+  const checked = await checkBatch(db, trackId, batch, options);
+  const out = new Set(checked.rejected.map((r) => r.index));
+  const actions = checked.actions.filter((_, index) => !out.has(index));
+  if (actions.length > 0) await writeBatch(db, trackId, { ...checked, actions }, options.source);
+  return { rejected: checked.rejected };
+}
+
+/** Writes a batch that validated, in one transaction. */
+async function writeBatch(
+  db: Db,
+  trackId: string,
+  { actions, shape, existing }: CheckedBatch,
+  source: string,
+): Promise<void> {
   await db.transaction(async (tx) => {
     // The plan as it is now, held until the batch's changes to it are written.
     const [locked] = await tx
@@ -240,7 +329,7 @@ export async function applyActions(
     ) => {
       await tx
         .insert(termEvents)
-        .values({ termId, fromStatus: from, toStatus: to, evidence, source: options.source });
+        .values({ termId, fromStatus: from, toStatus: to, evidence, source });
     };
 
     for (const action of actions) {
@@ -312,7 +401,7 @@ export async function applyActions(
           );
           if (placed.skipped.length > 0)
             log.info(
-              { trackId, source: options.source, skipped: placed.skipped.length },
+              { trackId, source, skipped: placed.skipped.length },
               "add-to-arc skipped terms already in an arc",
             );
           plan = { ...plan, arcs: placed.arcs };
@@ -331,7 +420,6 @@ export async function applyActions(
     }
     if (planChanged) await tx.update(tracks).set({ plan }).where(eq(tracks.id, trackId));
   });
-  return { ok: true };
 }
 
 const NOTED_WHILE_PLANNING = "### Noted while planning";

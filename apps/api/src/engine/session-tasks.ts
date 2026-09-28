@@ -6,11 +6,12 @@ import {
   planActionsSchema,
   probeDecisionSchema,
   placeChecks,
-  trackActionSchema,
+  trackActionsSchema,
   type Method,
   type Phase,
   type PromptContext,
   type SessionState,
+  type TrackAction,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import {
@@ -34,7 +35,6 @@ import {
   type Tool,
 } from "ai";
 import type { Task, TaskList } from "graphile-worker";
-import { z } from "zod";
 import { systemMessages } from "./call-options.js";
 import { alreadyHeldSoFar, checkRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
@@ -63,7 +63,13 @@ import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
-import { applyActions, loadTrackContext, type TrackContext } from "./track-state.js";
+import {
+  applyActions,
+  applyValidActions,
+  loadTrackContext,
+  type RejectedAction,
+  type TrackContext,
+} from "./track-state.js";
 
 export interface SessionTaskDependencies {
   db: Db;
@@ -95,6 +101,14 @@ const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, and any misconceptions found in the probe as fix-list items. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
+
+/** What a call hears about its rejected track edits, to send them again corrected. */
+const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
+  [
+    "(For the app; the learner doesn't see this.) Some of your track edits were rejected and not recorded; the others were recorded:",
+    ...rejected.map((r) => `- ${JSON.stringify(r.action)}: ${r.reason}`),
+    "Send these edits again, corrected, and only these. Leave out any that shouldn't be made after all.",
+  ].join("\n");
 
 /** The tutor's reply when an answer couldn't be checked, so the learner can answer again. */
 export const checkFailedText = (reason = "") =>
@@ -366,6 +380,43 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
   };
 
+  /**
+   * Records the track edits a call made alongside its real work (the probe's decision, a check's
+   * verdict; design §5): what validates is applied, and what doesn't goes back to the call once,
+   * with the reasons, and what validates of its answer is applied too. Asking again is best-effort:
+   * if it fails, what was applied stands and the rest is left out (logged).
+   */
+  const recordEdits = async (options: {
+    sessionId: string;
+    trackId: string;
+    actions: readonly TrackAction[];
+    source: string;
+    /** The activity the call's own work showed. */
+    label: string;
+    /** Asks the call again, with the rejected edits and why; returns the edits it sends instead. */
+    askAgain: (feedback: string) => Promise<readonly TrackAction[]>;
+  }) => {
+    const { trackId, source } = options;
+    const { rejected } = await applyValidActions(db, trackId, options.actions, { source });
+    if (rejected.length === 0) return;
+    log.info({ source, rejected: rejected.length }, "track edits rejected; asking again");
+    try {
+      const again = await withActivity(db, options.sessionId, options.label, () =>
+        options.askAgain(rejectedFeedback(rejected)),
+      );
+      const still = again.length
+        ? (await applyValidActions(db, trackId, again, { source })).rejected
+        : [];
+      if (still.length > 0)
+        log.warn(
+          { source, codes: still.map((r) => r.code) },
+          "track edits rejected again; left out",
+        );
+    } catch (error) {
+      log.warn({ source, err: error }, "asking again for rejected track edits failed; left out");
+    }
+  };
+
   /** Runs a job; `onFailure` settles what it leaves behind before the error is reported. */
   const guarded =
     (
@@ -422,8 +473,26 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             }),
         );
         if (output.actions.length) {
-          await applyActions(db, session.trackId, output.actions, {
+          await recordEdits({
+            sessionId,
+            trackId: session.trackId,
+            actions: output.actions,
             source: "probe",
+            label: "Noting what your answers showed",
+            askAgain: async (feedback) =>
+              (
+                await generateText({
+                  model: decider,
+                  system: context.system,
+                  output: Output.object({ schema: trackActionsSchema }),
+                  messages: [
+                    ...context.messages,
+                    { role: "user", content: PROBE_DECISION_PROMPT },
+                    { role: "assistant", content: JSON.stringify(output) },
+                    { role: "user", content: feedback },
+                  ],
+                })
+              ).output.actions,
           });
           // The question is written with what was just recorded (the teaching language, the fix-list).
           context = await contextFor(sessionId, "probe");
@@ -563,13 +632,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           role: "strong",
         });
 
+        const request = (feedback: string) =>
+          `The learner's answer to this step's check: ${answer.text ?? ""}${feedback}`;
         const grade = (feedback: string) =>
           withActivity(db, sessionId, "Checking your answer", async () => {
             const { output } = await generateText({
               model,
               system,
               output: Output.object({ schema: checkVerdictSchema }),
-              prompt: `The learner's answer to this step's check: ${answer.text ?? ""}${feedback}`,
+              prompt: request(feedback),
             });
             return output;
           });
@@ -590,9 +661,27 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           );
         }
 
-        if (verdict.actions.length)
-          await applyActions(db, session.trackId, verdict.actions, {
+        const graded = verdict;
+        if (graded.actions.length)
+          await recordEdits({
+            sessionId,
+            trackId: session.trackId,
+            actions: graded.actions,
             source: `check ${stepId}`,
+            label: "Checking your answer",
+            askAgain: async (feedback) =>
+              (
+                await generateText({
+                  model,
+                  system,
+                  output: Output.object({ schema: trackActionsSchema }),
+                  messages: [
+                    { role: "user", content: request("") },
+                    { role: "assistant", content: JSON.stringify(graded) },
+                    { role: "user", content: feedback },
+                  ],
+                })
+              ).output.actions,
           });
         // The lesson was pitched below the learner here: kept for the calls after the lesson, and
         // countable (design §7.3).
@@ -717,24 +806,30 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           generateText({
             model,
             system,
-            output: Output.object({ schema: z.object({ actions: z.array(trackActionSchema) }) }),
+            output: Output.object({ schema: trackActionsSchema }),
             prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. A set-plan's notes replace the plan's notes in full: carry forward everything in them that still holds.${feedback}`,
           }),
         );
-        const applied = output.actions.length
-          ? await applyActions(db, session.trackId, output.actions, {
-              source: "close",
-              rewritePlan: true,
-            })
-          : { ok: true as const };
-        if (applied.ok) break;
-        if (attempt + 1 < SWEEP_ATTEMPTS)
-          log.info({ attempt: attempt + 1 }, "term sweep rejected; asking again");
-        else
-          log.warn(
-            { attempts: SWEEP_ATTEMPTS },
-            "term sweep rejected every time; closing without it",
+        if (output.actions.length === 0) break;
+        const options = { source: "close", rewritePlan: true };
+        // The last attempt keeps what validates, so a bad edit doesn't cost the rest of the sweep.
+        if (attempt + 1 === SWEEP_ATTEMPTS) {
+          const { rejected } = await applyValidActions(
+            db,
+            session.trackId,
+            output.actions,
+            options,
           );
+          if (rejected.length > 0)
+            log.warn(
+              { attempts: SWEEP_ATTEMPTS, left: rejected.length },
+              "term sweep rejected every time; closing with the edits that validate",
+            );
+          break;
+        }
+        const applied = await applyActions(db, session.trackId, output.actions, options);
+        if (applied.ok) break;
+        log.info({ attempt: attempt + 1 }, "term sweep rejected; asking again");
         feedback = `\n\nThose edits were rejected:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nFix them.`;
       }
 

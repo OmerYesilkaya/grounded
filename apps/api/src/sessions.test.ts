@@ -246,6 +246,43 @@ describe("probe and plan", () => {
     expect((await snapshot(cookie, sessionId)).state.phase).toBe("probe");
   });
 
+  it("records what validates of the probe's edits, and asks once more for the rest, with the reasons", async () => {
+    const { cookie, sessionId, trackId } = await startedSession();
+    const decision = {
+      actions: [
+        { type: "set-language", language: "German" },
+        { type: "set-term-status", term: "variable", status: "confirmed", evidence: "a box" },
+      ],
+      finished: false,
+    };
+    const corrected = [
+      { type: "set-term-status", term: "variable", status: "assumed", evidence: "a box" },
+    ];
+    models.script("probe-decision", {
+      thenGenerate: [JSON.stringify(decision), JSON.stringify({ actions: corrected })],
+    });
+    models.script("probe", { text: "Verstanden. Was steht im Speicher?" });
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "a variable is a box" }),
+    });
+    await until(cookie, sessionId, storedMessages(3));
+
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    expect(track?.language).toBe("German");
+    expect(
+      (await t.db.select().from(terms).where(eq(terms.trackId, trackId))).map((r) => [
+        r.term,
+        r.status,
+      ]),
+    ).toEqual([["variable", "assumed"]]);
+    const calls = models.used.find((u) => u.purpose === "probe-decision")?.model.doGenerateCalls;
+    expect(JSON.stringify(calls?.[1]?.prompt)).toContain(
+      "add it as a planned term first (or as assumed, if the learner already knew it)",
+    );
+  });
+
   it("writes no probe message on the turn that ends the probe: the plan is in the plan message", async () => {
     const { cookie, sessionId } = await startedSession();
     // A model that feels done would present the plan in its probe message, if it were asked for one.

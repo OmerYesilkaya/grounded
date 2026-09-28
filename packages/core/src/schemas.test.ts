@@ -6,7 +6,7 @@ import {
   lessonOutlineSchema,
   planActionsSchema,
   probeDecisionSchema,
-  trackActionSchema,
+  trackActionsSchema,
 } from "./index.js";
 
 /**
@@ -37,7 +37,7 @@ function strictProblems(node: unknown, path = "$"): string[] {
 
 describe("model output schemas", () => {
   it.each([
-    ["track actions", z.object({ actions: z.array(trackActionSchema) })],
+    ["track actions", trackActionsSchema],
     ["check verdict", checkVerdictSchema],
     ["lesson outline", lessonOutlineSchema],
     ["probe decision", probeDecisionSchema],

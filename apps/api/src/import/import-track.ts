@@ -228,7 +228,7 @@ async function readTrack(
 
 /** What the track's validator checks, plus what an import needs: a language and exactly one plan. */
 export function importProblems(actions: readonly TrackAction[]): string[] {
-  const errors = validateActions(emptyTrackShape(), actions);
+  const errors = validateActions(emptyTrackShape(), actions).map((r) => r.reason);
   if (!actions.some((a) => a.type === "set-language"))
     errors.push("Set the teaching language (set-language).");
   const plans = actions.filter((a) => a.type === "set-plan");

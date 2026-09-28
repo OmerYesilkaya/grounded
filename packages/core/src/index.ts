@@ -33,7 +33,7 @@ export { generateLesson, lessonOutlineSchema, placeChecks } from "./lesson.js";
 export type { GenerateLessonOptions, LessonOutline, LessonResult } from "./lesson.js";
 export { loadMethod } from "./method-file.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
-export { planActionsSchema, probeDecisionSchema } from "./decisions.js";
+export { planActionsSchema, probeDecisionSchema, trackActionsSchema } from "./decisions.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";
 export {

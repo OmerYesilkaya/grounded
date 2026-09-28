@@ -2,7 +2,13 @@ import { initialSession } from "@grounded/core";
 import { eq, learningSessions, termEvents, tracks, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { createTestHarness } from "../test/harness.js";
-import { applyActions, emptyTrackShape, loadTrackContext, validateActions } from "./track-state.js";
+import {
+  applyActions,
+  applyValidActions,
+  emptyTrackShape,
+  loadTrackContext,
+  validateActions,
+} from "./track-state.js";
 
 const t = createTestHarness();
 
@@ -332,9 +338,10 @@ describe("applyActions: add-to-arc", () => {
     );
     expect(result).toEqual({
       ok: false,
+      // In the batch's order.
       errors: [
-        'add-to-arc "Networks" names no terms.',
         '"semaphore" isn\'t in the term list; add it as a planned term to place it in "Concurrency".',
+        'add-to-arc "Networks" names no terms.',
       ],
     });
     expect((await loadTrackContext(t.db, trackId)).plan).toEqual(plan);
@@ -461,9 +468,71 @@ describe("validateActions", () => {
         { type: "add-planned-term", term: "QUIC", restsOn: ["UDP"] },
       ]),
     ).toEqual([
-      `"TLS" isn't in the term list; add it as a planned term first (or as assumed, if the learner already knew it).`,
-      `"QUIC" rests on "UDP", which isn't in the term list.`,
+      {
+        index: 3,
+        code: "unknown-term",
+        reason: `"TLS" isn't in the term list; add it as a planned term first (or as assumed, if the learner already knew it).`,
+      },
+      {
+        index: 4,
+        code: "unknown-rests-on",
+        reason: `"QUIC" rests on "UDP", which isn't in the term list.`,
+      },
     ]);
+  });
+
+  it("says which edit each rejection is for, in batch order, with a code per reason", () => {
+    expect(
+      validateActions(emptyTrackShape(), [
+        { type: "add-to-arc", arc: "Networks", terms: ["TCP"] },
+        { type: "close-fix-item", text: "Never recorded" },
+        { type: "set-language", language: " " },
+        { type: "add-to-arc", arc: "Networks", terms: [] },
+      ]).map((r) => [r.index, r.code]),
+    ).toEqual([
+      [0, "unplaced-term"],
+      [1, "no-open-fix-item"],
+      [2, "no-language"],
+      [3, "empty-arc"],
+    ]);
+  });
+});
+
+describe("applyValidActions", () => {
+  it("applies what validates and returns the rest, with an edit that needs a rejected one", async () => {
+    const trackId = await newTrack();
+    const result = await applyValidActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "add-planned-term", term: "mutex", restsOn: ["semaphore"] },
+        { type: "set-term-status", term: "mutex", status: "taught", evidence: "one at a time" },
+        { type: "set-term-status", term: "memory", status: "confirmed", evidence: "holds 5" },
+        { type: "add-fix-item", text: "Thinks memory can add" },
+      ],
+      { source: "check s1" },
+    );
+
+    expect(result.rejected.map((r) => [r.index, r.code, r.action.type])).toEqual([
+      [1, "unknown-rests-on", "add-planned-term"],
+      [2, "unknown-term", "set-term-status"],
+    ]);
+    const context = await loadTrackContext(t.db, trackId);
+    expect(context.terms).toEqual([{ term: "memory", status: "confirmed", restsOn: [] }]);
+    expect(context.fixList).toEqual([{ text: "Thinks memory can add", status: "open" }]);
+  });
+
+  it("writes nothing when nothing validates", async () => {
+    const trackId = await newTrack();
+    const result = await applyValidActions(
+      t.db,
+      trackId,
+      [{ type: "close-fix-item", text: "Never recorded" }],
+      { source: "probe" },
+    );
+    expect(result.rejected).toHaveLength(1);
+    expect(await t.db.select().from(termEvents)).toEqual([]);
   });
 });
 

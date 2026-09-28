@@ -431,6 +431,26 @@ Research notes are not stored on the track yet; the first plan's notes go only i
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
 
+A rejected edit is never dropped silently (decided 2026-09-29, #16). `validateActions` checks a batch
+against the track as each edit leaves it and returns, per rejected edit, its index, a reason the
+model can act on and a code (`unknown-term`, `no-evidence`, `unknown-rests-on`, `no-open-fix-item`,
+`no-language`, `empty-arc`, `unplaced-term`, …): logs carry the codes and edit types, never the
+reasons, which quote term names. Only valid edits change the shape it checks against, so an edit
+that needs a rejected one (a status for a term whose adding was rejected) is rejected with it and
+the rest is still a valid batch. What each caller does with a rejection:
+
+- **The probe's decision and a check's verdict** (`applyValidActions`): the edits ride along with
+  the call's real work, so what validates is applied at once, and the rejected edits go back to the
+  same call once, with the reasons ("send these again, corrected, and only these"); what validates
+  of its answer is applied too, and anything still rejected is logged and left out. Asking again is
+  best-effort: if that call fails, what was applied stands. It runs only when something was
+  rejected, under the call's own activity label.
+- **The plan's record** is all or nothing (`applyActions`): a plan that can't be recorded is
+  retracted and presented again with the reasons, since the learner approves the plan as shown.
+- **The close's term sweep** is all or nothing with the reasons fed back, up to three attempts; the
+  last attempt applies what validates, so a bad edit doesn't cost the rest of the sweep.
+- **An import** is all or nothing: its edits are built to be valid.
+
 The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes through two edits
 (`apps/api/src/engine/track-state.ts`):
 

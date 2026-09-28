@@ -31,3 +31,11 @@ export const planActionsSchema = z.object({
       "Every planned term with what it rests on; this session's new planned terms placed in the plan's arcs (add-to-arc: the existing arc each belongs to, by its exact title, or a new arc only if none fits); misconceptions found in the probe as fix-list items; and anything you noted for later sessions (add-plan-notes).",
     ),
 });
+
+/**
+ * Track edits on their own: the close's term sweep, and the edits of a call asked for again after
+ * some were rejected.
+ */
+export const trackActionsSchema = z.object({
+  actions: z.array(trackActionSchema),
+});

@@ -137,6 +137,38 @@ describe("checks", () => {
     expect(checking.map((a) => a.state)).toEqual(["done"]);
   });
 
+  it("records what validates of a verdict's term edits, and asks once more for the rest", async () => {
+    const { cookie, sessionId } = await inLesson();
+    const edits = [
+      { type: "set-term-status", term: "working copy", status: "confirmed", evidence: "copied" },
+      { type: "set-term-status", term: "workng copy", status: "taught", evidence: "copied" },
+    ];
+    models.script("check", {
+      thenGenerate: [
+        JSON.stringify({
+          verdict: "landed",
+          reply: "That's it.",
+          freshQuestion: null,
+          note: null,
+          alreadyHeld: null,
+          actions: edits,
+        }),
+        // Asked again with the reasons, it withdraws the misspelt one.
+        JSON.stringify({ actions: [] }),
+      ],
+    });
+    await answer(cookie, sessionId, "s1", { text: "memory still holds 5 while it's copied" });
+    await until(cookie, sessionId, (s) => s.state.currentStep === "s2");
+
+    const stored = await t.db.select().from(terms);
+    expect(stored.find((row) => row.term === "working copy")?.status).toBe("confirmed");
+    const calls = models.used.find((u) => u.purpose === "check")?.model.doGenerateCalls;
+    expect(calls).toHaveLength(2);
+    const again = JSON.stringify(calls?.[1]?.prompt);
+    expect(again).toContain("workng copy");
+    expect(again).toContain("isn't in the term list");
+  });
+
   it("repairs a miss with a fresh question, and notes where the step leaked", async () => {
     const { cookie, sessionId } = await inLesson();
     models.script(
@@ -410,6 +442,33 @@ describe("closing the session", () => {
       );
     }
     expect(promptOf("homework")).toContain("Learner: I know this, no need to explain.");
+  });
+
+  it("keeps what validates of a term sweep rejected every time", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script(
+      "check",
+      ...["s1", "s2", "s3"].map(() => verdict({ verdict: "landed", reply: "Yes." })),
+    );
+    models.script("homework", { text: "Explain it to a friend." });
+    models.script("close", { text: "We built it." });
+    const sweep = JSON.stringify({
+      actions: [
+        { type: "set-term-status", term: "lost update", status: "confirmed", evidence: "vanishes" },
+        { type: "set-term-status", term: "nonsense", status: "confirmed", evidence: "x" },
+      ],
+    });
+    models.script("term-sweep", ...[1, 2, 3].map(() => ({ thenGenerate: [sweep] })));
+    models.script("left-off", { text: LEFT_OFF });
+    for (const id of ["s1", "s2", "s3"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+    await until(cookie, sessionId, (s) => s.state.phase === "closed");
+
+    const stored = await t.db.select().from(terms);
+    expect(stored.find((row) => row.term === "lost update")?.status).toBe("confirmed");
+    expect(stored.map((row) => row.term)).not.toContain("nonsense");
   });
 
   it("leaves no summary from before the session when this one's can't be written", async () => {
