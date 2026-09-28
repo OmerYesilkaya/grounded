@@ -131,6 +131,17 @@
   }
 }
 
+/* Highlighted code (code-block.tsx): Shiki writes both themes' colours as variables, and the page's
+   theme picks one. */
+.shiki-wrap .shiki,
+.shiki-wrap .shiki span {
+  color: var(--shiki-dark);
+}
+:root[data-theme="light"] .shiki-wrap .shiki,
+:root[data-theme="light"] .shiki-wrap .shiki span {
+  color: var(--shiki-light);
+}
+
 @layer base {
   * {
     @apply border-border;
