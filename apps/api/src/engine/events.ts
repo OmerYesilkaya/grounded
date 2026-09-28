@@ -1,6 +1,7 @@
 import { and, asc, eq, gt, lte, sessionEvents, sql, type Db } from "@grounded/db";
 import type { Sql } from "postgres";
 import { v7 as uuidv7 } from "uuid";
+import { log } from "../log.js";
 
 const CHANNEL = "session_events";
 
@@ -73,8 +74,16 @@ export async function appendEvent(
   if (!row) throw new Error("event insert returned nothing");
   // Delivered when the transaction commits, so a woken stream finds the event.
   await tx.execute(sql`select pg_notify(${CHANNEL}, ${sessionId})`);
+  // Its type and id only: the data is the session's content. Streamed pieces only when tracing.
+  log[STREAMED.has(type) ? "trace" : "debug"](
+    { sessionId, eventId: row.id, type },
+    "event appended",
+  );
   return row.id;
 }
+
+/** Events a stream sends many of, piece by piece. */
+const STREAMED = new Set(["message-delta", "activity-reasoning"]);
 
 export async function eventsAfter(db: Db, sessionId: string, afterId: number) {
   return db

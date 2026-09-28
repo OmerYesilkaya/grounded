@@ -13,6 +13,7 @@ import {
   type ProviderId,
 } from "@grounded/providers";
 import { APICallError, RetryError, wrapLanguageModel, type Tool } from "ai";
+import { log } from "../log.js";
 import {
   CALL_RETRIES,
   callLimitsFor,
@@ -110,23 +111,46 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       const apiKey = vault.open(credential.sealedKey, request.userId);
       const limits = limitsFor(request.purpose);
 
-      /** Records one attempt: its usage, how it ended and how long it took since startedAt. */
+      /**
+       * Records and logs one attempt: its usage, how it ended and how long it took since startedAt.
+       * A failure's line has the cause (status and the provider's error body, never the request).
+       */
       const record = async (
         usage: LanguageModelV4Usage | null,
-        errorKind: ProviderErrorKind | null,
+        failure: { kind: ProviderErrorKind; error: unknown; elapsedMs: number } | null,
         startedAt: number,
       ) => {
+        const durationMs = Date.now() - startedAt;
+        const tokens = {
+          inputTokens: usage?.inputTokens.total ?? 0,
+          cachedInputTokens: usage?.inputTokens.cacheRead ?? 0,
+          outputTokens: usage?.outputTokens.total ?? 0,
+        };
+        const line = {
+          userId: request.userId,
+          ...(request.trackId ? { trackId: request.trackId } : {}),
+          purpose: request.purpose,
+          role: request.role,
+          provider,
+          model: modelId,
+          ...tokens,
+          durationMs,
+        };
+        if (!failure) log.info(line, "model call");
+        else
+          log[failure.kind === "unknown" ? "error" : "warn"](
+            { ...line, errorKind: failure.kind, elapsedMs: failure.elapsedMs, err: failure.error },
+            "model call failed",
+          );
         await db.insert(usageEvents).values({
           userId: request.userId,
           provider,
           model: modelId,
           purpose: request.purpose,
-          inputTokens: usage?.inputTokens.total ?? 0,
-          cachedInputTokens: usage?.inputTokens.cacheRead ?? 0,
-          outputTokens: usage?.outputTokens.total ?? 0,
-          status: errorKind ? "error" : "ok",
-          errorKind,
-          durationMs: Date.now() - startedAt,
+          ...tokens,
+          status: failure ? "error" : "ok",
+          errorKind: failure?.kind ?? null,
+          durationMs,
         });
       };
       /** Logs and records a failed attempt; returns the error with the learner's plain message. */
@@ -136,11 +160,12 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
         startedAt: number,
       ): Promise<ProviderCallError> => {
         const converted = providerErrorFrom(provider, error);
-        // The learner sees a plain message; the operator needs the cause (never the learner's text).
-        console.error(
-          `model call failed: ${provider}/${modelId} (${request.purpose}) after ${(deadline.elapsedMs / 1000).toFixed(1)} s → ${converted.kind}: ${describeFailure(error)}`,
+        const cause = RetryError.isInstance(error) ? error.lastError : error;
+        await record(
+          null,
+          { kind: converted.kind, error: cause, elapsedMs: deadline.elapsedMs },
+          startedAt,
         );
-        await record(null, converted.kind, startedAt);
         return converted;
       };
       /**
@@ -267,13 +292,4 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       });
     },
   };
-}
-
-/** Status and the provider's error body, for the operator's log. */
-function describeFailure(error: unknown): string {
-  const cause = RetryError.isInstance(error) ? error.lastError : error;
-  if (APICallError.isInstance(cause)) {
-    return `${String(cause.statusCode ?? "no status")} ${(cause.responseBody ?? cause.message).slice(0, 500)}`;
-  }
-  return cause instanceof Error ? cause.message : String(cause);
 }

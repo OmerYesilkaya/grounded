@@ -170,7 +170,14 @@ about, test and debug.
   long it waited) and its end: finished, or failed with the error's cause chain and its duration
   (`handled: true` when the learner was told and the job counts as done). graphile-worker's warnings
   and errors go through the same logger, its chatter at `debug`; recovery logs one line per session
-  it cleaned up.
+  it cleaned up. The engine logs state transitions (the event, from → to), rejected events with the
+  state machine's reason, validation failures and rewrites by issue code (chat messages, check
+  replies, lesson outlines and steps), lesson steps that failed or were kept without their broken
+  parts, rejected track edits (how many and which kinds: the reasons quote term names), plan
+  retractions and retries, term-sweep retries, and every model call attempt: purpose, role,
+  provider, model, tokens and `durationMs` (the timing `usage_events` records), and for a failure
+  its kind and cause (status and the provider's error body). Appended events are logged at `debug`
+  by type and id, streamed pieces at `trace`.
   **Never logged:** keys (plain or sealed), magic-link tokens outside development, or anything a
   learner or the tutor wrote, the track's title included: lines hold ids, counts, issue codes and
   the app's own messages. Errors are serialized field by field (type, message, stack frames, a

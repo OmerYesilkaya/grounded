@@ -3,7 +3,7 @@ import type { LessonStep, TrackTerm } from "@grounded/content";
 import { simulateReadableStream } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
-import { generateLesson, type LessonOutline } from "./index.js";
+import { generateLesson, type GenerateLessonOptions, type LessonOutline } from "./index.js";
 
 const usage = {
   inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
@@ -74,7 +74,7 @@ const S1 = step(
 const S2 = step("Two workers", "Both copy 5; this is a race condition.", "Why 6 and not 7?");
 const S3 = step("An aside on speed", "It happens rarely.", "Why can it hide for months?");
 
-async function run(model: MockLanguageModelV4) {
+async function run(model: MockLanguageModelV4, options: Partial<GenerateLessonOptions> = {}) {
   const emitted: LessonStep[] = [];
   const result = await generateLesson({
     model,
@@ -84,6 +84,7 @@ async function run(model: MockLanguageModelV4) {
     onStep: (s) => {
       emitted.push(s);
     },
+    ...options,
   });
   return { result, emitted };
 }
@@ -110,7 +111,7 @@ describe("generateLesson", () => {
 
   it("reports each step as its writing starts, and each rewrite", async () => {
     const brokenS2 = "## Two workers\n\nBoth copy 5; this is a race condition.";
-    const starts: [number, number][] = [];
+    const starts: [number, number, string[]][] = [];
     await generateLesson({
       model: new MockLanguageModelV4({
         doGenerate: [text(JSON.stringify(OUTLINE)), text(S2)],
@@ -120,15 +121,15 @@ describe("generateLesson", () => {
       request: "Teach why counters lose updates.",
       terms: TERMS,
       onStep: () => undefined,
-      onStepStart: (index, attempt) => {
-        starts.push([index, attempt]);
+      onStepStart: (index, attempt, issues) => {
+        starts.push([index, attempt, issues.map((i) => i.code)]);
       },
     });
     expect(starts).toEqual([
-      [0, 0],
-      [1, 0],
-      [2, 0],
-      [1, 1],
+      [0, 0, []],
+      [1, 0, []],
+      [2, 0, []],
+      [1, 1, ["lesson/missing-check"]],
     ]);
   });
 
@@ -140,9 +141,15 @@ describe("generateLesson", () => {
       doGenerate: [text(JSON.stringify(bad)), text(JSON.stringify(OUTLINE))],
       doStream: streamOf([S1, S2, S3].join("\n\n")),
     });
-    const { emitted } = await run(model);
+    const rejected: [number, number][] = [];
+    const { emitted } = await run(model, {
+      onOutlineRejected: (attempt, problems) => {
+        rejected.push([attempt, problems]);
+      },
+    });
 
     expect(emitted).toHaveLength(3);
+    expect(rejected).toEqual([[1, 1]]);
     expect(promptText(model.doGenerateCalls[1])).toContain(
       'Step 1 introduces "mutex", which isn\'t a planned term.',
     );

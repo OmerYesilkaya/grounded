@@ -5,7 +5,8 @@ import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import { APICallError } from "@ai-sdk/provider";
 import { setTimeout as sleep } from "node:timers/promises";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { captureLogs } from "../log.js";
 import { createTestHarness } from "../test/harness.js";
 import type { CallLimits } from "./call-limits.js";
 import { systemMessages } from "./call-options.js";
@@ -56,7 +57,9 @@ function callerWith(model: MockLanguageModelV4, limits?: CallLimits) {
 }
 
 describe("callModel", () => {
-  it("builds the model with the decrypted key and records the call's usage", async () => {
+  it("builds the model with the decrypted key, records the call's usage and logs it", async () => {
+    const logs = captureLogs();
+    onTestFinished(logs.restore);
     const userId = await userWithKey("openai", "gpt-6-luna");
     const { caller, built } = callerWith(
       new MockLanguageModelV4({ doGenerate: reply("Got it. Next one.") }),
@@ -81,6 +84,20 @@ describe("callModel", () => {
         e.status,
       ]),
     ).toEqual([["openai", "gpt-6-luna", "probe", 1200, 1000, 80, "ok"]]);
+    const [line] = logs.lines.filter((l) => l.message === "model call");
+    expect(line).toMatchObject({
+      level: "info",
+      userId,
+      purpose: "probe",
+      role: "strong",
+      provider: "openai",
+      model: "gpt-6-luna",
+      inputTokens: 1200,
+      cachedInputTokens: 1000,
+      outputTokens: 80,
+      durationMs: events[0]?.durationMs,
+    });
+    expect(logs.text()).not.toContain("sk-secret-1234");
   });
 
   it("records usage for streamed calls when the stream finishes", async () => {
@@ -109,7 +126,9 @@ describe("callModel", () => {
     });
   });
 
-  it("turns a provider failure into the plain message and records the failed call", async () => {
+  it("turns a provider failure into the plain message, records it and logs its cause", async () => {
+    const logs = captureLogs();
+    onTestFinished(logs.restore);
     const userId = await userWithKey("openai", "gpt-6-luna");
     const failing = new MockLanguageModelV4({
       doGenerate: () =>
@@ -117,7 +136,8 @@ describe("callModel", () => {
           new APICallError({
             message: "Incorrect API key provided",
             url: "https://api.openai.com/v1/responses",
-            requestBodyValues: {},
+            // The request holds the prompt, so the learner's words: never logged.
+            requestBodyValues: { input: "what the learner wrote" },
             statusCode: 401,
             responseBody: JSON.stringify({ error: { code: "invalid_api_key" } }),
             isRetryable: false,
@@ -144,6 +164,19 @@ describe("callModel", () => {
       status: "error",
       errorKind: "invalid-key",
     });
+    const [line] = logs.lines.filter((l) => l.message === "model call failed");
+    expect(line).toMatchObject({
+      level: "warn",
+      purpose: "check",
+      errorKind: "invalid-key",
+      err: {
+        type: "AI_APICallError",
+        message: "Incorrect API key provided",
+        status: 401,
+        body: JSON.stringify({ error: { code: "invalid_api_key" } }),
+      },
+    });
+    expect(logs.text()).not.toContain("what the learner wrote");
   });
 
   it("uses the provider's cheap model for the cheap role", async () => {
@@ -198,12 +231,9 @@ async function streamParts(result: ReturnType<typeof streamText>) {
 }
 
 describe("model call time limits", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
   it("fails a hung call with the plain message, records it and logs it", async () => {
-    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const logs = captureLogs();
+    onTestFinished(logs.restore);
     const userId = await userWithKey("openai", "gpt-6-luna");
     const hung = new MockLanguageModelV4({ doGenerate: never });
     const { caller } = callerWith(hung, tight);
@@ -224,15 +254,19 @@ describe("model call time limits", () => {
     expect(events.map((e) => [e.purpose, e.status, e.errorKind])).toEqual([
       ["probe", "error", "timeout"],
     ]);
-    expect(log).toHaveBeenCalledWith(
-      expect.stringMatching(
-        /^model call failed: openai\/gpt-6-luna \(probe\) after \d+\.\d s → timeout: /,
-      ),
-    );
+    expect(logs.lines.filter((l) => l.message === "model call failed")).toEqual([
+      expect.objectContaining({
+        provider: "openai",
+        model: "gpt-6-luna",
+        purpose: "probe",
+        errorKind: "timeout",
+        elapsedMs: expect.any(Number) as number,
+        durationMs: events[0]?.durationMs,
+      }),
+    ]);
   });
 
   it("gives a retry after a network error only the time left, then fails plainly", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const userId = await userWithKey("openai", "gpt-6-luna");
     let calls = 0;
     const flaky = new MockLanguageModelV4({
@@ -254,7 +288,6 @@ describe("model call time limits", () => {
   });
 
   it("still retries a network error that the next attempt recovers from", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const userId = await userWithKey("openai", "gpt-6-luna");
     let calls = 0;
     const flaky = new MockLanguageModelV4({
@@ -309,7 +342,6 @@ describe("model call time limits", () => {
   });
 
   it("fails a stream that stalls between chunks", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const userId = await userWithKey("anthropic", "claude-opus-5-5");
     const stalling = new MockLanguageModelV4({
       doStream: {
@@ -344,7 +376,6 @@ describe("model call time limits", () => {
   });
 
   it("fails a stream that never starts", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const userId = await userWithKey("openai", "gpt-6-luna");
     const silent = new MockLanguageModelV4({ doStream: never });
     const { caller } = callerWith(silent, tight);
@@ -393,7 +424,6 @@ describe("call duration", () => {
   });
 
   it("records how long a call took, each attempt on its own", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
     const userId = await userWithKey("openai", "gpt-6-luna");
     // A clock the model moves: the first attempt takes 1 s and fails, the retry takes 2 s.
     let now = Date.now();

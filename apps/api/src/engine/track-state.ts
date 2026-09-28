@@ -12,6 +12,7 @@ import {
   type Db,
   type TermStatus,
 } from "@grounded/db";
+import { log } from "../log.js";
 
 export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
 
@@ -120,7 +121,19 @@ export async function applyActions(
     },
     actions,
   );
-  if (errors.length > 0) return { ok: false, errors };
+  if (errors.length > 0) {
+    // How many and which kinds of edit: the reasons quote term names and fix-list items.
+    log.warn(
+      {
+        trackId,
+        source: options.source,
+        rejected: errors.length,
+        actions: actions.map((a) => a.type),
+      },
+      "track edits rejected",
+    );
+    return { ok: false, errors };
+  }
 
   await db.transaction(async (tx) => {
     const idOf = new Map(existing.map((t) => [key(t.term), t.id]));

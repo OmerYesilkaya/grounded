@@ -20,6 +20,7 @@ import {
 } from "@grounded/db";
 import { generateText, streamText, type Instructions, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
+import { log } from "../log.js";
 import { batcher, publish, startActivity, withActivity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
@@ -87,6 +88,7 @@ export async function writeChatMessage(options: ChatMessageOptions): Promise<Cha
       kind,
     });
   } catch (error) {
+    log.info({ messageId, kind }, "message failed; retracting it");
     await publish(db, sessionId, "message-retracted", { id: messageId });
     throw error;
   }
@@ -110,6 +112,8 @@ async function composeMessage(
   );
   let text = "";
   for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(text); attempt++) {
+    if (attempt > 0)
+      log.info({ messageId, kind: options.kind, attempt }, "reply came back empty; asking again");
     // Thinking lasts until the text starts: from then on the learner watches it being written.
     const thinking = await startActivity(
       db,
@@ -142,6 +146,10 @@ async function composeMessage(
   const first = chatIssues(text, surface, options.terms);
   let { blocks } = first;
   if (first.errors.length > 0) {
+    log.info(
+      { messageId, kind: options.kind, surface, issues: first.errors.map((i) => i.code) },
+      "message broke rules; rewriting it",
+    );
     const rewrite = await withActivity(
       db,
       sessionId,
@@ -151,8 +159,15 @@ async function composeMessage(
     // An empty rewrite is worse than the message the learner has already read.
     if (!isBlank(rewrite)) {
       text = rewrite;
-      ({ blocks } = chatIssues(text, surface, options.terms));
-    }
+      const second = chatIssues(text, surface, options.terms);
+      ({ blocks } = second);
+      if (second.errors.length > 0)
+        log.warn(
+          { messageId, kind: options.kind, issues: second.errors.map((i) => i.code) },
+          "rewritten message still breaks rules; keeping it",
+        );
+    } else
+      log.warn({ messageId, kind: options.kind }, "rewrite came back empty; keeping the message");
   }
   return { text, blocks };
 }

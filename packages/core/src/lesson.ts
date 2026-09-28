@@ -43,9 +43,12 @@ export interface GenerateLessonOptions {
   onOutline?: (outline: LessonOutline) => void | Promise<void>;
   /**
    * Called as work on a step begins: its first writing (attempt 0) as the stream reaches it, and
-   * each rewrite after it broke a rule (attempt 1, 2…). Steps are 0-indexed.
+   * each rewrite after it broke a rule (attempt 1, 2…), with the issues the rewrite fixes. Steps are
+   * 0-indexed.
    */
-  onStepStart?: (index: number, attempt: number) => void | Promise<void>;
+  onStepStart?: (index: number, attempt: number, issues: readonly Issue[]) => void | Promise<void>;
+  /** Called when an outline is asked for again (attempt 1, 2…), with how many problems it had. */
+  onOutlineRejected?: (attempt: number, problems: number) => void | Promise<void>;
   /** Retries per outline and per broken step (default 2). */
   maxRetries?: number;
 }
@@ -109,7 +112,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     if (part.type !== "text-delta") continue;
     buffer += part.text;
     const pieces = splitLessonSteps(buffer);
-    for (; started < pieces.length; started++) await options.onStepStart?.(started, 0);
+    for (; started < pieces.length; started++) await options.onStepStart?.(started, 0, []);
     for (; checked < pieces.length - 1; checked++) {
       settled[checked] = check(pieces[checked] ?? "", checked, outline, options);
       await release();
@@ -122,7 +125,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   for (let index = 0; index < settled.length; index++) {
     let entry = settled[index];
     for (let attempt = 0; entry?.kind === "retry" && attempt < retries; attempt++) {
-      await options.onStepStart?.(index, attempt + 1);
+      await options.onStepStart?.(index, attempt + 1, entry.issues);
       const markdown = await regenerate(options, outline, index, entry);
       entry = check(markdown, index, outline, options);
     }
@@ -159,6 +162,7 @@ async function writeOutline(
     });
     const errors = outlineErrors(output, options.terms);
     if (errors.length === 0) return output;
+    if (attempt < retries) await options.onOutlineRejected?.(attempt + 1, errors.length);
     feedback = `\n\nYour previous outline had these problems; fix them:\n${errors.map((e) => `- ${e}`).join("\n")}`;
   }
   throw new Error("The lesson outline could not be made consistent with the term list.");

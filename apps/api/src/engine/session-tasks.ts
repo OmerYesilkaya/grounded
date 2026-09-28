@@ -38,7 +38,7 @@ import { systemMessages } from "./call-options.js";
 import { writeChatMessage } from "./chat.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
-import { addLogContext } from "../log.js";
+import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import { applyActions, loadTrackContext } from "./track-state.js";
@@ -314,7 +314,18 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               .where(eq(lessons.sessionId, sessionId));
             await publish(db, sessionId, "lesson-step", { step });
           },
-          onStepStart: async (index, attempt) => {
+          onOutlineRejected: (attempt, problems) => {
+            log.info(
+              { attempt, problems },
+              "lesson outline didn't fit the term list; asking again",
+            );
+          },
+          onStepStart: async (index, attempt, issues) => {
+            if (attempt > 0)
+              log.info(
+                { stepId: `s${String(index + 1)}`, attempt, issues: issues.map((i) => i.code) },
+                "lesson step broke rules; rewriting it",
+              );
             await writing?.done();
             const which = `step ${String(index + 1)} of ${String(Math.max(totalSteps, index + 1))}`;
             writing = await startActivity(
@@ -324,6 +335,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             );
           },
         });
+        for (const { stepId, issues } of result.degraded)
+          log.info(
+            { stepId, issues: issues.map((i) => i.code) },
+            "lesson step kept without its broken parts",
+          );
+        for (const { stepId, issues } of result.failed)
+          log.warn({ stepId, issues: issues.map((i) => i.code) }, "lesson step failed");
         if (result.failed.length > 0) {
           const failedSteps = result.failed.map(({ stepId, heading }) => ({ stepId, heading }));
           await db.update(lessons).set({ failedSteps }).where(eq(lessons.sessionId, sessionId));
@@ -376,6 +394,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         let verdict = await grade("");
         const issues = [...problems(verdict.reply), ...problems(verdict.freshQuestion)];
         if (issues.length > 0) {
+          log.info({ issues: issues.map((i) => i.code) }, "check reply broke rules; grading again");
           verdict = await grade(
             `\n\nYour last reply broke these rules; fix them:\n${issues.map((i) => `- ${i.message}`).join("\n")}`,
           );
@@ -503,6 +522,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           ? await applyActions(db, session.trackId, output.actions, { source: "close" })
           : { ok: true as const };
         if (applied.ok) break;
+        if (attempt + 1 < SWEEP_ATTEMPTS)
+          log.info({ attempt: attempt + 1 }, "term sweep rejected; asking again");
+        else
+          log.warn(
+            { attempts: SWEEP_ATTEMPTS },
+            "term sweep rejected every time; closing without it",
+          );
         feedback = `\n\nThose edits were rejected:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nFix them.`;
       }
       await applyEvent(db, sessionId, { type: "recap-done" });
@@ -589,6 +615,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             return;
           }
           // The learner shouldn't see a plan that couldn't be recorded next to the corrected one.
+          log.info(
+            { attempt: attempt + 1, messageId: reply.messageId },
+            "plan couldn't be recorded; retracting it",
+          );
           await db.delete(sessionMessages).where(eq(sessionMessages.id, reply.messageId));
           await publish(db, sessionId, "message-retracted", { id: reply.messageId });
           await revising?.done();
@@ -609,6 +639,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       } finally {
         await revising?.done();
       }
+      log.warn({ attempts: PLAN_ATTEMPTS }, "plan couldn't be recorded in any attempt");
       await publish(db, sessionId, "error", {
         message: "The plan couldn't be put together. Try asking for it again.",
       });

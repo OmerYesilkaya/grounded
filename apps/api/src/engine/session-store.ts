@@ -1,5 +1,6 @@
 import { transition, type SessionEvent, type SessionState } from "@grounded/core";
 import { eq, learningSessions, sql, type Db } from "@grounded/db";
+import { log } from "../log.js";
 import { appendEvent, lockSessionEvents } from "./events.js";
 import type { JobQueue } from "./queue.js";
 
@@ -39,7 +40,18 @@ export async function applyEvent(
       .for("update");
     if (!row) throw new Error(`session ${sessionId} not found`);
     const result = transition(row.state, event);
-    if (!result.ok) throw new RejectedEvent(result.reason);
+    if (!result.ok) {
+      log.warn(
+        {
+          sessionId,
+          ...eventFields(event),
+          state: describeState(row.state),
+          reason: result.reason,
+        },
+        "session event rejected",
+      );
+      throw new RejectedEvent(result.reason);
+    }
     await tx
       .update(learningSessions)
       .set({
@@ -48,8 +60,38 @@ export async function applyEvent(
       })
       .where(eq(learningSessions.id, sessionId));
     await appendEvent(tx, sessionId, "state", result.state);
+    log.info(
+      {
+        sessionId,
+        ...eventFields(event),
+        from: describeState(row.state),
+        to: describeState(result.state),
+      },
+      "session state changed",
+    );
     return result.state;
   });
+}
+
+/** An event for the log: its type, and the step and verdict it names (never content). */
+function eventFields(event: SessionEvent) {
+  return {
+    event: event.type,
+    ...("stepId" in event ? { stepId: event.stepId } : {}),
+    ...("verdict" in event ? { verdict: event.verdict } : {}),
+  };
+}
+
+/** A state in a few words: "plan (proposed)", "lesson (ready, at s2)". */
+export function describeState(state: SessionState): string {
+  switch (state.phase) {
+    case "plan":
+      return `plan (${state.plan})`;
+    case "lesson":
+      return `lesson (${[state.lesson.status, state.currentStep && `at ${state.currentStep}`].filter(Boolean).join(", ")})`;
+    default:
+      return state.phase;
+  }
 }
 
 /** Once every check is resolved, the lesson is over: on to the homework. */
