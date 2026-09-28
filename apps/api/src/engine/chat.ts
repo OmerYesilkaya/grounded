@@ -21,6 +21,7 @@ import {
 import { generateText, streamText, type Instructions, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
 import { content, log } from "../log.js";
+import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { batcher, publish, startActivity, withActivity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
@@ -36,6 +37,8 @@ export interface ChatMessageOptions {
   kind: "message" | "plan" | "homework" | "recap";
   terms: readonly TrackTerm[];
   surface?: Surface;
+  /** Where the message's links are verified before it is stored (design §6.4). */
+  media: VerifierOptions;
 }
 
 export interface ChatMessageResult {
@@ -175,7 +178,7 @@ async function composeMessage(
     } else
       log.warn({ messageId, kind: options.kind }, "rewrite came back empty; keeping the message");
   }
-  return { text, blocks };
+  return { text, blocks: await withVerifiedLinks(blocks, options.media) };
 }
 
 async function rewritten(

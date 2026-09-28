@@ -611,8 +611,10 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
   - A chart carries its data inline: a spec with a `url` or `href` anywhere (data from a file, an
     image mark, a link on a mark) is rejected (`chart/external-data`), since those addresses are
     the browser's to fetch and nothing could verify them first.
-  - Still unverified: links in chat messages and check replies (text-only surfaces, where a link
-    is rare).
+  - **Chat messages and check replies** (text-only surfaces) have their links verified the same
+    way before they are stored; one that doesn't open keeps its text, and the message isn't
+    rewritten for it (the learner has already watched it being written). The app's own replies
+    ("That didn't go through…") carry no links and aren't checked.
 - Failures are logged per model and feed the eval (parse-failure rate is a gate metric).
 - **Prefer top-to-bottom diagrams:** left-to-right Mermaid flowcharts shrink badly in a 68ch column
   (prototype finding). The prompt says so; wide figures may later break out of the text column.

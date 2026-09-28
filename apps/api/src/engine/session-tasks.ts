@@ -62,7 +62,7 @@ import {
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import type { FileStore } from "../files/store.js";
 import { createLessonMedia } from "../media/lesson-media.js";
-import type { VerifierOptions } from "../media/verify.js";
+import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { addLogContext, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
@@ -121,15 +121,20 @@ const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
 export const checkFailedText = (reason = "") =>
   `That didn't go through.${reason} Answer again when you're ready.`;
 
-/** Adds a tutor message to a step's check thread and publishes it. */
+/**
+ * Adds a tutor message to a step's check thread and publishes it; a model's reply has its links
+ * verified first (`media`), the app's own text needs none.
+ */
 export async function recordCheckMessage(
   db: Db,
   sessionId: string,
   stepId: string,
   text: string,
   verdict: "landed" | "missed" | null,
+  media?: VerifierOptions,
 ): Promise<void> {
-  const blocks = parseBlocks(text).blocks;
+  const parsed = parseBlocks(text).blocks;
+  const blocks = media ? await withVerifiedLinks(parsed, media) : parsed;
   const [row] = await db
     .insert(checkMessages)
     .values({ sessionId, stepId, role: "tutor", text, blocks, verdict })
@@ -529,6 +534,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       }
       await writeChatMessage({
         db,
+        media: deps.media,
         sessionId,
         model: await modelFor("probe"),
         system: context.system,
@@ -723,12 +729,19 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           stepId,
           verdict: verdict.verdict,
         });
-        await recordCheckMessage(db, sessionId, stepId, verdict.reply, verdict.verdict);
+        await recordCheckMessage(db, sessionId, stepId, verdict.reply, verdict.verdict, deps.media);
 
         const step = next.steps[stepId];
         if (verdict.verdict === "missed") {
           if (step?.status === "open" && !step.offerGate && verdict.freshQuestion) {
-            await recordCheckMessage(db, sessionId, stepId, verdict.freshQuestion, null);
+            await recordCheckMessage(
+              db,
+              sessionId,
+              stepId,
+              verdict.freshQuestion,
+              null,
+              deps.media,
+            );
           }
           if (verdict.note) {
             await db
@@ -771,7 +784,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             "The learner paused on this step last time and is back. Ask one fresh check question on the same idea, answerable in one or two lines. Reply with the question only.",
         }),
       );
-      await recordCheckMessage(db, sessionId, stepId, text, null);
+      await recordCheckMessage(db, sessionId, stepId, text, null, deps.media);
     }),
 
     homework: guarded(async ({ sessionId }) => {
@@ -784,6 +797,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
       await writeChatMessage({
         db,
+        media: deps.media,
         sessionId,
         model,
         system,
@@ -803,6 +817,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const { session, terms, messages, system } = await contextFor(sessionId, "close");
       const recap = await writeChatMessage({
         db,
+        media: deps.media,
         sessionId,
         model: await models.model({
           userId: session.userId,
@@ -932,6 +947,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           const conversation = [...messages, ...feedback];
           const reply = await writeChatMessage({
             db,
+            media: deps.media,
             sessionId,
             model,
             system,

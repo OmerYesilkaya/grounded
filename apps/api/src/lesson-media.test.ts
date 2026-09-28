@@ -2,13 +2,13 @@ import type { Block, LessonStep } from "@grounded/content";
 import { eq, lessons } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { WebAccess } from "./media/web.js";
-import { createFlows } from "./test/flows.js";
+import { createFlows, storedMessages } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 
 /*
- * A lesson's media reaches the learner only as the server verified it (design §6.4), on a made-up
- * web: Commons knows one image, and one page is gone.
+ * A lesson's media, and any message's links, reach the learner only as the server verified them
+ * (design §6.4), on a made-up web: Commons knows one image, and one page is gone.
  */
 
 const asked: string[] = [];
@@ -44,7 +44,7 @@ const web: WebAccess = {
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access, media: { web } });
-const { planned, until } = createFlows(t, models);
+const { learner, planned, snapshot, until } = createFlows(t, models);
 
 beforeEach(() => {
   models.reset();
@@ -99,5 +99,33 @@ describe("lesson media", () => {
       "find_audio",
     ]);
     expect(model?.doStreamCalls[0]?.tools).toBeUndefined();
+  });
+
+  it("keeps a chat message's link that doesn't open as plain text", async () => {
+    const { cookie, trackId } = await learner();
+    models.script("probe", {
+      text: "Have you read [this page](https://example.org/gone) or [that one](https://example.org/here)?",
+    });
+    const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
+    const { id } = (await started.json()) as { id: string };
+    await until(cookie, id, storedMessages(1));
+
+    const [message] = (await snapshot(cookie, id)).messages;
+    expect(message?.blocks).toEqual([
+      expect.objectContaining({
+        type: "paragraph",
+        children: [
+          { type: "text", value: "Have you read " },
+          { type: "text", value: "this page" },
+          { type: "text", value: " or " },
+          {
+            type: "link",
+            url: "https://example.org/here",
+            children: [{ type: "text", value: "that one" }],
+          },
+          { type: "text", value: "?" },
+        ],
+      }),
+    ]);
   });
 });

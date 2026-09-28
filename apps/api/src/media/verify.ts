@@ -1,4 +1,5 @@
 import type { Block, Inline, Issue } from "@grounded/content";
+import { log } from "../log.js";
 import { lookupCommons, titleOf, type CommonsCandidate, type CommonsKind } from "./commons.js";
 import type { WebAccess } from "./web.js";
 import { videoFacts, watchUrl, type VideoFacts } from "./youtube.js";
@@ -175,6 +176,23 @@ export function createVerifier(options: VerifierOptions) {
 }
 
 export type Verifier = ReturnType<typeof createVerifier>;
+
+/**
+ * A chat message's or check reply's blocks with their links verified. These surfaces are text only,
+ * so a link is all there is to check; one that doesn't open keeps its text, and nothing is rewritten.
+ */
+export async function withVerifiedLinks(
+  blocks: readonly Block[],
+  options: VerifierOptions,
+): Promise<Block[]> {
+  const verified = await createVerifier(options).verify(blocks);
+  if (verified.issues.length > 0)
+    log.info(
+      { issues: verified.issues.map((i) => i.code) },
+      "links that don't open were left out of a message",
+    );
+  return verified.blocks;
+}
 
 const opens = (status: number | null): boolean => status !== null && status < 400;
 
