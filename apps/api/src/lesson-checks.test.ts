@@ -257,6 +257,14 @@ describe("checks", () => {
 });
 
 describe("closing the session", () => {
+  const REWRITTEN_PLAN = {
+    arcs: [
+      { title: "Concurrency", terms: ["lost update"] },
+      { title: "Memory", terms: ["working copy"] },
+    ],
+    notes: "Folded in: the counter first.",
+  };
+
   it("assigns homework, recaps, sweeps the terms and closes", async () => {
     const { cookie, sessionId } = await inLesson();
     models.script(
@@ -285,7 +293,8 @@ describe("closing the session", () => {
         confirmLostUpdate,
         { type: "set-term-status", term: "nonsense", status: "confirmed", evidence: "x" },
       ]),
-      sweep([confirmLostUpdate]),
+      // The close sees the whole plan and its notes, so its set-plan replaces them.
+      sweep([confirmLostUpdate, { type: "set-plan", ...REWRITTEN_PLAN }]),
     );
     models.script("left-off", { text: LEFT_OFF });
     for (const id of ["s1", "s2", "s3"]) {
@@ -305,6 +314,7 @@ describe("closing the session", () => {
 
     // Last, "where you left off", from the whole session, the recap and homework included.
     const [track] = await t.db.select().from(tracksTable);
+    expect(track?.plan).toEqual(REWRITTEN_PLAN);
     expect(track?.leftOff).toBe(LEFT_OFF);
     const leftOff = models.used.find((u) => u.purpose === "left-off")?.model.doGenerateCalls[0];
     expect(JSON.stringify(leftOff?.prompt)).toContain("Predict what a counter shows");

@@ -167,7 +167,7 @@ describe("applyActions", () => {
           notes: "",
         },
       ],
-      { source: "probe" },
+      { source: "close", rewritePlan: true },
     );
     await applyActions(t.db, trackId, [{ type: "close-fix-item", text: "Thinks memory can add" }], {
       source: "check s1",
@@ -186,8 +186,8 @@ describe("applyActions", () => {
   });
 });
 
-describe("applyActions: from a call that saw only part of the plan", () => {
-  it("leaves the plan as it is and applies the rest of the batch", async () => {
+describe("applyActions: from a call that may not rewrite the plan", () => {
+  it("leaves out a set-plan and applies the rest of the batch", async () => {
     const trackId = await newTrack();
     const plan = { arcs: [{ title: "Concurrency", terms: ["memory"] }], notes: "Backend first." };
     await applyActions(
@@ -197,7 +197,7 @@ describe("applyActions: from a call that saw only part of the plan", () => {
         { type: "add-planned-term", term: "memory", restsOn: [] },
         { type: "set-plan", ...plan },
       ],
-      { source: "plan" },
+      { source: "close", rewritePlan: true },
     );
     const result = await applyActions(
       t.db,
@@ -206,7 +206,7 @@ describe("applyActions: from a call that saw only part of the plan", () => {
         { type: "set-plan", arcs: [], notes: "" },
         { type: "set-term-status", term: "memory", status: "confirmed", evidence: "holds 5" },
       ],
-      { source: "probe", plan: "none" },
+      { source: "probe" },
     );
     expect(result).toEqual({ ok: true });
     const context = await loadTrackContext(t.db, trackId);
@@ -236,7 +236,7 @@ describe("applyActions: add-to-arc", () => {
         })),
         { type: "set-plan", ...plan },
       ],
-      { source: "imported" },
+      { source: "imported", rewritePlan: true },
     );
     expect(setUp).toEqual({ ok: true });
     return { trackId, plan };
@@ -349,7 +349,7 @@ describe("applyActions: add-to-arc", () => {
         { type: "set-plan", arcs: [{ title: "Basics", terms: ["bit"] }], notes: "Rewritten." },
         { type: "add-to-arc", arc: "basics", terms: ["memory"] },
       ],
-      { source: "close", plan: "whole" },
+      { source: "close", rewritePlan: true },
     );
     expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
       arcs: [{ title: "Basics", terms: ["bit", "memory"] }],
@@ -359,20 +359,40 @@ describe("applyActions: add-to-arc", () => {
 });
 
 describe("applyActions: from the plan's record, which saw where you left off, not the notes", () => {
-  it("replaces the arcs and adds its notes after the notes as written", async () => {
+  it("adds its notes after the notes as written, under one heading, and keeps the arcs", async () => {
     const trackId = await newTrack();
     const arcs = [{ title: "Concurrency", terms: [] }];
     await applyActions(t.db, trackId, [{ type: "set-plan", arcs, notes: "Imported notes." }], {
       source: "import",
+      rewritePlan: true,
     });
-    const next = [{ title: "Backend", terms: [] }];
-    await applyActions(t.db, trackId, [{ type: "set-plan", arcs: next, notes: "Backend first." }], {
+    await applyActions(t.db, trackId, [{ type: "add-plan-notes", notes: "Backend first." }], {
       source: "plan",
-      plan: "arcs",
+    });
+    // A revised plan's notes go under the same heading.
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-plan-notes", notes: "  " },
+        { type: "add-plan-notes", notes: "Then the database." },
+      ],
+      { source: "plan" },
+    );
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs,
+      notes: "Imported notes.\n\n### Noted while planning\n\nBackend first.\n\nThen the database.",
+    });
+  });
+
+  it("starts a track's notes with them", async () => {
+    const trackId = await newTrack();
+    await applyActions(t.db, trackId, [{ type: "add-plan-notes", notes: " Backend first. " }], {
+      source: "plan",
     });
     expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
-      arcs: next,
-      notes: "Imported notes.\n\n### Noted while planning\n\nBackend first.",
+      arcs: [],
+      notes: "Backend first.",
     });
   });
 });
@@ -475,7 +495,7 @@ describe("loadTrackContext: in a session", () => {
           notes: "",
         },
       ],
-      { source: "plan" },
+      { source: "close", rewritePlan: true },
     );
     const sessionId = await openSession(trackId);
     const before = await loadTrackContext(t.db, trackId, { sessionId });
@@ -547,7 +567,7 @@ describe("loadTrackContext: in a session", () => {
           notes: "",
         },
       ],
-      { source: "imported" },
+      { source: "imported", rewritePlan: true },
     );
     expect(imported).toEqual({ ok: true });
     // Four earlier sessions, each touching one term; only the last three count as recent.
@@ -577,7 +597,7 @@ describe("loadTrackContext: in a session", () => {
       { title: "Basics", terms: names, tally: { taught: 4, confirmed: 3 } },
       { title: "Concurrency", terms: ["lost update"], current: true },
     ]);
-    // The plan's calls see every arc's terms: their set-plan replaces the plan.
+    // The plan's calls see every arc's terms: they place new terms in the arcs they belong to.
     const planning = await loadTrackContext(t.db, trackId, { sessionId, phase: "plan" });
     expect(planning.plan.arcs[0]).toEqual({ title: "Basics", terms: names });
   });

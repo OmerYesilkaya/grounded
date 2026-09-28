@@ -12,7 +12,7 @@ export type BudgetedPhase = Extract<
  * plan notes) with a normal session's chat (`prompt-budget.test.ts`, which fails when a change
  * pushes a call past it). Each is about a fifth above what the calls send now. Before #13's part 2
  * every one of these calls sent about 30,000.
- * - plan: the whole plan, every arc with its terms (its set-plan replaces the plan).
+ * - plan: the whole plan, every arc with its terms (it places its new terms in the arcs they belong to).
  * - close: the whole plan and the plan's notes as written, which only the close reads.
  */
 export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {

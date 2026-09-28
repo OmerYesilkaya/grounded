@@ -86,7 +86,7 @@ const RESEARCH_STEPS = 6;
 const PROBE_DECISION_PROMPT =
   "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, summarize both for the plan; you won't write another probe message, and the plan comes next, in its own message.";
 const PLAN_RECORD_PROMPT =
-  "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, the arcs in order, and any misconceptions found in the probe as fix-list items.";
+  "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, and any misconceptions found in the probe as fix-list items. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
@@ -366,7 +366,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         if (output.actions.length) {
           await applyActions(db, session.trackId, output.actions, {
             source: "probe",
-            plan: "none",
           });
           // The question is written with what was just recorded (the teaching language, the fix-list).
           context = await contextFor(sessionId, "probe");
@@ -523,7 +522,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         if (verdict.actions.length)
           await applyActions(db, session.trackId, verdict.actions, {
             source: `check ${stepId}`,
-            plan: "none",
           });
         const next = await applyEvent(db, sessionId, {
           type: "check-verdict",
@@ -644,7 +642,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const applied = output.actions.length
           ? await applyActions(db, session.trackId, output.actions, {
               source: "close",
-              plan: "whole",
+              rewritePlan: true,
             })
           : { ok: true as const };
         if (applied.ok) break;
@@ -755,11 +753,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           const applied = output.actions.length
             ? await applyActions(db, session.trackId, output.actions, {
                 source: "plan",
-                plan: "arcs",
               })
             : {
                 ok: false as const,
-                errors: ["Record the plan's planned terms and arcs."],
+                errors: ["Record the plan's planned terms and place them in its arcs."],
               };
           if (applied.ok) {
             await applyEvent(db, sessionId, { type: "plan-proposed" });

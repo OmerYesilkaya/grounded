@@ -36,6 +36,9 @@ const setPlan = z.object({
   arcs: z.array(z.object({ title: z.string().min(1), terms: z.array(z.string()) })),
   notes: z.string(),
 });
+/** Notes for later sessions, added after the plan's notes (from a call that didn't see them). */
+const addPlanNotes = z.object({ type: z.literal("add-plan-notes"), notes: z.string() });
+
 export const trackActionSchema = z.union([
   setTermStatus,
   addPlannedTerm,
@@ -46,4 +49,18 @@ export const trackActionSchema = z.union([
   setPlan,
 ]);
 
-export type TrackAction = z.infer<typeof trackActionSchema>;
+/**
+ * What the plan's record may return: the track actions without set-plan, since a session's plan
+ * never rewrites the plan (it places its terms with add-to-arc), plus the notes it adds.
+ */
+export const planActionSchema = z.union([
+  setTermStatus,
+  addPlannedTerm,
+  addFixItem,
+  closeFixItem,
+  setLanguage,
+  addToArc,
+  addPlanNotes,
+]);
+
+export type TrackAction = z.infer<typeof trackActionSchema> | z.infer<typeof planActionSchema>;

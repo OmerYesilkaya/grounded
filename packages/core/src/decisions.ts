@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { trackActionSchema } from "./actions.js";
+import { planActionSchema, trackActionSchema } from "./actions.js";
 
 /*
  * The structured calls around a chat message: the message itself is streamed without tools, and its
@@ -32,8 +32,8 @@ export const probeDecisionSchema = z.object({
 /** After the plan's message: the plan it presented, as edits to the track. */
 export const planActionsSchema = z.object({
   actions: z
-    .array(trackActionSchema)
+    .array(planActionSchema)
     .describe(
-      "Every planned term with what it rests on, the plan's arcs in order, and misconceptions found in the probe as fix-list items.",
+      "Every planned term with what it rests on; this session's new planned terms placed in the plan's arcs (add-to-arc: the existing arc each belongs to, by its exact title, or a new arc only if none fits); misconceptions found in the probe as fix-list items; and anything you noted for later sessions (add-plan-notes).",
     ),
 });

@@ -27,7 +27,7 @@ export type {
   StepStatus,
   TransitionResult,
 } from "./session.js";
-export { trackActionSchema, type TrackAction } from "./actions.js";
+export { planActionSchema, trackActionSchema, type TrackAction } from "./actions.js";
 export { generateLesson, lessonOutlineSchema, stepInfoFor } from "./lesson.js";
 export type { GenerateLessonOptions, LessonOutline, LessonResult } from "./lesson.js";
 export { loadMethod } from "./method-file.js";

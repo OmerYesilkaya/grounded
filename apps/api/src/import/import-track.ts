@@ -258,6 +258,8 @@ async function write(
     }
     const applied = await applyActions(db, row.id, actions, {
       source: `imported from Learning ${track.snapshotDate ?? ""}`.trim(),
+      // The import writes the whole plan it read.
+      rewritePlan: true,
     });
     if (!applied.ok) throw new Error(`the edits were rejected: ${applied.errors.join("; ")}`);
   } catch (error) {

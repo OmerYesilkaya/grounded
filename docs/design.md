@@ -273,9 +273,8 @@ about, test and debug.
     twice or used before it is taught.
   - The **plan** lists the current arc's terms; every other arc is its title and a tally ("17
     terms (15 confirmed, 2 taught)"). The phases that record the plan (plan, close, final:
-    `WHOLE_PLAN_PHASES`) see every arc's terms, since a `set-plan` replaces the whole plan. The
-    other calls saw part of it, so a `set-plan` from them (the probe's decision, a check's verdict)
-    is left out and the rest of the batch applies.
+    `WHOLE_PLAN_PHASES`) see every arc's terms: the plan's record to place its new terms in the arc
+    they belong to, the close and the final because their `set-plan` replaces the whole plan.
 - **"Where you left off" stands in for the plan's notes** (`tracks.left_off`, decided 2026-09-28,
   #13; `apps/api/src/engine/left-off.ts`). The plan's notes as written (34 KB on the imported
   track) stay in the database and go only to the close: the recap and the term sweep read them,
@@ -283,8 +282,9 @@ about, test and debug.
   holds). After the sweep, one more call (`left-off`, little reasoning) writes the summary from the
   notes as the sweep left them and the whole session: open threads, owed work, what to re-check,
   where the next session picks up, in about 300 words. Every other call carries it, under the
-  plan's arcs. The plan's record saw only the summary, so its `set-plan` replaces the arcs and its
-  notes are added after the notes under "Noted while planning", for the next close to fold in.
+  plan's arcs. The plan's record saw only the summary, so its notes (`add-plan-notes`) are added
+  after the notes under "Noted while planning" (one heading for all of them until the next close),
+  for the next close to fold in.
   - If the close's summary fails, the track is left with none (not one from before the session),
     and prompts carry the notes as written until one is written.
   - Notes with no summary yet (the imported track, or any track before its first close): up to
@@ -416,7 +416,20 @@ The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes thro
   belongs to one arc, moving it is a rewrite, and a revised plan that places the same terms again
   changes nothing. If every term is skipped, no arc is created. Terms are stored in the term list's
   spelling.
-- **`set-plan`** `{ arcs, notes }` replaces the whole plan.
+- **`set-plan`** `{ arcs, notes }` replaces the whole plan. Only a call that saw all of it, every
+  arc's terms and the notes as written, may send one: the close's term sweep (and the final's
+  audit), and an import (`rewritePlan` on `applyActions`). From any other call it is left out,
+  logged, and the rest of the batch applies.
+- **`add-plan-notes`** `{ notes }` adds notes after the plan's notes (above).
+
+**A session's plan never rewrites the plan** (decided 2026-09-28, #23). Its record (`planActionsSchema`)
+isn't offered `set-plan` at all: it adds its planned terms and places this session's new ones with
+`add-to-arc`, each in the existing arc it belongs to by that arc's exact title, and a new arc only
+for terms none fits; the rest of the plan stays as it was. A track's first session has no arcs, so
+its plan names the first ones. Reordering, merging or retiring arcs is the close's job, which sees
+the whole plan and notes. (Before this, the plan's `set-plan` replaced the arcs, so from the second
+session on an approved plan dropped every arc it didn't restate: the imported "How software works"
+lost arcs A–D to one arc, "SQL as asking questions".)
 
 ## 6. Content: format and renderer
 

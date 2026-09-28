@@ -161,6 +161,7 @@ export async function createLargeTrack(
   if (!track) throw new Error("no track");
   const imported = await applyActions(db, track.id, importActions(), {
     source: "imported from Learning 2026-09-25",
+    rewritePlan: true,
   });
   if (!imported.ok) throw new Error(imported.errors.join("; "));
 

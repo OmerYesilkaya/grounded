@@ -47,3 +47,12 @@ describe("model output schemas", () => {
     expect(strictProblems(z.toJSONSchema(schema))).toEqual([]);
   });
 });
+
+describe("the plan's record", () => {
+  it("places terms and adds notes, and can't rewrite the plan", () => {
+    const parse = (action: object) => planActionsSchema.safeParse({ actions: [action] }).success;
+    expect(parse({ type: "add-to-arc", arc: "Concurrency", terms: ["lock"] })).toBe(true);
+    expect(parse({ type: "add-plan-notes", notes: "Backend first." })).toBe(true);
+    expect(parse({ type: "set-plan", arcs: [], notes: "" })).toBe(false);
+  });
+});

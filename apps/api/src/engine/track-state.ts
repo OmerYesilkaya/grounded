@@ -154,6 +154,8 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       case "set-plan":
         shape.arcs = action.arcs;
         break;
+      case "add-plan-notes":
+        break;
     }
   }
   for (const { arc, term } of placed) {
@@ -170,21 +172,26 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
  * as it would be after each edit; any invalid edit rejects the batch, with reasons the model can act
  * on, and nothing is written.
  *
- * `plan` says what the call saw of the plan (design §4.4). "whole" (the default): every arc with
- * its terms and the notes as written, so a set-plan replaces the plan. "arcs": every arc, but only
- * "where you left off" in place of the notes, so a set-plan replaces the arcs and its notes are
- * added to the notes, for the close to fold in. "none": the arcs other than the current one only as
- * tallies, so a set-plan would drop what it didn't see; it is left out, and the rest of the batch
- * applies.
+ * `rewritePlan` says whether a set-plan may replace the plan: only from a call that saw all of it,
+ * every arc's terms and the notes as written (the close and the final, and an import; design §4.4).
+ * From any other call a set-plan would drop what it didn't see or wasn't asked to change; it is
+ * left out (logged), and the rest of the batch applies. A session's plan places its terms with
+ * add-to-arc instead, and its add-plan-notes are added after the notes, for the close to fold in.
  */
 export async function applyActions(
   db: Db,
   trackId: string,
   batch: readonly TrackAction[],
-  options: { source: string; plan?: "whole" | "arcs" | "none" },
+  options: { source: string; rewritePlan?: boolean },
 ): Promise<ApplyResult> {
-  const actions =
-    options.plan === "none" ? batch.filter((action) => action.type !== "set-plan") : batch;
+  const actions = options.rewritePlan
+    ? batch
+    : batch.filter((action) => action.type !== "set-plan");
+  if (actions.length < batch.length)
+    log.info(
+      { trackId, source: options.source, dropped: batch.length - actions.length },
+      "set-plan left out: this call may not rewrite the plan",
+    );
   const existing = await db.select().from(terms).where(eq(terms.trackId, trackId));
   const openFixItems = await db
     .select()
@@ -311,13 +318,14 @@ export async function applyActions(
           planChanged = true;
           break;
         }
-        case "set-plan": {
-          const notes =
-            options.plan === "arcs" ? addedNotes(plan.notes, action.notes) : action.notes;
-          plan = { arcs: action.arcs, notes };
+        case "set-plan":
+          plan = { arcs: action.arcs, notes: action.notes };
           planChanged = true;
           break;
-        }
+        case "add-plan-notes":
+          plan = { ...plan, notes: addedNotes(plan.notes, action.notes) };
+          planChanged = true;
+          break;
       }
     }
     if (planChanged) await tx.update(tracks).set({ plan }).where(eq(tracks.id, trackId));
@@ -325,11 +333,21 @@ export async function applyActions(
   return { ok: true };
 }
 
-/** Notes from a call that didn't see the notes as written: added after them, under a heading. */
+const NOTED_WHILE_PLANNING = "### Noted while planning";
+
+/**
+ * Notes from a call that didn't see the notes as written: added after them, under a heading (or
+ * under the heading already last, from an earlier plan the close hasn't folded in yet).
+ */
 function addedNotes(notes: string, added: string): string {
   if (!added.trim()) return notes;
   if (!notes.trim()) return added.trim();
-  return `${notes.trimEnd()}\n\n### Noted while planning\n\n${added.trim()}`;
+  const lastHeading = notes
+    .match(/^#{1,6} .*$/gm)
+    ?.at(-1)
+    ?.trim();
+  if (lastHeading === NOTED_WHILE_PLANNING) return `${notes.trimEnd()}\n\n${added.trim()}`;
+  return `${notes.trimEnd()}\n\n${NOTED_WHILE_PLANNING}\n\n${added.trim()}`;
 }
 
 export interface TrackContext

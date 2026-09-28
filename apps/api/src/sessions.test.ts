@@ -193,7 +193,7 @@ describe("a long session", () => {
 
 describe("probe and plan", () => {
   it("moves to the plan when the tutor finishes probing, and records the plan's terms", async () => {
-    const { cookie, sessionId } = await planned();
+    const { cookie, sessionId, trackId } = await planned();
     const s = await snapshot(cookie, sessionId);
     expect(s.state).toMatchObject({ phase: "plan", plan: "proposed" });
     expect(s.messages.map((m) => [m.role, m.kind])).toEqual([
@@ -206,6 +206,12 @@ describe("probe and plan", () => {
       ["working copy", "planned"],
       ["lost update", "planned"],
     ]);
+    // A new track has no arcs: the first session's plan names the first one.
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    expect(track?.plan).toEqual({
+      arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
+      notes: "",
+    });
   });
 
   it("opens the probe from what the learner said they want to learn", async () => {
@@ -305,15 +311,14 @@ describe("probe and plan", () => {
   });
 
   it("revises the plan when the learner replies to it, then approves it into the lesson", async () => {
-    const { cookie, sessionId } = await planned();
+    const { cookie, sessionId, trackId } = await planned();
     models.script(
       "plan",
       planAttempt("Revised: backend first.", [
-        {
-          type: "set-plan",
-          arcs: [{ title: "Backend", terms: ["lost update"] }],
-          notes: "Reordered at the learner's request.",
-        },
+        { type: "add-planned-term", term: "request", restsOn: [] },
+        // "lost update" was placed by the first draft: it stays where it is.
+        { type: "add-to-arc", arc: "Backend", terms: ["request", "lost update"] },
+        { type: "add-plan-notes", notes: "Reordered at the learner's request." },
       ]),
     );
     await t.request(`/api/sessions/${sessionId}/messages`, {
@@ -334,6 +339,83 @@ describe("probe and plan", () => {
     });
     expect(approved.status).toBe(200);
     expect(((await approved.json()) as Snapshot).state.phase).toBe("lesson");
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    expect(track?.plan).toEqual({
+      arcs: [
+        { title: "Concurrency", terms: ["working copy", "lost update"] },
+        { title: "Backend", terms: ["request"] },
+      ],
+      notes: "Reordered at the learner's request.",
+    });
+  });
+
+  describe("in a later session", () => {
+    const ARCS = [
+      { title: "A. Bits and memory", terms: ["bit", "memory"] },
+      { title: "B. Programs", terms: ["program"] },
+      { title: "C. Databases", terms: ["table"] },
+      { title: "D. Networks", terms: ["packet"] },
+    ];
+    const planOn = async (actions: object[]) => {
+      const { cookie, trackId } = await learner();
+      await t.db.insert(terms).values(
+        ARCS.flatMap((arc) => arc.terms).map((term) => ({
+          trackId,
+          term,
+          status: "confirmed" as const,
+        })),
+      );
+      await t.db
+        .update(tracks)
+        .set({ plan: { arcs: ARCS, notes: "Imported notes." } })
+        .where(eq(tracks.id, trackId));
+      models.script("probe", { text: FIRST_QUESTION });
+      const started = await t.request(`/api/tracks/${trackId}/sessions`, {
+        method: "POST",
+        cookie,
+      });
+      const { id: sessionId } = (await started.json()) as { id: string };
+      await until(cookie, sessionId, storedMessages(1));
+      models.script("plan", planAttempt(PLAN_TEXT, actions));
+      await t.request(`/api/sessions/${sessionId}/skip-to-plan`, { method: "POST", cookie });
+      await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+      const approved = await t.request(`/api/sessions/${sessionId}/approve-plan`, {
+        method: "POST",
+        cookie,
+      });
+      expect(approved.status).toBe(200);
+      const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+      return track?.plan;
+    };
+
+    it("appends the approved plan's terms to the arc they belong to and leaves every other arc intact", async () => {
+      const plan = await planOn([
+        { type: "add-planned-term", term: "query", restsOn: ["table"] },
+        { type: "add-to-arc", arc: "c. databases", terms: ["query"] },
+        { type: "add-plan-notes", notes: "SQL as asking questions, for their CV." },
+      ]);
+      expect(plan).toEqual({
+        arcs: [ARCS[0], ARCS[1], { title: "C. Databases", terms: ["table", "query"] }, ARCS[3]],
+        notes:
+          "Imported notes.\n\n### Noted while planning\n\nSQL as asking questions, for their CV.",
+      });
+
+      // The record's request says how to place the terms, and the call sees every arc's title.
+      const record = models.used.find((u) => u.purpose === "plan")?.model.doGenerateCalls[0];
+      const prompt = JSON.stringify(record?.prompt);
+      expect(prompt).toContain(
+        "in the existing arc it belongs to, named by that arc's exact title",
+      );
+      for (const arc of ARCS) expect(prompt).toContain(arc.title);
+    });
+
+    it("adds a new arc at the end only for terms no arc fits", async () => {
+      const plan = await planOn([
+        { type: "add-planned-term", term: "query", restsOn: ["table"] },
+        { type: "add-to-arc", arc: "SQL as asking questions", terms: ["query"] },
+      ]);
+      expect(plan?.arcs).toEqual([...ARCS, { title: "SQL as asking questions", terms: ["query"] }]);
+    });
   });
 
   it("researches with web search before the first plan, in its own call", async () => {

@@ -43,11 +43,7 @@ export const PLAN_TEXT =
 export const PLAN_ACTIONS = [
   { type: "add-planned-term", term: "working copy", restsOn: [] },
   { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
-  {
-    type: "set-plan",
-    arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
-    notes: "",
-  },
+  { type: "add-to-arc", arc: "Concurrency", terms: ["working copy", "lost update"] },
 ];
 
 export const PROBE_SUMMARY =
