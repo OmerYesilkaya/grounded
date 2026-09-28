@@ -32,7 +32,7 @@ export function ActivityLine({
     >
       <div className="flex items-center gap-2">
         <WorkingMark className="text-muted-foreground" />
-        <span className="text-shimmer text-muted-foreground">{label}</span>
+        <span className="text-shimmer text-muted-foreground mb-px">{label}</span>
         {current?.detail && <span className="truncate">{current.detail}</span>}
         {current?.reasoning && (
           <button

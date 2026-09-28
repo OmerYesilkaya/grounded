@@ -82,7 +82,7 @@ export function CheckCard({
           {progress.grading && (
             <div className="flex items-center gap-2 text-[13px] text-subtle-foreground">
               <WorkingMark />
-              <span className="text-shimmer">Checking your answer…</span>
+              <span className="text-shimmer mb-px">Checking your answer…</span>
             </div>
           )}
         </div>
