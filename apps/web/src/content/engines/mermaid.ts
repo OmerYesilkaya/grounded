@@ -14,7 +14,7 @@ export const mermaidDiagramEngine: DiagramEngine = {
         startOnLoad: false,
         securityLevel: "strict",
         theme: "base",
-        fontFamily: "Inter, system-ui, sans-serif",
+        fontFamily: "Montserrat, system-ui, sans-serif",
         themeVariables: {
           background: colors.background,
           primaryColor: colors.node,

@@ -632,7 +632,7 @@ A refined "typographic index":
 ### 9.3 Look
 
 - Dark by default, light mode, "follow system".
-- Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Inter).
+- Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat).
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
 - Colour tokens defined once; Mermaid's theme generated from them.
 - Streamed text appears as if written: the page reveals it at a reading pace (~90 characters a

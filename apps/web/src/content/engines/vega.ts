@@ -11,7 +11,7 @@ export const vegaChartEngine: ChartEngine = {
       renderer: "svg",
       config: {
         background: "transparent",
-        font: "Inter, system-ui, sans-serif",
+        font: "Montserrat, system-ui, sans-serif",
         axis: {
           labelColor: colors.text,
           titleColor: colors.text,
