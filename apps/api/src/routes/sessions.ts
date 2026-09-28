@@ -1,4 +1,10 @@
-import { initialSession, needsNaming, standInTitle, type SessionEvent } from "@grounded/core";
+import {
+  ATTACHMENT_LIMITS,
+  initialSession,
+  needsNaming,
+  standInTitle,
+  type SessionEvent,
+} from "@grounded/core";
 import {
   and,
   asc,
@@ -12,15 +18,20 @@ import {
   lessons,
   sessionEvents,
   sessionMessages,
+  trackFiles,
   tracks,
   type Db,
 } from "@grounded/db";
-import type { Hono } from "hono";
+import type { Context, Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
+import { readAttachments, type UploadedFile } from "../files/attachments.js";
+import { FileNotFound, type FileStore } from "../files/store.js";
+import { createTrack, filesOf } from "../files/track-files.js";
 import { addLogContext } from "../log.js";
 
 interface Env {
@@ -29,11 +40,35 @@ interface Env {
 
 // No language: the tutor infers it from the learner's messages and records it (set-language).
 const trackInput = z.object({ goal: z.string().trim().min(1).max(4000) });
+const GOAL_REQUIRED = "Say what you want to learn, in at most 4,000 characters.";
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
 
+/**
+ * A new track's input: JSON `{ goal }`, or a form with `goal` and any number of `files` (the web
+ * sends a form; the route's body limit bounds what is read). Null when it is neither.
+ */
+async function trackInputOf(
+  c: Context<Env>,
+): Promise<{ goal: unknown; files: UploadedFile[] } | null> {
+  if (!(c.req.header("content-type") ?? "").startsWith("multipart/form-data")) {
+    const body = (await c.req.json().catch(() => null)) as { goal?: unknown } | null;
+    return body ? { goal: body.goal, files: [] } : null;
+  }
+  const form = await c.req.parseBody({ all: true }).catch(() => null);
+  if (!form) return null;
+  const files: UploadedFile[] = [];
+  for (const entry of [form.files ?? []].flat())
+    if (typeof entry !== "string")
+      files.push({ name: entry.name, bytes: new Uint8Array(await entry.arrayBuffer()) });
+  return { goal: form.goal, files };
+}
+
 /** Tracks and sessions (design §7): the session HTTP API. Jobs do the model work. */
-export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQueue }) {
-  const { db, queue } = deps;
+export function registerSessionRoutes(
+  app: Hono<Env>,
+  deps: { db: Db; queue: JobQueue; files: FileStore },
+) {
+  const { db, queue, files } = deps;
 
   const ownSession = async (userId: string, sessionId: string) => {
     if (!z.uuid().safeParse(sessionId).success) return null;
@@ -55,24 +90,70 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
     }
   };
 
-  app.post("/api/tracks", async (c) => {
-    const parsed = trackInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success)
-      return c.json({ error: "Say what you want to learn, in at most 4,000 characters." }, 400);
+  // The files' limit (design §4.5), with room for the form around them.
+  const uploadLimit = bodyLimit({
+    maxSize: ATTACHMENT_LIMITS.totalBytes + 1024 * 1024,
+    onError: (c) => c.json({ error: "The files are too large together." }, 413),
+  });
+
+  app.post("/api/tracks", uploadLimit, async (c) => {
+    const input = await trackInputOf(c);
+    const parsed = trackInput.safeParse({ goal: input?.goal });
+    if (!input || !parsed.success) return c.json({ error: GOAL_REQUIRED }, 400);
+    const read = await readAttachments(input.files);
+    if (!read.ok) return c.json({ error: read.error }, 400);
     const { goal } = parsed.data;
     // Words that already are a name are the name; the tutor names anything longer (design §9.5).
     const naming = needsNaming(goal);
-    const [track] = await db
-      .insert(tracks)
-      .values({ userId: c.get("user").id, goal, title: standInTitle(goal), titlePending: naming })
-      .returning();
-    if (!track) throw new Error("track insert returned nothing");
+    const track = await createTrack(
+      db,
+      files,
+      { userId: c.get("user").id, goal, title: standInTitle(goal), titlePending: naming },
+      read.attachments,
+    );
     addLogContext({ trackId: track.id });
     if (naming) await queue.enqueue("name-track", { trackId: track.id });
     return c.json(
       { id: track.id, title: track.title, naming: track.titlePending, language: track.language },
       201,
     );
+  });
+
+  /** A file the learner attached, for its owner only, as a download (never shown inline). */
+  app.get("/api/tracks/:id/files/:fileId", async (c) => {
+    const { id: trackId, fileId } = c.req.param();
+    if (!z.uuid().safeParse(trackId).success || !z.uuid().safeParse(fileId).success)
+      return c.json({ error: "Not found." }, 404);
+    addLogContext({ trackId });
+    const [file] = await db
+      .select({
+        name: trackFiles.name,
+        mediaType: trackFiles.mediaType,
+        key: trackFiles.storageKey,
+      })
+      .from(trackFiles)
+      .innerJoin(tracks, eq(tracks.id, trackFiles.trackId))
+      .where(
+        and(
+          eq(trackFiles.id, fileId),
+          eq(trackFiles.trackId, trackId),
+          eq(tracks.userId, c.get("user").id),
+        ),
+      );
+    if (!file) return c.json({ error: "Not found." }, 404);
+    let bytes: Uint8Array;
+    try {
+      bytes = await files.get(file.key);
+    } catch (error) {
+      if (error instanceof FileNotFound) return c.json({ error: "Not found." }, 404);
+      throw error;
+    }
+    return c.body(bytes.slice(), 200, {
+      "content-type": file.mediaType,
+      "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.name)}`,
+      "x-content-type-options": "nosniff",
+      "cache-control": "private, no-store",
+    });
   });
 
   app.get("/api/tracks", async (c) => {
@@ -97,6 +178,10 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
             ),
           )
       : [];
+    const attached = await filesOf(
+      db,
+      rows.map((t) => t.id),
+    );
     return c.json(
       rows.map((t) => {
         const session = open.find((s) => s.trackId === t.id);
@@ -108,6 +193,7 @@ export function registerSessionRoutes(app: Hono<Env>, deps: { db: Db; queue: Job
           language: t.language,
           openSession: session ? { id: session.id, phase: session.state.phase } : null,
           importedLesson: lesson ? { title: lesson.title } : null,
+          files: attached.get(t.id) ?? [],
         };
       }),
     );

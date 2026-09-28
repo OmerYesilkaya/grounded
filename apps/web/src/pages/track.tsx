@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { AttachmentChip } from "@/components/attachment-chip";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
 import { useTracks } from "@/lib/tracks";
@@ -52,6 +53,24 @@ export function TrackPage({ trackId }: { trackId: string }) {
           </p>
         )}
       </div>
+      {track.files.length > 0 && (
+        <section className="mt-10">
+          <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">
+            What you brought
+          </h2>
+          <ul className="mt-3 flex flex-wrap gap-2">
+            {track.files.map((file) => (
+              <AttachmentChip
+                key={file.id}
+                name={file.name}
+                size={file.sizeBytes}
+                image={file.kind === "image"}
+                href={`/api/tracks/${trackId}/files/${file.id}`}
+              />
+            ))}
+          </ul>
+        </section>
+      )}
       {track.importedLesson && (
         <Link
           to="/tracks/$trackId/last-lesson"

@@ -85,6 +85,13 @@
       "when": 1790598423309,
       "tag": "0011_orange_nemesis",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1790599086177,
+      "tag": "0012_slim_star_brand",
+      "breakpoints": true
     }
   ]
 }

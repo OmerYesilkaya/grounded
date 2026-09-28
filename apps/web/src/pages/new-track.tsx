@@ -1,24 +1,32 @@
+import { ACCEPTED_DESCRIPTION, ATTACHMENT_ACCEPT } from "@grounded/core";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { AttachmentChip } from "@/components/attachment-chip";
 import { Composer } from "@/components/composer";
 import { Label } from "@/components/ui/label";
 import { api } from "@/lib/api";
+import { useAttachments } from "@/lib/use-attachments";
 
 const MOD_KEY =
   typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘" : "Ctrl";
 
-/** A new track from the learner's own words, as many as they like (design §9.5). */
+/**
+ * A new track from the learner's own words, as many as they like, and the files that show where
+ * they start or where they are heading (design §9.5).
+ */
 export function NewTrackPage() {
   const [goal, setGoal] = useState("");
+  const attachments = useAttachments();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const create = useMutation({
-    mutationFn: (text: string) =>
-      api<{ id: string }>("/api/tracks", {
-        method: "POST",
-        body: JSON.stringify({ goal: text }),
-      }),
+    mutationFn: (text: string) => {
+      const body = new FormData();
+      body.set("goal", text);
+      for (const { file } of attachments.files) body.append("files", file);
+      return api<{ id: string }>("/api/tracks", { method: "POST", body });
+    },
     onSuccess: async ({ id }) => {
       await queryClient.invalidateQueries({ queryKey: ["tracks"] });
       void navigate({ to: "/tracks/$trackId", params: { trackId: id } });
@@ -43,15 +51,39 @@ export function NewTrackPage() {
           onSubmit={(text) => {
             create.mutate(text);
           }}
-          submitLabel="Create track"
+          submitLabel={create.isPending ? "Creating…" : "Create track"}
           submitShortcut="mod-enter"
           minRows={5}
           autoFocus
-          submitDisabled={create.isPending}
+          submitDisabled={create.isPending || attachments.blocked}
+          disabled={create.isPending}
+          onAddFiles={attachments.add}
+          accept={ATTACHMENT_ACCEPT}
+          attachments={
+            attachments.files.length > 0 && (
+              <ul aria-label="Attached files" className="flex flex-wrap gap-2 px-3 pt-1 pb-2">
+                {attachments.files.map((f) => (
+                  <AttachmentChip
+                    key={f.id}
+                    name={f.file.name}
+                    size={f.file.size}
+                    image={f.image}
+                    preview={f.preview}
+                    problem={f.problem}
+                    onRemove={() => {
+                      attachments.remove(f.id);
+                    }}
+                  />
+                ))}
+              </ul>
+            )
+          }
         />
         <p className="text-xs text-subtle-foreground">
-          {MOD_KEY} Enter to create. A long description is fine; the track gets a short name.
+          Attach anything that shows where you start or where you&rsquo;re heading: a CV, a
+          syllabus, notes, a photo of a page ({ACCEPTED_DESCRIPTION}). {MOD_KEY} Enter to create.
         </p>
+        {attachments.together && <p className="text-sm text-destructive">{attachments.together}</p>}
         {create.error && <p className="text-sm text-destructive">{create.error.message}</p>}
       </div>
     </main>

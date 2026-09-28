@@ -39,6 +39,7 @@ const track = (importedLesson: TrackSummary["importedLesson"]): TrackSummary => 
   language: "English",
   openSession: null,
   importedLesson,
+  files: [],
 });
 
 function renderWithQueries(node: ReactNode) {

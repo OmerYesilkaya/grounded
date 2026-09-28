@@ -339,6 +339,33 @@ about, test and debug.
   you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
   keeps the provider's default, above all plans, lessons and check grading.
 
+### 4.5 Files (decided 2026-09-28)
+
+- **Learners' files live in a file store** (`FileStore` in `apps/api/src/files/store.ts`); the
+  database holds what each file is. Production: an S3-compatible bucket (a Railway bucket, whose
+  `BUCKET`, `ENDPOINT`, `REGION`, `ACCESS_KEY_ID` and `SECRET_ACCESS_KEY` the services reference as
+  `FILES_*`; virtual-hosted URLs unless `FILES_FORCE_PATH_STYLE`). Development: a folder (`.files`
+  at the repo root, or `FILES_DIR`). Tests: memory. Production refuses to start without a bucket,
+  since a container's disk doesn't outlive a deploy. MinIO was the first choice for development and
+  was dropped: its community images stopped in October 2025. Keys are made by the app
+  (`tracks/<track id>/<file id>`), never from a file's name.
+- **What can be attached** (`packages/core/src/attachments.ts`, shared by the web, which checks as
+  files are added, and the API, which checks again and decides): images (PNG, JPEG, WebP, GIF, at
+  most 5 MB each, Anthropic's per-image limit), PDFs, Word documents (.docx) and text files (.txt,
+  .md), at most 10 MB each; at most 8 files and 20 MB together; the PDFs at most 50 pages together
+  (providers take 100 per request, and a track's PDFs ride in the same calls). A file is what its
+  contents say, not its name: image and PDF signatures are checked (an image's media type comes from
+  its bytes), text must be UTF-8, a PDF must open and not be password-protected. Word documents and
+  text files are sent as their text (at most 50,000 characters each, taken out with `mammoth` for
+  Word and stored in `track_files.text`); images and PDFs go to the model as they are.
+- **Creating a track with files is one request** (`POST /api/tracks` as a form, `goal` and `files`;
+  JSON `{ goal }` without files), bounded by a body limit. The bytes are stored first, then the track
+  and its `track_files` rows in one transaction; if anything fails, the bytes already stored are
+  deleted again. Files can only be added when the track is created, for now.
+- **A learner can download their own files** (`GET /api/tracks/:id/files/:fileId`), always as an
+  attachment with `nosniff`, never shown inline. Deleting a track (v2) must delete its files from the
+  store too; the rows go with the track by cascade, the bytes don't.
+
 ## 5. Data model (sketch)
 
 | Table                      | Holds                                                                                                 |
@@ -347,6 +374,7 @@ about, test and debug.
 | `credentials`              | provider, encrypted key, credential source                                                            |
 | `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      |
 | `tracks`                   | name, the learner's words (goal), teaching language, status, research notes, plan and notes, left off |
+| `track_files`              | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key          |
 | `terms`                    | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic                             |
 | `term_events`              | evidence history: status change, quoted learner words, source (check, homework, aside, exam)          |
 | `term_dependencies`        | "rests on" edges — the map; source of every structure picture                                         |
@@ -614,6 +642,10 @@ A refined "typographic index":
   again every second while a track is being named (`naming` in `GET /api/tracks`). If the call fails,
   the stand-in stays. Naming is a job, not part of the request (§4.2), so creating a track never waits
   on a model.
+- **Files come with the words** (§4.5): a paperclip button, files dropped on the box, or a picture
+  pasted into it (text pastes as text). Each file shows as a chip with its name and size (a thumbnail
+  for images) and a remove button; a file that can't go says why in place of its size, and holds
+  creating back. The track page lists them under "What you brought", each a download.
 
 ## 10. Operating without an admin page
 
@@ -655,9 +687,11 @@ and whenever `method.md` changes. Built after the first working session.
 ## 12. Security and privacy
 
 - HTTPS; least-privilege database roles; backups.
-- Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI.
-- A plain sentence at sign-up: what is stored (answers, progress, questions, the encrypted key), that
-  nothing is shared, and that the operator can technically access the database but does not read it.
+- Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
+  are content too (§4.5): only their owner can download them, and never inline.
+- A plain sentence at sign-up: what is stored (answers, progress, questions, attached files, the
+  encrypted key), that nothing is shared, and that the operator can technically access the database
+  but does not read it.
 - Model output is never rendered as HTML or run as code; every URL is verified before display.
 
 ## 13. Settled since the grilling

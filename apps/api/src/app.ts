@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import type { Auth } from "./auth.js";
 import { eventsAfter, type EventHub } from "./engine/events.js";
+import type { FileStore } from "./files/store.js";
 import type { JobQueue } from "./engine/queue.js";
 import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
@@ -17,6 +18,8 @@ export interface AppDependencies {
   vault: KeyVault;
   events: EventHub;
   queue: JobQueue;
+  /** Learners' files (design §4.5). */
+  files: FileStore;
   /** Offer models the eval harness hasn't passed (development only). */
   includeUngatedModels: boolean;
   validateKey: (provider: ProviderId, apiKey: string) => Promise<KeyCheck>;
@@ -169,7 +172,7 @@ export function createApp(deps: AppDependencies) {
     });
   });
 
-  registerSessionRoutes(app, { db, queue: deps.queue });
+  registerSessionRoutes(app, { db, queue: deps.queue, files: deps.files });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

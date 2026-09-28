@@ -1,3 +1,4 @@
+import type { AttachmentKind } from "@grounded/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -11,6 +12,15 @@ export interface TrackSummary {
   openSession: { id: string; phase: string } | null;
   /** The last lesson imported from the learner's earlier setup, if any. */
   importedLesson: { title: string } | null;
+  /** The files attached when the track was created (design §4.5). */
+  files: TrackFile[];
+}
+
+export interface TrackFile {
+  id: string;
+  name: string;
+  kind: AttachmentKind;
+  sizeBytes: number;
 }
 
 /** The learner's tracks; checked again every second while the tutor is naming one. */

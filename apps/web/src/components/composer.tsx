@@ -1,8 +1,10 @@
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Paperclip } from "lucide-react";
 import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useState,
+  type DragEvent,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
@@ -40,6 +42,15 @@ export interface ComposerProps {
   /** Below the small breakpoint, stack the buttons full width (design §9.4). */
   stackActions?: boolean;
   /**
+   * Accept files: an attach button, files dropped on the box and files pasted into it. What to do
+   * with them (checking, listing, removing) is up to the caller.
+   */
+  onAddFiles?: (files: File[]) => void;
+  /** For the file picker's `accept`. */
+  accept?: string;
+  /** Shown between the text and the buttons, such as the attached files. */
+  attachments?: ReactNode;
+  /**
    * Take focus when the composer opens, whenever it is enabled again, and whenever `focusKey`
    * changes, unless the learner is busy in another field or selecting text.
    */
@@ -71,11 +82,17 @@ export function Composer({
   submitDisabled = false,
   actions,
   stackActions = false,
+  onAddFiles,
+  accept,
+  attachments,
   autoFocus = false,
   focusKey,
   className,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pickerRef = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
+  const acceptsFiles = onAddFiles !== undefined && !disabled;
   const canSubmit = !disabled && !submitDisabled && value.trim() !== "";
 
   useAutoHeight(textareaRef, value);
@@ -102,13 +119,36 @@ export function Composer({
     submit();
   };
 
+  const carriesFiles = (event: DragEvent) =>
+    acceptsFiles && event.dataTransfer.types.includes("Files");
+  const onDragOver = (event: DragEvent) => {
+    if (!carriesFiles(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDragging(true);
+  };
+
   return (
     <form
       className={cn(
         "rounded-2xl border border-input bg-card text-foreground transition-colors focus-within:border-ring",
+        dragging && "border-dashed border-ring bg-highlight",
         disabled && "opacity-60",
         className,
       )}
+      onDragEnter={onDragOver}
+      onDragOver={onDragOver}
+      onDragLeave={(event) => {
+        // Leaving for a child of the box is still over the box.
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+      }}
+      onDrop={(event) => {
+        if (!carriesFiles(event)) return;
+        event.preventDefault();
+        setDragging(false);
+        const files = [...event.dataTransfer.files];
+        if (files.length) onAddFiles?.(files);
+      }}
       onSubmit={(event) => {
         event.preventDefault();
         submit();
@@ -128,14 +168,51 @@ export function Composer({
           onChange(event.target.value);
         }}
         onKeyDown={onKeyDown}
+        onPaste={(event) => {
+          // A picture copied on its own arrives as a file; text (even with a picture) pastes as text.
+          const files = [...event.clipboardData.files];
+          if (!acceptsFiles || !files.length || event.clipboardData.getData("text/plain")) return;
+          event.preventDefault();
+          onAddFiles(files);
+        }}
         className="block max-h-52 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3 pb-1 text-[15px] leading-relaxed outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed"
       />
+      {attachments}
       <div
         className={cn(
           "flex items-center justify-end gap-2 px-2.5 pb-2.5",
           stackActions && "max-sm:flex-col max-sm:items-stretch max-sm:pt-1.5",
         )}
       >
+        {onAddFiles && (
+          <>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Attach files"
+              title="Attach files"
+              disabled={disabled}
+              className="mr-auto rounded-full text-muted-foreground"
+              onClick={() => pickerRef.current?.click()}
+            >
+              <Paperclip />
+            </Button>
+            <input
+              ref={pickerRef}
+              type="file"
+              multiple
+              accept={accept}
+              hidden
+              onChange={(event) => {
+                const files = [...(event.target.files ?? [])];
+                // The same file can be picked again after it is removed.
+                event.target.value = "";
+                if (files.length) onAddFiles(files);
+              }}
+            />
+          </>
+        )}
         {actions}
         {submitIcon ? (
           <Button

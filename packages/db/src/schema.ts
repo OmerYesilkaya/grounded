@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Block, LessonStep } from "@grounded/content";
-import type { LessonOutline, SessionState } from "@grounded/core";
+import type { AttachmentKind, LessonOutline, SessionState } from "@grounded/core";
 import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
 
@@ -181,6 +181,33 @@ export const tracks = pgTable("tracks", {
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+/**
+ * Files the learner attached when creating the track (design §4.5): a CV, a syllabus, a photo of a
+ * page. Their bytes are in the file store under `storage_key`; the model reads images and PDFs as
+ * they are, and text files and Word documents as `text`.
+ */
+export const trackFiles = pgTable(
+  "track_files",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    /** The file's name as the learner had it, without folders. */
+    name: text("name").notNull(),
+    kind: text("kind").$type<AttachmentKind>().notNull(),
+    mediaType: text("media_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    /** A PDF's page count; null for other kinds. */
+    pages: integer("pages"),
+    /** Text files and Word documents: the text taken out of them. Null for images and PDFs. */
+    text: text("text"),
+    storageKey: text("storage_key").notNull().unique(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("track_files_track").on(table.trackId, table.createdAt)],
+);
 
 export const terms = pgTable(
   "terms",

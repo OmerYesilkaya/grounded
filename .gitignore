@@ -34,3 +34,6 @@ pnpm-debug.log*
 
 # Import dry runs (learner data)
 .imports/
+
+# Learners' files in development (design §4.5)
+.files/

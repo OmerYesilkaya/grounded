@@ -8,6 +8,7 @@ import { createMagicLinkDelivery, createResendSender } from "./email.js";
 import { createEventHub } from "./engine/events.js";
 import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
+import { fileStoreFor } from "./files/from-env.js";
 import { log, setLogService } from "./log.js";
 import { serveWeb } from "./web.js";
 
@@ -35,6 +36,7 @@ const app = createApp({
   auth,
   events,
   queue,
+  files: fileStoreFor(env),
   vault: createKeyVault({
     masterKeys: parseMasterKeys(env.KEY_VAULT_MASTER_KEYS),
     activeKid: env.KEY_VAULT_ACTIVE_KID,

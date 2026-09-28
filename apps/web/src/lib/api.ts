@@ -10,7 +10,8 @@ export class ApiError extends Error {
 
 export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
-  if (init.body) headers.set("content-type", "application/json");
+  // A form sets its own content type, with the boundary.
+  if (typeof init.body === "string") headers.set("content-type", "application/json");
   const response = await fetch(path, { ...init, headers, credentials: "same-origin" });
   if (response.status === 204) return undefined as T;
   const body = (await response.json().catch(() => null)) as { error?: string } | null;

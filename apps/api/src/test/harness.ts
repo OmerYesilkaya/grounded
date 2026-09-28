@@ -11,6 +11,7 @@ import { createEventHub } from "../engine/events.js";
 import type { ModelAccess } from "../engine/model-call.js";
 import { createJobQueue, startWorker, type Worker } from "../engine/queue.js";
 import { createTasks } from "../engine/tasks.js";
+import { createMemoryFileStore } from "../files/store.js";
 import { TEST_DATABASE_URL } from "./global-setup.js";
 
 export const BASE_URL = "http://localhost:3000";
@@ -22,6 +23,7 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
   const queue = createJobQueue(TEST_DATABASE_URL);
   let runner: Worker | undefined;
   const vault = createKeyVault({ masterKeys: { t1: randomBytes(32) }, activeKid: "t1" });
+  const files = createMemoryFileStore();
   const sent: { email: string; url: string }[] = [];
   let keyCheck: KeyCheck = { ok: true };
 
@@ -40,6 +42,7 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
     vault,
     events,
     queue,
+    files,
     includeUngatedModels: true,
     validateKey: () => Promise.resolve(keyCheck),
   });
@@ -80,7 +83,8 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
   const request = (path: string, init: RequestInit & { cookie?: string } = {}) => {
     const headers = new Headers(init.headers);
     if (init.cookie) headers.set("cookie", init.cookie);
-    if (init.body) headers.set("content-type", "application/json");
+    // A form sets its own content type, with the boundary.
+    if (typeof init.body === "string") headers.set("content-type", "application/json");
     headers.set("origin", BASE_URL);
     return app.request(path.startsWith("http") ? path : `${BASE_URL}${path}`, { ...init, headers });
   };
@@ -104,6 +108,7 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
     db,
     vault,
     queue,
+    files,
     waitFor,
     sent,
     request,
