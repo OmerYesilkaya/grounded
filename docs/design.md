@@ -305,7 +305,8 @@ about, test and debug.
 - **"Where you left off" stands in for the plan's notes** (`tracks.left_off`, decided 2026-09-28,
   #13; `apps/api/src/engine/left-off.ts`). The plan's notes as written (34 KB on the imported
   track) stay in the database and go only to the close: the recap and the term sweep read them,
-  and the sweep changes them a section at a time (`edit-plan-notes`, §5). After the sweep, one more call (`left-off`, little reasoning) writes the summary from the
+  and the sweep changes them a section at a time (`edit-plan-notes`, §5). After the sweep, one
+  more call (`left-off`, little reasoning) writes the summary from the
   notes as the sweep left them and the whole session: open threads, owed work, what to re-check,
   where the next session picks up, in about 300 words. Every other call carries it, under the
   plan's arcs. The plan's record saw only the summary, so its notes (`add-plan-notes`) are added
@@ -337,7 +338,8 @@ about, test and debug.
   goes over. Measured when set (#13), per call, before → after: probe and its decision ~30,000 →
   ~10,000; plan ~30,000 → ~14,000 (every arc's terms); lesson and homework ~30,500 → ~10,500;
   check ~28,300 → ~8,300; close (recap, sweep, where you left off) ~29,000 → ~21,000 (the whole plan and
-  the notes as written). Budgets sit about a fifth above: probe 12,000, plan 17,000, lesson and
+  the notes as written). The term sweep then got the session's conversation too (#17): ~19,900 →
+  ~22,000, about what the recap sends. Budgets sit about a fifth above: probe 12,000, plan 17,000, lesson and
   homework 12,500, check 10,000, close 25,000. The method's sections are now the largest part
   (18–24 KB per phase), and they are the part every call reuses from the cache.
 - **Cache hints** are added in the model middleware (`shapeCall` in
@@ -692,6 +694,12 @@ HTML/SVG). To be measured, then adjusted.
   (homework, the recap, the term sweep, "where you left off") get the whole check record: each answered
   check, what it covered, its thread, where it leaked and what was already held. So the next session's
   plan starts above it, through the plan's notes and "where you left off".
+- **The term sweep settles statuses from the evidence itself** (decided 2026-09-29, #17), as the
+  method asks ("from the whole session's evidence"), not from the recap's summary of it: it gets the
+  session's conversation as the recap did (a long session's older turns as their running summary,
+  which quotes the learner's words where they are evidence, §4.4), then the recap, and the check
+  record in its system prompt. It costs about as much input as the recap (§4.4, the budgets); its
+  `duration_ms` per attempt is recorded like every call's.
 - Why checks at the point of need: a step nothing rests on yet doesn't need to be solid before the next
   one, and a check there only interrupts reading; asking a few steps after an idea was taught is also
   better practice for remembering it than asking straight away (spaced retrieval).

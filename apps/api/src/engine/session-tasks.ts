@@ -832,7 +832,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
 
       // The term sweep is its own call, so a rejected edit never means rewriting the recap; and its
-      // own purpose, a structured record made with little reasoning (call-options.ts).
+      // own purpose, a structured record made with little reasoning (call-options.ts). It settles
+      // the statuses from the evidence itself: the session's conversation as the recap saw it (a
+      // long one's older turns summarized) and, in the system prompt, the check threads.
+      const closing: ModelMessage[] = [
+        ...messages,
+        { role: "user", content: "(Close the session: the recap.)" },
+        { role: "assistant", content: recap.text },
+      ];
       let feedback = "";
       for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt++) {
         const model = await models.model({
@@ -846,7 +853,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             model,
             system,
             output: Output.object({ schema: sweepActionsSchema }),
-            prompt: `The session is closing; your recap was:\n\n${recap.text}\n\nNow the term sweep: ${SWEEP_REQUEST}${feedback}`,
+            messages: [
+              ...closing,
+              {
+                role: "user",
+                content: `(For the app; the learner doesn't see this.) Now the term sweep: ${SWEEP_REQUEST}${feedback}`,
+              },
+            ],
           }),
         );
         if (output.actions.length === 0) break;

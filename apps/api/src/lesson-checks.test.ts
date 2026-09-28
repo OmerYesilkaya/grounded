@@ -394,6 +394,13 @@ describe("closing the session", () => {
     const [track] = await t.db.select().from(tracksTable);
     expect(track?.plan).toEqual(REWRITTEN_PLAN);
     expect(track?.leftOff).toBe(LEFT_OFF);
+    // The sweep settles the terms from the evidence: the conversation and the check threads.
+    const sweepPrompt = JSON.stringify(
+      models.used.find((u) => u.purpose === "term-sweep")?.model.doGenerateCalls[0]?.prompt,
+    );
+    expect(sweepPrompt).toContain("it just adds one");
+    expect(sweepPrompt).toContain("Learner: an answer");
+    expect(sweepPrompt).toContain("We built why a counter can lose an update");
     const leftOff = models.used.find((u) => u.purpose === "left-off")?.model.doGenerateCalls[0];
     expect(JSON.stringify(leftOff?.prompt)).toContain("Predict what a counter shows");
     expect(JSON.stringify(leftOff?.prompt)).toContain("We built why a counter can lose an update");
