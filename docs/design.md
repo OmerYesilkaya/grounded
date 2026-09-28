@@ -608,8 +608,11 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
     app's own network.
   - Tests and the embedded backend use a web that answers nothing, or one the test makes up; no
     test reaches the network. The eval runs real models on the real web.
+  - A chart carries its data inline: a spec with a `url` or `href` anywhere (data from a file, an
+    image mark, a link on a mark) is rejected (`chart/external-data`), since those addresses are
+    the browser's to fetch and nothing could verify them first.
   - Still unverified: links in chat messages and check replies (text-only surfaces, where a link
-    is rare), and Vega-Lite specs that load their own data (`data.url`).
+    is rare).
 - Failures are logged per model and feed the eval (parse-failure rate is a gate metric).
 - **Prefer top-to-bottom diagrams:** left-to-right Mermaid flowcharts shrink badly in a 68ch column
   (prototype finding). The prompt says so; wide figures may later break out of the text column.

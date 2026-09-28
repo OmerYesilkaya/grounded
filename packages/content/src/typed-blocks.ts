@@ -138,6 +138,13 @@ export function convertTypedCode(
         report("chart/not-an-object", "The chart spec must be a Vega-Lite JSON object.");
         return null;
       }
+      if (reachesOut(spec)) {
+        report(
+          "chart/external-data",
+          'A chart carries its data in the spec ("data": {"values": [...]}); it can\'t load or link to anything with "url" or "href".',
+        );
+        return null;
+      }
       return {
         id,
         type: "chart",
@@ -148,6 +155,19 @@ export function convertTypedCode(
     default:
       return undefined;
   }
+}
+
+/**
+ * Whether a Vega-Lite spec would have the browser load or link to an address: data from a `url`,
+ * an image mark's `url`, a mark's `href`. Nothing the server hasn't verified reaches the learner
+ * (design §6.4), and a spec's addresses are the browser's to fetch, so none is allowed.
+ */
+function reachesOut(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(reachesOut);
+  if (typeof value !== "object" || value === null) return false;
+  return Object.entries(value).some(
+    ([key, inner]) => key === "url" || key === "href" || reachesOut(inner),
+  );
 }
 
 const unknownBlock = (name: string) =>

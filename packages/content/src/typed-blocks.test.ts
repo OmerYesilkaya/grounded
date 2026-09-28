@@ -113,6 +113,20 @@ describe("parseBlocks: charts", () => {
       "chart/not-an-object",
     ]);
   });
+
+  it("rejects a spec that would load or link to an address", () => {
+    for (const spec of [
+      { data: { url: "https://example.org/data.csv" }, mark: "bar" },
+      { mark: "point", encoding: { href: { field: "link" } } },
+      { layer: [{ mark: "image", encoding: { url: { field: "img" } } }] },
+    ])
+      expect(parseBlocks(fence("chart", JSON.stringify(spec))).issues.map((i) => i.code)).toEqual([
+        "chart/external-data",
+      ]);
+    expect(
+      parseBlocks(fence("chart", '{"data": {"values": [{"a": 1}]}, "mark": "bar"}')).issues,
+    ).toEqual([]);
+  });
 });
 
 describe("parseBlocks: checks", () => {
