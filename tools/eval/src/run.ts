@@ -49,6 +49,8 @@ export interface RunResult {
   error: string | null;
   metrics: Metrics | null;
   judgement: Judgement | null;
+  /** Why the judge couldn't score the run, if it couldn't; the counts and transcript still stand. */
+  judgeError: string | null;
   transcript: string;
   database: string | null;
 }
@@ -80,6 +82,7 @@ export async function runEval(options: RunOptions): Promise<RunResult> {
     error: null,
     metrics: null,
     judgement: null,
+    judgeError: null,
     transcript: "",
     database: options.keepDatabase ? database.url : null,
   };
@@ -119,8 +122,13 @@ export async function runEval(options: RunOptions): Promise<RunResult> {
       const record = await readRecord(backend.db, sessionId);
       result.metrics = metricsOf(record);
       result.transcript = transcriptOf(record);
-      if (options.judgeModel)
-        result.judgement = await judge(options.judgeModel, persona, result.transcript);
+      if (options.judgeModel) {
+        try {
+          result.judgement = await judge(options.judgeModel, persona, result.transcript);
+        } catch (error) {
+          result.judgeError = error instanceof Error ? error.message : String(error);
+        }
+      }
     }
   } finally {
     result.wallSeconds = Math.round((Date.now() - startedAt.getTime()) / 1000);

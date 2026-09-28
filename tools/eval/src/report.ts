@@ -39,6 +39,8 @@ export function reportOf(result: RunResult): string {
       "",
     );
   }
+  if (result.judgeError)
+    lines.push("## Judged", "", `**The judge failed:** ${result.judgeError}`, "");
   if (j) {
     lines.push(
       "## Judged",
@@ -80,9 +82,11 @@ export function summaryLine(result: RunResult): string {
   const j = result.judgement;
   const fails = j?.criteria.filter((c) => c.verdict === "fail").map((c) => c.id) ?? [];
   const passes = j?.criteria.filter((c) => c.verdict === "pass").length ?? 0;
-  const judged = j
-    ? `judge ${String(passes)} pass, ${String(fails.length)} fail${fails.length ? ` (${fails.join(", ")})` : ""}`
-    : "not judged";
+  const judged = result.judgeError
+    ? `JUDGE FAILED (${result.judgeError})`
+    : j
+      ? `judge ${String(passes)} pass, ${String(fails.length)} fail${fails.length ? ` (${fails.join(", ")})` : ""}`
+      : "not judged";
   const counted = m
     ? `${String(m.probe.questions)} probe q, ${String(m.lesson.checks)}/${String(m.lesson.steps)} checks, ${String(m.checks.landedFirstTry)}/${String(m.checks.answered)} first try, ${String(m.checks.alreadyHeld)} already held, ${m.costUsd === null ? "cost ?" : `$${m.costUsd.toFixed(2)}`}`
     : "no session";

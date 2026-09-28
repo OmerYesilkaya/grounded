@@ -1,3 +1,4 @@
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
 import { TASKS, type Learner } from "./learner.js";
 import { loadPersona, personaIds } from "./persona.js";
@@ -51,6 +52,24 @@ describe("an eval run", () => {
     expect(result.transcript).toContain("Check thread:");
     expect(result.transcript).toContain("## Recap (chat)");
     expect(result.judgement).toBeNull();
+  });
+});
+
+describe("an eval run whose judge fails", () => {
+  it("keeps the counts and the transcript, and says why it wasn't judged", async () => {
+    const result = await runEval({
+      persona: loadPersona("cold-networking"),
+      candidate: { kind: "demo" },
+      learner: scripted(),
+      judgeModel: new MockLanguageModelV4({
+        doGenerate: () => Promise.reject(new Error("Your credit balance is too low")),
+      }),
+      serverUrl: SERVER_URL,
+    });
+    expect(result.metrics?.reachedClose).toBe(true);
+    expect(result.transcript).toContain("## Recap (chat)");
+    expect(result.judgement).toBeNull();
+    expect(result.judgeError).toContain("credit balance is too low");
   });
 });
 
