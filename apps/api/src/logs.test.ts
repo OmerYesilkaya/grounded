@@ -10,7 +10,7 @@ import {
   PLAN_ACTIONS,
   PLAN_TEXT,
   planAttempt,
-  probeFinished,
+  finishProbe,
   createFlows,
   type Snapshot,
 } from "./test/flows.js";
@@ -120,7 +120,7 @@ describe("logs", () => {
     const started = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
     const { id: sessionId } = (await started.json()) as { id: string };
     await until(cookie, sessionId, (s) => s.messages.length === 1 && !s.messages[0]?.streaming);
-    models.script("probe-decision", probeFinished());
+    finishProbe(models);
     models.script("plan", planAttempt(PLAN_TEXT, PLAN_ACTIONS));
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",

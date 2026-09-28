@@ -345,7 +345,9 @@ about, test and debug.
   the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
   effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured
   records of what the conversation already showed think little (`low`): the probe's decision
-  (`probe-decision`, its own purpose, apart from the probe's question) and the close's term sweep
+  (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
+  writes what the probe found once it is finished and keeps the default, since the plan is built on
+  it) and the close's term sweep
   (`term-sweep`, apart from the recap), and so do the summaries of what is already written ("where
   you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
   keeps the provider's default, above all plans, lessons and check grading.
@@ -520,8 +522,10 @@ later probe turn starts with the structured call: what the answers showed (term 
 items, the teaching language) and whether probing is finished. If not, the next question is written
 with those records in its prompt. If it is, no probe message is written: the session moves to planning,
 and the plan job is the only place a plan can appear (a model that felt done used to present the plan
-in its last probe message, leaving the plan message with nothing to say). The decision's summary —
-where the learner's knowledge ends, and their goal — is stored on the session (`probe_summary`) and
+in its last probe message, leaving the plan message with nothing to say). Once the decision says
+finished, a separate call at the default reasoning effort writes what the probe found — where the
+learner's knowledge ends, and their goal — so the record the plan is built on isn't made by the
+low-effort decision (the decision runs every turn; this runs once). It is stored on the session (`probe_summary`) and
 given to the plan's calls, research included; when the learner skips ahead to the plan there is none.
 
 ### 7.2 Lesson generation pipeline

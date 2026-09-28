@@ -96,10 +96,12 @@ export function createDemoModels(): ModelAccess {
         JSON.stringify({
           actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
           finished: true,
-          summary:
-            "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
         }),
       ]),
+    "probe-summary": () =>
+      model(
+        "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
+      ),
     plan: () =>
       model(
         "We start from something you already hold: a program changes values in memory. From there we'll see what really happens when a number goes up by one, then what goes wrong when two parts of a program do it at the same moment. That is exactly the counter problem you described.",

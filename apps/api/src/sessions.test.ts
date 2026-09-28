@@ -15,7 +15,7 @@ import {
   PLAN_TEXT,
   PROBE_SUMMARY,
   planAttempt,
-  probeFinished,
+  finishProbe,
   probeGoesOn,
   type Snapshot,
 } from "./test/flows.js";
@@ -249,7 +249,7 @@ describe("probe and plan", () => {
   it("writes no probe message on the turn that ends the probe: the plan is in the plan message", async () => {
     const { cookie, sessionId } = await startedSession();
     // A model that feels done would present the plan in its probe message, if it were asked for one.
-    models.script("probe-decision", probeFinished());
+    finishProbe(models);
     models.script("probe", {
       text: "Here's a plan aimed at your goal: first memory, then lost updates. Does that cover it?",
     });
@@ -275,8 +275,17 @@ describe("probe and plan", () => {
     expect(models.used.filter((u) => u.purpose === "probe")).toHaveLength(1);
   });
 
-  it("gives the plan the probe's conclusion", async () => {
+  it("gives the plan the probe's conclusion, written by its own call after the decision", async () => {
     await planned();
+    expect(models.used.map((u) => u.purpose)).toEqual([
+      "probe",
+      "probe-decision",
+      "probe-summary",
+      "plan",
+    ]);
+    const summaryCall = models.used.find((u) => u.purpose === "probe-summary")?.model
+      .doGenerateCalls[0];
+    expect(JSON.stringify(summaryCall?.prompt)).toContain("it just adds one");
     const planCall = models.used.find((u) => u.purpose === "plan")?.model.doStreamCalls[0];
     expect(JSON.stringify(planCall?.prompt)).toContain(PROBE_SUMMARY);
   });
@@ -568,6 +577,7 @@ describe("activity", () => {
     expect(await labels(sessionId)).toEqual([
       "Thinking…",
       "Noting what your answers showed",
+      "Working out where your knowledge ends",
       "Thinking…",
       "Recording the plan's terms",
     ]);

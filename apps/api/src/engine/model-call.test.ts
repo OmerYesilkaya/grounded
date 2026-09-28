@@ -554,7 +554,15 @@ describe("reasoning effort per purpose", () => {
   it("thinks little for the small structured records, and leaves every other call at the default", async () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
     const efforts: Record<string, unknown> = {};
-    for (const purpose of ["probe-decision", "term-sweep", "probe", "plan", "lesson", "check"]) {
+    for (const purpose of [
+      "probe-decision",
+      "term-sweep",
+      "probe",
+      "probe-summary",
+      "plan",
+      "lesson",
+      "check",
+    ]) {
       const mock = new MockLanguageModelV4({ doGenerate: reply("{}") });
       const { caller } = callerWith(mock);
       const model = await caller.model({ userId, purpose, role: "strong", trackId: "t-1" });
@@ -565,6 +573,7 @@ describe("reasoning effort per purpose", () => {
       "probe-decision": "low",
       "term-sweep": "low",
       probe: undefined,
+      "probe-summary": undefined,
       plan: undefined,
       lesson: undefined,
       check: undefined,

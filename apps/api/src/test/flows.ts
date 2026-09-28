@@ -54,13 +54,23 @@ export const PROBE_SUMMARY =
  * showed. The next question is the "probe" model's.
  */
 export const probeGoesOn = (actions: object[] = []) => ({
-  thenGenerate: [JSON.stringify({ actions, finished: false, summary: null })],
+  thenGenerate: [JSON.stringify({ actions, finished: false })],
 });
 
-/** The probe's decision ("probe-decision") that ends the probe: the record and its conclusion. */
-export const probeFinished = (summary: string = PROBE_SUMMARY, actions: object[] = []) => ({
-  thenGenerate: [JSON.stringify({ actions, finished: true, summary })],
+/** The probe's decision ("probe-decision") that ends the probe: the record of what the answers showed. */
+export const probeFinished = (actions: object[] = []) => ({
+  thenGenerate: [JSON.stringify({ actions, finished: true })],
 });
+
+/** The end of the probe: its decision, then what it found for the plan ("probe-summary"). */
+export function finishProbe(
+  models: { script: (purpose: string, ...scripts: object[]) => void },
+  summary: string = PROBE_SUMMARY,
+  actions: object[] = [],
+) {
+  models.script("probe-decision", probeFinished(actions));
+  models.script("probe-summary", { text: summary });
+}
 
 /** A plan attempt: the plan's message, then the structured record of its actions. */
 export const planAttempt = (text: string, actions: object[] = PLAN_ACTIONS) => ({
@@ -100,12 +110,9 @@ export function createFlows(t: Harness, models: Models) {
 
   const planned = async () => {
     const session = await startedSession();
-    models.script(
-      "probe-decision",
-      probeFinished(PROBE_SUMMARY, [
-        { type: "add-fix-item", text: "Thinks adding one is a single step" },
-      ]),
-    );
+    finishProbe(models, PROBE_SUMMARY, [
+      { type: "add-fix-item", text: "Thinks adding one is a single step" },
+    ]);
     models.script("plan", planAttempt(PLAN_TEXT));
     await t.request(`/api/sessions/${session.sessionId}/messages`, {
       method: "POST",

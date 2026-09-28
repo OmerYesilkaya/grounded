@@ -84,7 +84,9 @@ const SWEEP_ATTEMPTS = 3;
 const RESEARCH_STEPS = 6;
 
 const PROBE_DECISION_PROMPT =
-  "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, summarize both for the plan; you won't write another probe message, and the plan comes next, in its own message.";
+  "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, you won't write another probe message: the plan comes next, in its own message.";
+const PROBE_SUMMARY_PROMPT =
+  "(For the app; the learner doesn't see this.) The probe is finished. Write what it found, for the plan: for each strand the lesson will lean on, what the learner holds and where it stops, in their own words where you can. Where you found where a strand stops but not what they hold below it, say so; that is not the same as holding nothing. Then what they want to reach. Plain prose, no preamble.";
 const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on, and any misconceptions found in the probe as fix-list items. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const RESEARCH_PROMPT =
@@ -345,7 +347,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const brief = await catchUpBrief(session);
         if (leftOff || brief) context = await contextFor(sessionId, "probe");
       }
-      const modelFor = (purpose: "probe" | "probe-decision") =>
+      const modelFor = (purpose: "probe" | "probe-decision" | "probe-summary") =>
         models.model({ userId: session.userId, trackId: session.trackId, purpose, role: "strong" });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
       if (context.learnerHasSpoken) {
@@ -371,9 +373,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           context = await contextFor(sessionId, "probe");
         }
         if (output.finished) {
+          // What the plan is built on, so it thinks at the default effort: its own call, once.
+          const summarizer = await modelFor("probe-summary");
+          const { text: summary } = await withActivity(
+            db,
+            sessionId,
+            "Working out where your knowledge ends",
+            () =>
+              generateText({
+                model: summarizer,
+                system: context.system,
+                messages: [...context.messages, { role: "user", content: PROBE_SUMMARY_PROMPT }],
+              }),
+          );
           await db
             .update(learningSessions)
-            .set({ probeSummary: output.summary })
+            .set({ probeSummary: summary.trim() || null })
             .where(eq(learningSessions.id, sessionId));
           await applyEvent(db, sessionId, { type: "probe-done" });
           await queue.enqueue("plan", { sessionId });

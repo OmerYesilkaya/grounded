@@ -14,7 +14,7 @@ import {
   FIRST_QUESTION,
   PLAN_TEXT,
   planAttempt,
-  probeFinished,
+  finishProbe,
   storedMessages,
 } from "./test/flows.js";
 
@@ -308,7 +308,7 @@ describe("the tutor reading what the learner brought", () => {
     await probeCall();
     // The learner answers the first question once it's there, as they would.
     await until(cookie, sessionId, storedMessages(1));
-    models.script("probe-decision", probeFinished());
+    finishProbe(models);
     models.script("plan", planAttempt(PLAN_TEXT));
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
