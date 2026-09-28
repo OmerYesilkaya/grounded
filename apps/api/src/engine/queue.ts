@@ -60,6 +60,8 @@ export function createJobQueue(connectionString: string): JobQueue {
 }
 
 export interface Worker {
+  /** How many jobs this worker is running now. */
+  running(): number;
   stop(): Promise<void>;
 }
 
@@ -80,7 +82,15 @@ export async function startWorker(
     noHandleSignals: true,
     logger: graphileLogger,
   });
+  let running = 0;
+  runner.events.on("job:start", () => {
+    running++;
+  });
+  runner.events.on("job:complete", () => {
+    running--;
+  });
   return {
+    running: () => running,
     async stop() {
       await runner.stop();
       await locks.close();

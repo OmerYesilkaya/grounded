@@ -47,9 +47,20 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
     validateKey: () => Promise.resolve(keyCheck),
   });
 
+  /**
+   * Whether the worker has been running nothing for a moment: a test can end while a job it started
+   * still writes, and truncating under it deadlocks. The moment lets a job the test queued last start.
+   */
+  const workerIdle = async () => {
+    if (runner?.running()) return false;
+    await new Promise((r) => setTimeout(r, 50));
+    return !runner?.running();
+  };
+
   beforeEach(async () => {
     sent.length = 0;
     keyCheck = { ok: true };
+    await waitFor(workerIdle, 9_000);
     await db.execute(
       "truncate users, sessions, accounts, verifications, allowlist, credentials, usage_events, session_events cascade",
     );
@@ -65,6 +76,8 @@ export function createTestHarness(options: { tasks?: TaskList; models?: ModelAcc
       runner = await startWorker(TEST_DATABASE_URL, tasks, { concurrency: 2 });
   });
   afterAll(async () => {
+    // Let running jobs finish: one stopped mid-run is left locked, its writes landing in the next file.
+    await waitFor(workerIdle, 9_000);
     await runner?.stop();
     await queue.close();
     await events.close();
