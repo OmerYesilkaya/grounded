@@ -20,6 +20,7 @@ import {
   silenceAfter,
   type CallLimits,
 } from "./call-limits.js";
+import { shapeCall } from "./call-options.js";
 
 /** A provider failure with the plain message the learner is shown (design §4.4). */
 export class ProviderCallError extends Error {
@@ -70,12 +71,15 @@ export interface ModelRequest {
   purpose: string;
   /** strong: the learner's chosen model · cheap: the provider's cheap model (asides, small jobs). */
   role: "strong" | "cheap";
+  /** The track the call is about, if any: a track's calls share a provider cache (call-options.ts). */
+  trackId?: string;
 }
 
 /**
  * Hands out language models built with the learner's key, decrypted for this call only. Every call
- * made through them records its usage, failed calls included, and runs within its purpose's time
- * limits, because both live in middleware around the model rather than in each caller.
+ * made through them records its usage, failed calls included, runs within its purpose's time limits
+ * and is shaped for the provider (cache hints; call-options.ts), because all three live in
+ * middleware around the model rather than in each caller.
  */
 export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
   const { db, vault, limitsFor = callLimitsFor, retryDelayMs = 1000 } = deps;
@@ -161,6 +165,8 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
         model: deps.createLanguageModel(provider, modelId, apiKey),
         middleware: {
           specificationVersion: "v4",
+          transformParams: ({ params }) =>
+            Promise.resolve(shapeCall({ provider, trackId: request.trackId }, params)),
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);
             try {

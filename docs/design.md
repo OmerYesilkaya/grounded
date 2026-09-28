@@ -198,6 +198,13 @@ about, test and debug.
   notes, the probe's conclusion), then the conversation. The track's state renders the same way on
   every load (terms and fix-list in creation order, what a term rests on in the term list's order),
   so two calls of a track and phase are byte-identical up to their own parts.
+- **Cache hints** are added in the model middleware (`shapeCall` in
+  `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
+  the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
+  block per part, with a cache breakpoint (`cacheControl: { type: "ephemeral" }`, 5 minutes) after the
+  method and after the track's state, and the top-level `cacheControl` caches the whole prompt for the
+  conversation's next call. Google caches implicitly. For OpenAI and Google the parts are joined back
+  into one system message, so every provider reads exactly the assembled prompt.
 
 ## 5. Data model (sketch)
 

@@ -7,7 +7,7 @@ import {
   type LessonStep,
   type TrackTerm,
 } from "@grounded/content";
-import { generateText, Output, streamText } from "ai";
+import { generateText, Output, streamText, type Instructions } from "ai";
 import { z } from "zod";
 import type { LessonStepInfo } from "./session.js";
 
@@ -33,7 +33,7 @@ export type LessonOutline = z.infer<typeof lessonOutlineSchema>;
 export interface GenerateLessonOptions {
   model: LanguageModelV4;
   /** The lesson phase's assembled prompt. */
-  system: string;
+  system: Instructions;
   /** What to teach: the approved plan and anything else the call needs. */
   request: string;
   terms: readonly TrackTerm[];

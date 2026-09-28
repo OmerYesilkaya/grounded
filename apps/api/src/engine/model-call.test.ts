@@ -1,3 +1,4 @@
+import { joinSystemPrompt, type SystemPrompt } from "@grounded/core";
 import { credentials, usageEvents, users } from "@grounded/db";
 import { generateText, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
@@ -7,6 +8,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createTestHarness } from "../test/harness.js";
 import type { CallLimits } from "./call-limits.js";
+import { systemMessages } from "./call-options.js";
 import { createModelCaller, ProviderCallError } from "./model-call.js";
 
 const t = createTestHarness();
@@ -382,5 +384,90 @@ describe("model call time limits", () => {
     expect(await result.text).toBe("Thought it through.");
     const events = await t.db.select().from(usageEvents);
     expect(events.map((e) => e.status)).toEqual(["ok"]);
+  });
+});
+
+describe("provider cache hints", () => {
+  const prompt: SystemPrompt = {
+    method: "# Teaching method\n\nThe rules.",
+    track: "# What the app gives you in this call\n\n## Track\n\nSubject: Concurrency",
+    call: "## The step being checked\n\nStep one.",
+  };
+  const streamed = () =>
+    new MockLanguageModelV4({
+      doStream: {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "Next question." },
+            { type: "text-end", id: "t" },
+            { type: "finish", finishReason: finish, usage },
+          ] satisfies LanguageModelV4StreamPart[],
+        }),
+      },
+    });
+
+  it("gives OpenAI the track as its cache key, and the system prompt as one message", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "check", role: "strong", trackId: "t-1" });
+
+    await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
+
+    const [call] = mock.doGenerateCalls;
+    expect(call?.providerOptions).toEqual({ openai: { promptCacheKey: "t-1" } });
+    expect(call?.prompt.filter((m) => m.role === "system")).toEqual([
+      { role: "system", content: joinSystemPrompt(prompt) },
+    ]);
+  });
+
+  it("sets no cache key for a call about no track", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "import", role: "strong" });
+
+    await generateText({ model, prompt: "read" });
+
+    expect(mock.doGenerateCalls[0]?.providerOptions).toEqual({});
+  });
+
+  it("marks Anthropic cache breakpoints after the method and the track, and caches the conversation", async () => {
+    const userId = await userWithKey("anthropic", "claude-opus-5-5");
+    const mock = streamed();
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "probe", role: "strong", trackId: "t-1" });
+
+    await streamText({ model, system: systemMessages(prompt), prompt: "hi" }).text;
+
+    const [call] = mock.doStreamCalls;
+    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral" } } };
+    expect(call?.providerOptions).toEqual(breakpoint);
+    const system = call?.prompt.filter((m) => m.role === "system") ?? [];
+    expect(system).toEqual([
+      { role: "system", content: `${prompt.method}\n\n`, providerOptions: breakpoint },
+      { role: "system", content: `${prompt.track}\n\n`, providerOptions: breakpoint },
+      { role: "system", content: prompt.call },
+    ]);
+    // Read as one text, the blocks are exactly the assembled prompt.
+    expect(system.map((m) => m.content).join("")).toBe(joinSystemPrompt(prompt));
+  });
+
+  it("lets the caller's own provider options win", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "check", role: "strong", trackId: "t-1" });
+
+    await generateText({
+      model,
+      prompt: "grade",
+      providerOptions: { openai: { promptCacheKey: "mine", store: false } },
+    });
+
+    expect(mock.doGenerateCalls[0]?.providerOptions).toEqual({
+      openai: { promptCacheKey: "mine", store: false },
+    });
   });
 });

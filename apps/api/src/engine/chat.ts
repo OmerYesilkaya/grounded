@@ -18,7 +18,7 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
-import { generateText, streamText, type ModelMessage } from "ai";
+import { generateText, streamText, type Instructions, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
 import { batcher, publish, startActivity, withActivity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
@@ -30,7 +30,7 @@ export interface ChatMessageOptions {
   db: Db;
   sessionId: string;
   model: LanguageModelV4;
-  system: string;
+  system: Instructions;
   messages: ModelMessage[];
   kind: "message" | "plan" | "homework" | "recap";
   terms: readonly TrackTerm[];

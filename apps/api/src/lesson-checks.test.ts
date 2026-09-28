@@ -225,6 +225,27 @@ describe("checks", () => {
     await until(cookie, sessionId, (s) => s.state.phase === "homework");
   });
 
+  it("grades every step on the same start of the prompt: the method and the track, then the step", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script(
+      "check",
+      verdict({ verdict: "landed", reply: "Yes." }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+    );
+    for (const id of ["s1", "s2"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+
+    const [first, second] = models.used
+      .filter((u) => u.purpose === "check")
+      .map((u) => u.model.doGenerateCalls[0]?.prompt.filter((m) => m.role === "system") ?? []);
+    expect(first).toHaveLength(3);
+    expect(second?.slice(0, 2)).toEqual(first?.slice(0, 2));
+    expect(second?.[2]).not.toEqual(first?.[2]);
+    expect(JSON.stringify(first?.[2])).toContain("The step being checked");
+  });
+
   it("only takes an answer for the step being checked", async () => {
     const { cookie, sessionId } = await inLesson();
     const early = await answer(cookie, sessionId, "s2", { text: "jumping ahead" });

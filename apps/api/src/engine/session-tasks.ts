@@ -1,6 +1,6 @@
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
-  assemblePrompt,
+  assembleSystemPrompt,
   checkVerdictSchema,
   generateLesson,
   planActionsSchema,
@@ -9,6 +9,7 @@ import {
   trackActionSchema,
   type Method,
   type Phase,
+  type PromptContext,
   type SessionState,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
@@ -22,9 +23,18 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
-import { generateText, Output, stepCountIs, streamText, type ModelMessage, type Tool } from "ai";
+import {
+  generateText,
+  Output,
+  stepCountIs,
+  streamText,
+  type ModelMessage,
+  type SystemModelMessage,
+  type Tool,
+} from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { z } from "zod";
+import { systemMessages } from "./call-options.js";
 import { writeChatMessage } from "./chat.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
@@ -86,6 +96,9 @@ export async function recordCheckMessage(
 /** The session's jobs. A failure the learner can act on is published as an error event. */
 export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   const { db, models, method, queue } = deps;
+  /** A phase's system prompt, in the parts that let the provider cache its stable start. */
+  const systemFor = (phase: Phase, context: PromptContext) =>
+    systemMessages(assembleSystemPrompt(method, phase, context));
 
   const contextFor = async (sessionId: string, phase: Phase) => {
     const session = await loadSession(db, sessionId);
@@ -115,7 +128,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       terms,
       messages,
       learnerHasSpoken,
-      system: assemblePrompt(method, phase, track),
+      system: systemFor(phase, track),
     };
   };
 
@@ -141,7 +154,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     const introduced = (lesson.outline?.steps ?? [])
       .slice(0, index + 1)
       .flatMap((s) => s.introduces);
-    const system = assemblePrompt(method, "check", {
+    const system = systemFor("check", {
       ...track,
       extra: [
         { heading: "The step being checked", body: lesson.stepSources[stepId] ?? "" },
@@ -194,6 +207,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const { session } = context;
       const model = await models.model({
         userId: session.userId,
+        trackId: session.trackId,
         purpose: "probe",
         role: "strong",
       });
@@ -248,6 +262,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         .join("\n\n");
       const model = await models.model({
         userId: session.userId,
+        trackId: session.trackId,
         purpose: "lesson",
         role: "strong",
       });
@@ -318,6 +333,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         if (answer?.role !== "learner") return;
         const model = await models.model({
           userId: session.userId,
+          trackId: session.trackId,
           purpose: "check",
           role: "strong",
         });
@@ -391,6 +407,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const { session, system } = await checkPrompt(sessionId, stepId, state);
       const model = await models.model({
         userId: session.userId,
+        trackId: session.trackId,
         purpose: "check",
         role: "strong",
       });
@@ -409,6 +426,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const { session, terms, messages, system } = await contextFor(sessionId, "homework");
       const model = await models.model({
         userId: session.userId,
+        trackId: session.trackId,
         purpose: "homework",
         role: "strong",
       });
@@ -434,7 +452,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       const recap = await writeChatMessage({
         db,
         sessionId,
-        model: await models.model({ userId: session.userId, purpose: "close", role: "strong" }),
+        model: await models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          purpose: "close",
+          role: "strong",
+        }),
         system,
         messages: [...messages, { role: "user", content: "(Close the session: the recap.)" }],
         terms,
@@ -446,6 +469,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt++) {
         const model = await models.model({
           userId: session.userId,
+          trackId: session.trackId,
           purpose: "close",
           role: "strong",
         });
@@ -469,7 +493,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     plan: guarded(async ({ sessionId }) => {
       const { session, track, terms, messages } = await contextFor(sessionId, "plan");
       const modelFor = () =>
-        models.model({ userId: session.userId, purpose: "plan", role: "strong" });
+        models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          purpose: "plan",
+          role: "strong",
+        });
 
       // Research runs before the first plan only, as its own call: a search can't take the plan's place.
       // The probe's conclusion, stated for the plan (null when the learner skipped ahead to it).
@@ -488,12 +517,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             db,
             sessionId,
             model: await modelFor(),
-            system: assemblePrompt(method, "plan", { ...track, extra: probeFound }),
+            system: systemFor("plan", { ...track, extra: probeFound }),
             messages,
             search,
           })
         : "";
-      const system = assemblePrompt(method, "plan", {
+      const system = systemFor("plan", {
         ...track,
         extra: [
           ...probeFound,
@@ -574,7 +603,7 @@ async function research(options: {
   db: Db;
   sessionId: string;
   model: LanguageModelV4;
-  system: string;
+  system: SystemModelMessage[];
   messages: ModelMessage[];
   search: Tool;
 }): Promise<string> {
