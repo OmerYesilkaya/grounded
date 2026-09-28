@@ -16,7 +16,7 @@ import {
   PROBE_SUMMARY,
   planAttempt,
   probeFinished,
-  probeQuestion,
+  probeGoesOn,
   type Snapshot,
 } from "./test/flows.js";
 
@@ -134,12 +134,8 @@ describe("probe and plan", () => {
 
   it("decides first, then writes the next question with what the answers showed", async () => {
     const { cookie, sessionId } = await startedSession();
-    models.script(
-      "probe",
-      probeQuestion("Verstanden. Was steht im Speicher, während das passiert?", [
-        { type: "set-language", language: "German" },
-      ]),
-    );
+    models.script("probe-decision", probeGoesOn([{ type: "set-language", language: "German" }]));
+    models.script("probe", { text: "Verstanden. Was steht im Speicher, während das passiert?" });
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
       cookie,
@@ -151,17 +147,20 @@ describe("probe and plan", () => {
       "Noting what your answers showed",
       "Thinking…",
     ]);
-    const probe = models.used.filter((u) => u.purpose === "probe")[1]?.model;
-    expect(JSON.stringify(probe?.doGenerateCalls[0]?.prompt)).not.toContain("Verstanden");
-    expect(JSON.stringify(probe?.doStreamCalls[0]?.prompt)).toContain("Teaching language: German");
+    expect(models.used.map((u) => u.purpose)).toEqual(["probe", "probe-decision", "probe"]);
+    const [, decision, question] = models.used.map((u) => u.model);
+    expect(JSON.stringify(decision?.doGenerateCalls[0]?.prompt)).not.toContain("Verstanden");
+    expect(JSON.stringify(question?.doStreamCalls[0]?.prompt)).toContain(
+      "Teaching language: German",
+    );
     expect((await snapshot(cookie, sessionId)).state.phase).toBe("probe");
   });
 
   it("writes no probe message on the turn that ends the probe: the plan is in the plan message", async () => {
     const { cookie, sessionId } = await startedSession();
     // A model that feels done would present the plan in its probe message, if it were asked for one.
+    models.script("probe-decision", probeFinished());
     models.script("probe", {
-      ...probeFinished(),
       text: "Here's a plan aimed at your goal: first memory, then lost updates. Does that cover it?",
     });
     models.script("plan", planAttempt(PLAN_TEXT));
@@ -182,8 +181,8 @@ describe("probe and plan", () => {
       ["learner", "message", "it just adds one; I want to know why my counter is off"],
       ["tutor", "plan", PLAN_TEXT],
     ]);
-    const probe = models.used.filter((u) => u.purpose === "probe")[1]?.model;
-    expect(probe?.doStreamCalls).toHaveLength(0);
+    // Only the opening question was written by the probe's model.
+    expect(models.used.filter((u) => u.purpose === "probe")).toHaveLength(1);
   });
 
   it("gives the plan the probe's conclusion", async () => {
@@ -332,10 +331,10 @@ describe("empty replies", () => {
 
   it("asks again when a probe reply is only a tool call, and never stores it empty", async () => {
     const { cookie, sessionId } = await startedSession();
+    models.script("probe-decision", probeGoesOn());
     models.script("probe", {
       calls: [{ name: "finish_probe", input: { summary: "Floor: variables." } }],
       thenStream: [{ text: "Got it. What does memory hold while that happens?" }],
-      thenGenerate: [JSON.stringify({ actions: [], finished: false, summary: null })],
     });
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
@@ -371,7 +370,8 @@ describe("empty replies", () => {
 
   it("retracts the message and says so when every attempt is empty", async () => {
     const { cookie, sessionId } = await startedSession();
-    models.script("probe", { ...probeQuestion(" "), thenStream: [{ text: "\n" }, {}] });
+    models.script("probe-decision", probeGoesOn());
+    models.script("probe", { text: " ", thenStream: [{ text: "\n" }, {}] });
     await t.request(`/api/sessions/${sessionId}/messages`, {
       method: "POST",
       cookie,

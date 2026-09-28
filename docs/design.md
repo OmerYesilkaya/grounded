@@ -205,6 +205,13 @@ about, test and debug.
   method and after the track's state, and the top-level `cacheControl` caches the whole prompt for the
   conversation's next call. Google caches implicitly. For OpenAI and Google the parts are joined back
   into one system message, so every provider reads exactly the assembled prompt.
+- **Reasoning effort per purpose** (`REASONING` in `apps/api/src/engine/call-options.ts`), set in
+  the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
+  effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured
+  records of what the conversation already showed think little (`low`): the probe's decision
+  (`probe-decision`, its own purpose, apart from the probe's question) and the close's term sweep
+  (`term-sweep`, apart from the recap). Everything else keeps the provider's default, above all
+  plans, lessons and check grading.
 
 ## 5. Data model (sketch)
 

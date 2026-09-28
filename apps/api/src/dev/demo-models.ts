@@ -89,17 +89,17 @@ export function createDemoModels(): ModelAccess {
   const make: Record<string, (n: number) => MockLanguageModelV4> = {
     // The opening question, then (after the learner's answer) the decision that the probe is done,
     // which comes first and leaves no probe message to write.
-    probe: (n) =>
-      n % 2 === 1
-        ? model("In your own words: what do you think happens when a program adds one to a number?")
-        : model("", [
-            JSON.stringify({
-              actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
-              finished: true,
-              summary:
-                "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
-            }),
-          ]),
+    probe: () =>
+      model("In your own words: what do you think happens when a program adds one to a number?"),
+    "probe-decision": () =>
+      model("", [
+        JSON.stringify({
+          actions: [{ type: "add-fix-item", text: "Thinks adding one is a single step" }],
+          finished: true,
+          summary:
+            "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
+        }),
+      ]),
     plan: () =>
       model(
         "We start from something you already hold: a program changes values in memory. From there we'll see what really happens when a number goes up by one, then what goes wrong when two parts of a program do it at the same moment. That is exactly the counter problem you described.",
@@ -144,23 +144,23 @@ export function createDemoModels(): ModelAccess {
       model(
         "**Predict, then check.** Two workers each add one to a counter that starts at 0, a thousand times each. Write down what you expect the counter to show, then run it and explain any difference.\n\nA good answer shows why the three moves can interleave.",
       ),
-    close: (n) =>
-      n % 2 === 1
-        ? model(
-            "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
-          )
-        : model("", [
-            JSON.stringify({
-              actions: [
-                {
-                  type: "set-term-status",
-                  term: "working copy",
-                  status: "confirmed",
-                  evidence: "memory still holds the old value",
-                },
-              ],
-            }),
-          ]),
+    close: () =>
+      model(
+        "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
+      ),
+    "term-sweep": () =>
+      model("", [
+        JSON.stringify({
+          actions: [
+            {
+              type: "set-term-status",
+              term: "working copy",
+              status: "confirmed",
+              evidence: "memory still holds the old value",
+            },
+          ],
+        }),
+      ]),
   };
   return {
     model: ({ purpose }) => {

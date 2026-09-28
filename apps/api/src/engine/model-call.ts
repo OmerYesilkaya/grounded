@@ -67,7 +67,10 @@ export interface ModelAccess {
 
 export interface ModelRequest {
   userId: string;
-  /** What the call is for, recorded with its usage: "probe", "lesson", "check", "aside"… */
+  /**
+   * What the call is for, recorded with its usage and choosing its time limits and reasoning effort:
+   * "probe", "probe-decision", "lesson", "check", "term-sweep", "aside"…
+   */
   purpose: string;
   /** strong: the learner's chosen model · cheap: the provider's cheap model (asides, small jobs). */
   role: "strong" | "cheap";
@@ -166,7 +169,9 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
         middleware: {
           specificationVersion: "v4",
           transformParams: ({ params }) =>
-            Promise.resolve(shapeCall({ provider, trackId: request.trackId }, params)),
+            Promise.resolve(
+              shapeCall({ provider, purpose: request.purpose, trackId: request.trackId }, params),
+            ),
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);
             try {

@@ -273,11 +273,11 @@ describe("closing the session", () => {
       status: "confirmed",
       evidence: "one addition vanishes",
     };
+    models.script("close", {
+      text: "We built why a counter can lose an update: adding one is three moves, and two workers can interleave.",
+    });
     models.script(
-      "close",
-      {
-        text: "We built why a counter can lose an update: adding one is three moves, and two workers can interleave.",
-      },
+      "term-sweep",
       // The first sweep touches a term that doesn't exist and is rejected whole; the second is right.
       sweep([
         confirmLostUpdate,

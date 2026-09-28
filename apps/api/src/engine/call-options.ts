@@ -31,9 +31,28 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
     );
 }
 
+/**
+ * How hard the model thinks, per purpose (ModelRequest.purpose), where it differs from the
+ * provider's default. Set through the AI SDK's provider-neutral `reasoning` option, which each
+ * provider maps to its own: OpenAI's reasoning effort, Anthropic's thinking effort (or a thinking
+ * budget on older models), Gemini's thinking level or budget.
+ * - probe-decision, term-sweep: small structured records of what the conversation already showed.
+ *   The thinking happened in the conversation; a long think here only delays the learner's next
+ *   message (the probe's decision spent up to 2,400 tokens reasoning; #13).
+ * Everything else keeps the default, above all plans, lessons and check grading, where a weak plan
+ * or a wrong verdict costs more than the wait.
+ */
+export const REASONING: Readonly<
+  Record<string, Exclude<LanguageModelV4CallOptions["reasoning"], undefined>>
+> = {
+  "probe-decision": "low",
+  "term-sweep": "low",
+};
+
 /** What a call is for and about, as the middleware sees it (ModelRequest). */
 export interface CallFacts {
   provider: ProviderId;
+  purpose: string;
   /** The track the call is about, when there is one: its calls share one cache. */
   trackId?: string | undefined;
 }
@@ -46,6 +65,7 @@ export interface CallFacts {
  * - Caching. OpenAI: `promptCacheKey` is the track, so a track's calls reach the same cache.
  *   Anthropic: besides the breakpoints in the system prompt, the top-level `cacheControl` caches
  *   the whole prompt, so the next call of the conversation reuses it. Google caches implicitly.
+ * - Reasoning effort: the purpose's, from REASONING.
  */
 export function shapeCall(
   facts: CallFacts,
@@ -55,10 +75,12 @@ export function shapeCall(
   if (facts.provider === "anthropic") hints.anthropic = CACHE_BREAKPOINT.anthropic;
   if (facts.provider === "openai" && facts.trackId)
     hints.openai = { promptCacheKey: facts.trackId };
+  const reasoning = params.reasoning ?? REASONING[facts.purpose];
   return {
     ...params,
     prompt: separateSystemParts(params.prompt, facts.provider === "anthropic"),
     providerOptions: mergeProviderOptions(hints, params.providerOptions),
+    ...(reasoning ? { reasoning } : {}),
   };
 }
 

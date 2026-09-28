@@ -53,13 +53,15 @@ export const PLAN_ACTIONS = [
 export const PROBE_SUMMARY =
   "Knowledge ends at: thinks adding one is a single step. Goal: understand why a shared counter loses updates.";
 
-/** A probe turn that goes on: the record of what the answers showed, then the next question. */
-export const probeQuestion = (text: string, actions: object[] = []) => ({
-  text,
+/**
+ * The probe's decision ("probe-decision") on a turn that goes on: the record of what the answers
+ * showed. The next question is the "probe" model's.
+ */
+export const probeGoesOn = (actions: object[] = []) => ({
   thenGenerate: [JSON.stringify({ actions, finished: false, summary: null })],
 });
 
-/** The probe turn that ends the probe: the record and the probe's conclusion, and no message. */
+/** The probe's decision ("probe-decision") that ends the probe: the record and its conclusion. */
 export const probeFinished = (summary: string = PROBE_SUMMARY, actions: object[] = []) => ({
   thenGenerate: [JSON.stringify({ actions, finished: true, summary })],
 });
@@ -103,7 +105,7 @@ export function createFlows(t: Harness, models: Models) {
   const planned = async () => {
     const session = await startedSession();
     models.script(
-      "probe",
+      "probe-decision",
       probeFinished(PROBE_SUMMARY, [
         { type: "add-fix-item", text: "Thinks adding one is a single step" },
       ]),

@@ -205,21 +205,19 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     "probe-turn": guarded(async ({ sessionId }) => {
       let context = await contextFor(sessionId, "probe");
       const { session } = context;
-      const model = await models.model({
-        userId: session.userId,
-        trackId: session.trackId,
-        purpose: "probe",
-        role: "strong",
-      });
+      const modelFor = (purpose: "probe" | "probe-decision") =>
+        models.model({ userId: session.userId, trackId: session.trackId, purpose, role: "strong" });
       // The opening question follows nothing the learner said: nothing to record, nothing decided.
       if (context.learnerHasSpoken) {
+        // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
+        const decider = await modelFor("probe-decision");
         const { output } = await withActivity(
           db,
           sessionId,
           "Noting what your answers showed",
           () =>
             generateText({
-              model,
+              model: decider,
               system: context.system,
               output: Output.object({ schema: probeDecisionSchema }),
               messages: [...context.messages, { role: "user", content: PROBE_DECISION_PROMPT }],
@@ -243,7 +241,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       await writeChatMessage({
         db,
         sessionId,
-        model,
+        model: await modelFor("probe"),
         system: context.system,
         messages: context.messages,
         terms: context.terms,
@@ -464,13 +462,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         kind: "recap",
       });
 
-      // The term sweep is its own call, so a rejected edit never means rewriting the recap.
+      // The term sweep is its own call, so a rejected edit never means rewriting the recap; and its
+      // own purpose, a structured record made with little reasoning (call-options.ts).
       let feedback = "";
       for (let attempt = 0; attempt < SWEEP_ATTEMPTS; attempt++) {
         const model = await models.model({
           userId: session.userId,
           trackId: session.trackId,
-          purpose: "close",
+          purpose: "term-sweep",
           role: "strong",
         });
         const { output } = await withActivity(db, sessionId, "Updating your term list", () =>

@@ -387,6 +387,39 @@ describe("model call time limits", () => {
   });
 });
 
+describe("reasoning effort per purpose", () => {
+  it("thinks little for the small structured records, and leaves every other call at the default", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const efforts: Record<string, unknown> = {};
+    for (const purpose of ["probe-decision", "term-sweep", "probe", "plan", "lesson", "check"]) {
+      const mock = new MockLanguageModelV4({ doGenerate: reply("{}") });
+      const { caller } = callerWith(mock);
+      const model = await caller.model({ userId, purpose, role: "strong", trackId: "t-1" });
+      await generateText({ model, prompt: "decide" });
+      efforts[purpose] = mock.doGenerateCalls[0]?.reasoning;
+    }
+    expect(efforts).toEqual({
+      "probe-decision": "low",
+      "term-sweep": "low",
+      probe: undefined,
+      plan: undefined,
+      lesson: undefined,
+      check: undefined,
+    });
+  });
+
+  it("lets the caller's own reasoning setting win", async () => {
+    const userId = await userWithKey("anthropic", "claude-opus-5-5");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("{}") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "probe-decision", role: "strong" });
+
+    await generateText({ model, prompt: "decide", reasoning: "high" });
+
+    expect(mock.doGenerateCalls[0]?.reasoning).toBe("high");
+  });
+});
+
 describe("provider cache hints", () => {
   const prompt: SystemPrompt = {
     method: "# Teaching method\n\nThe rules.",
