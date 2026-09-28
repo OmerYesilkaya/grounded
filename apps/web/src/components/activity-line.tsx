@@ -2,11 +2,12 @@ import { ChevronRight } from "lucide-react";
 import { useState } from "react";
 import type { Activity } from "@/lib/session";
 import { StreamedText, useRevealedText } from "./streamed-text";
+import { WorkingMark } from "./working-mark";
 import { cn } from "@/lib/utils";
 
 /**
- * What the tutor is doing right now, in one quiet line (the most recent running activity, its
- * label shimmering while it runs), with the model's reasoning behind a toggle when it shared any.
+ * What the tutor is doing right now, in one quiet line (the working mark, then the most recent
+ * running activity, its label shimmering while it runs), with the model's reasoning behind a toggle when it shared any.
  * Shows `fallback` when nothing is reported yet but the learner is waiting.
  */
 export function ActivityLine({
@@ -30,6 +31,7 @@ export function ActivityLine({
       className={cn("font-sans text-sm text-subtle-foreground", className)}
     >
       <div className="flex items-center gap-2">
+        <WorkingMark className="text-muted-foreground" />
         <span className="text-shimmer text-muted-foreground">{label}</span>
         {current?.detail && <span className="truncate">{current.detail}</span>}
         {current?.reasoning && (

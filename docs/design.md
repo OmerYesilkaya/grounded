@@ -660,6 +660,9 @@ A refined "typographic index":
 - Labels for work in progress ("Thinking…", the activity line, "Checking your answer…") shimmer: a
   band of light sweeps through the letters themselves, never outside them; plain text under reduced
   motion, and never on finished text.
+- The same labels carry a small working mark on their left: a Lottie animation of layers stacking up
+  (`apps/web/src/assets/layers.json`), outlined in the label's colour over the surface behind it, so
+  it holds in both themes. It holds still under reduced motion, and goes away with the label.
 
 ### 9.4 Phones (requirements; not prototyped)
 

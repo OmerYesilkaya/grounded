@@ -1,6 +1,7 @@
 import type { CheckBlock } from "@grounded/content";
 import { useState } from "react";
 import { Composer } from "@/components/composer";
+import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,7 @@ export function CheckCard({
     <div
       role="group"
       aria-label="Check"
-      className="my-7 overflow-hidden rounded-xl border border-border-strong bg-card font-sans"
+      className="my-7 overflow-hidden rounded-xl border border-border-strong bg-card font-sans [--mark-surface:var(--card)]"
     >
       <div className="px-4.5 pt-4 pb-3">
         <span className="mb-1.5 block text-[11.5px] tracking-widest text-primary uppercase">
@@ -79,7 +80,8 @@ export function CheckCard({
             ),
           )}
           {progress.grading && (
-            <div className="text-[13px] text-subtle-foreground">
+            <div className="flex items-center gap-2 text-[13px] text-subtle-foreground">
+              <WorkingMark />
               <span className="text-shimmer">Checking your answer…</span>
             </div>
           )}
