@@ -366,6 +366,19 @@ about, test and debug.
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
 
+The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes through two edits
+(`apps/api/src/engine/track-state.ts`):
+
+- **`add-to-arc`** `{ arc, terms }` appends terms to the arc with that title (matched
+  case-insensitively), or, when no arc has it, adds a new arc with them at the end. It never removes
+  or reorders anything. Every term must be in the term list as the whole batch leaves it (so it may
+  come before the `add-planned-term` that adds it); an arc with no terms is rejected. A term already
+  in an arc, this one or another, stays where it is and is skipped (logged, not rejected): a term
+  belongs to one arc, moving it is a rewrite, and a revised plan that places the same terms again
+  changes nothing. If every term is skipped, no arc is created. Terms are stored in the term list's
+  spelling.
+- **`set-plan`** `{ arcs, notes }` replaces the whole plan.
+
 ## 6. Content: format and renderer
 
 ### 6.1 Format

@@ -22,6 +22,7 @@ import {
   tracks,
   type Db,
   type TermStatus,
+  type TrackPlan,
 } from "@grounded/db";
 import { log } from "../log.js";
 
@@ -35,24 +36,65 @@ export interface KnownTerm {
 
 const key = (term: string) => term.trim().toLowerCase();
 
-/** What the track looks like to the validator: its terms by lowercased name, and its open fix-list items. */
+type Arcs = TrackPlan["arcs"];
+
+/**
+ * What the track looks like to the validator: its terms by lowercased name, its open fix-list
+ * items, and the plan's arcs.
+ */
 export interface TrackShape {
   terms: Map<string, KnownTerm>;
   openFixItems: Set<string>;
+  arcs: Arcs;
 }
 
 /** An empty track: the shape a batch is validated against before the track exists (an import). */
 export function emptyTrackShape(): TrackShape {
-  return { terms: new Map(), openFixItems: new Set() };
+  return { terms: new Map(), openFixItems: new Set(), arcs: [] };
+}
+
+/**
+ * An add-to-arc applied to the arcs (design §4.4): its terms appended to the arc with its title
+ * (matched case-insensitively), or to a new arc at the end when none has it. Nothing is removed or
+ * reordered. A term already in an arc (this one or another) stays where it is and is skipped, so a
+ * revised plan that places its terms again changes nothing. Terms are written as `nameOf` spells
+ * them (the term list's spelling). Pure; returns the new arcs and the terms skipped.
+ */
+export function addToArc(
+  arcs: Arcs,
+  action: { arc: string; terms: readonly string[] },
+  nameOf: (term: string) => string = (term) => term.trim(),
+): { arcs: Arcs; skipped: string[] } {
+  const placed = new Set(arcs.flatMap((arc) => arc.terms.map(key)));
+  const fresh: string[] = [];
+  const skipped: string[] = [];
+  for (const term of action.terms) {
+    if (placed.has(key(term))) {
+      skipped.push(term);
+    } else {
+      placed.add(key(term));
+      fresh.push(nameOf(term));
+    }
+  }
+  if (fresh.length === 0) return { arcs, skipped };
+  const at = arcs.findIndex((arc) => key(arc.title) === key(action.arc));
+  if (at === -1) return { arcs: [...arcs, { title: action.arc.trim(), terms: fresh }], skipped };
+  return {
+    arcs: arcs.map((arc, i) => (i === at ? { ...arc, terms: [...arc.terms, ...fresh] } : arc)),
+    skipped,
+  };
 }
 
 /**
  * Checks a batch against the track as it would be after each edit, without writing anything. Returns
  * the reasons the model can act on; empty when the whole batch is valid. The shape is updated in place.
+ * An add-to-arc's terms are checked against the term list as the whole batch leaves it, so a batch
+ * may place a term before the edit that adds it.
  */
 export function validateActions(shape: TrackShape, actions: readonly TrackAction[]): string[] {
   const { terms: known, openFixItems } = shape;
   const errors: string[] = [];
+  const placed: { arc: string; term: string }[] = [];
   for (const action of actions) {
     switch (action.type) {
       case "set-term-status": {
@@ -100,9 +142,24 @@ export function validateActions(shape: TrackShape, actions: readonly TrackAction
       case "set-language":
         if (!action.language.trim()) errors.push("set-language needs the name of a language.");
         break;
+      case "add-to-arc":
+        if (action.terms.length === 0) {
+          errors.push(`add-to-arc "${action.arc}" names no terms.`);
+          break;
+        }
+        placed.push(...action.terms.map((term) => ({ arc: action.arc, term })));
+        shape.arcs = addToArc(shape.arcs, action).arcs;
+        break;
       case "set-plan":
+        shape.arcs = action.arcs;
         break;
     }
+  }
+  for (const { arc, term } of placed) {
+    if (!known.has(key(term)))
+      errors.push(
+        `"${term}" isn't in the term list; add it as a planned term to place it in "${arc}".`,
+      );
   }
   return errors;
 }
@@ -132,15 +189,15 @@ export async function applyActions(
     .select()
     .from(fixListItems)
     .where(and(eq(fixListItems.trackId, trackId), eq(fixListItems.status, "open")));
-  const errors = validateActions(
-    {
-      terms: new Map(
-        existing.map((t) => [key(t.term), { id: t.id, term: t.term, status: t.status }]),
-      ),
-      openFixItems: new Set(openFixItems.map((f) => f.text)),
-    },
-    actions,
-  );
+  const [track] = await db.select({ plan: tracks.plan }).from(tracks).where(eq(tracks.id, trackId));
+  const shape: TrackShape = {
+    terms: new Map(
+      existing.map((t) => [key(t.term), { id: t.id, term: t.term, status: t.status }]),
+    ),
+    openFixItems: new Set(openFixItems.map((f) => f.text)),
+    arcs: track?.plan.arcs ?? [],
+  };
+  const errors = validateActions(shape, actions);
   if (errors.length > 0) {
     // How many and which kinds of edit: the reasons quote term names and fix-list items.
     log.warn(
@@ -156,6 +213,14 @@ export async function applyActions(
   }
 
   await db.transaction(async (tx) => {
+    // The plan as it is now, held until the batch's changes to it are written.
+    const [locked] = await tx
+      .select({ plan: tracks.plan })
+      .from(tracks)
+      .where(eq(tracks.id, trackId))
+      .for("update");
+    let plan: TrackPlan = locked?.plan ?? { arcs: [], notes: "" };
+    let planChanged = false;
     const idOf = new Map(existing.map((t) => [key(t.term), t.id]));
     const statusOf = new Map(existing.map((t) => [key(t.term), t.status]));
     const record = async (
@@ -229,23 +294,32 @@ export async function applyActions(
             .set({ language: action.language.trim() })
             .where(eq(tracks.id, trackId));
           break;
+        case "add-to-arc": {
+          // In the term list's spelling, as the whole batch leaves it.
+          const placed = addToArc(
+            plan.arcs,
+            action,
+            (term) => shape.terms.get(key(term))?.term ?? term.trim(),
+          );
+          if (placed.skipped.length > 0)
+            log.info(
+              { trackId, source: options.source, skipped: placed.skipped.length },
+              "add-to-arc skipped terms already in an arc",
+            );
+          plan = { ...plan, arcs: placed.arcs };
+          planChanged = true;
+          break;
+        }
         case "set-plan": {
-          let notes = action.notes;
-          if (options.plan === "arcs") {
-            const [track] = await tx
-              .select({ plan: tracks.plan })
-              .from(tracks)
-              .where(eq(tracks.id, trackId));
-            notes = addedNotes(track?.plan.notes ?? "", action.notes);
-          }
-          await tx
-            .update(tracks)
-            .set({ plan: { arcs: action.arcs, notes } })
-            .where(eq(tracks.id, trackId));
+          const notes =
+            options.plan === "arcs" ? addedNotes(plan.notes, action.notes) : action.notes;
+          plan = { arcs: action.arcs, notes };
+          planChanged = true;
           break;
         }
       }
     }
+    if (planChanged) await tx.update(tracks).set({ plan }).where(eq(tracks.id, trackId));
   });
   return { ok: true };
 }

@@ -215,6 +215,149 @@ describe("applyActions: from a call that saw only part of the plan", () => {
   });
 });
 
+describe("applyActions: add-to-arc", () => {
+  const withArcs = async () => {
+    const trackId = await newTrack();
+    const plan = {
+      arcs: [
+        { title: "Basics", terms: ["bit", "memory"] },
+        { title: "Concurrency", terms: ["worker"] },
+      ],
+      notes: "Imported notes.",
+    };
+    const setUp = await applyActions(
+      t.db,
+      trackId,
+      [
+        ...["bit", "memory", "worker"].map((term) => ({
+          type: "add-planned-term" as const,
+          term,
+          restsOn: [],
+        })),
+        { type: "set-plan", ...plan },
+      ],
+      { source: "imported" },
+    );
+    expect(setUp).toEqual({ ok: true });
+    return { trackId, plan };
+  };
+
+  it("appends to the arc with that title, whatever its case, and leaves every other arc as it was", async () => {
+    const { trackId, plan } = await withArcs();
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-to-arc", arc: "concurrency", terms: ["Lost Update", "lock"] },
+        { type: "add-planned-term", term: "lost update", restsOn: ["worker"] },
+        { type: "add-planned-term", term: "lock", restsOn: [] },
+      ],
+      { source: "plan" },
+    );
+    expect(result).toEqual({ ok: true });
+    // A term placed before the edit that adds it; written in the term list's spelling.
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs: [plan.arcs[0], { title: "Concurrency", terms: ["worker", "lost update", "lock"] }],
+      notes: "Imported notes.",
+    });
+  });
+
+  it("adds a new arc at the end when no arc has the title", async () => {
+    const { trackId, plan } = await withArcs();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "query", restsOn: [] },
+        { type: "add-to-arc", arc: " SQL as asking questions ", terms: ["query"] },
+      ],
+      { source: "plan" },
+    );
+    expect((await loadTrackContext(t.db, trackId)).plan.arcs).toEqual([
+      ...plan.arcs,
+      { title: "SQL as asking questions", terms: ["query"] },
+    ]);
+  });
+
+  it("creates a track's first arcs", async () => {
+    const trackId = await newTrack();
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "memory", restsOn: [] },
+        { type: "add-planned-term", term: "lost update", restsOn: ["memory"] },
+        { type: "add-to-arc", arc: "Memory", terms: ["memory"] },
+        { type: "add-to-arc", arc: "Concurrency", terms: ["lost update"] },
+      ],
+      { source: "plan" },
+    );
+    expect(result).toEqual({ ok: true });
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs: [
+        { title: "Memory", terms: ["memory"] },
+        { title: "Concurrency", terms: ["lost update"] },
+      ],
+      notes: "",
+    });
+  });
+
+  it("skips a term already in an arc, so placing a revised plan's terms again changes nothing", async () => {
+    const { trackId, plan } = await withArcs();
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-to-arc", arc: "Concurrency", terms: ["Memory", "worker", "worker"] },
+        { type: "add-to-arc", arc: "Networks", terms: ["bit"] },
+      ],
+      { source: "plan" },
+    );
+    expect(result).toEqual({ ok: true });
+    // No empty arc for terms that were all placed already.
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual(plan);
+  });
+
+  it("rejects terms that aren't in the term list, and an arc with no terms", async () => {
+    const { trackId, plan } = await withArcs();
+    const result = await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "add-planned-term", term: "lock", restsOn: [] },
+        { type: "add-to-arc", arc: "Concurrency", terms: ["lock", "semaphore"] },
+        { type: "add-to-arc", arc: "Networks", terms: [] },
+      ],
+      { source: "plan" },
+    );
+    expect(result).toEqual({
+      ok: false,
+      errors: [
+        'add-to-arc "Networks" names no terms.',
+        '"semaphore" isn\'t in the term list; add it as a planned term to place it in "Concurrency".',
+      ],
+    });
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual(plan);
+  });
+
+  it("applies after a set-plan in the same batch, to the plan the set-plan left", async () => {
+    const { trackId } = await withArcs();
+    await applyActions(
+      t.db,
+      trackId,
+      [
+        { type: "set-plan", arcs: [{ title: "Basics", terms: ["bit"] }], notes: "Rewritten." },
+        { type: "add-to-arc", arc: "basics", terms: ["memory"] },
+      ],
+      { source: "close", plan: "whole" },
+    );
+    expect((await loadTrackContext(t.db, trackId)).plan).toEqual({
+      arcs: [{ title: "Basics", terms: ["bit", "memory"] }],
+      notes: "Rewritten.",
+    });
+  });
+});
+
 describe("applyActions: from the plan's record, which saw where you left off, not the notes", () => {
   it("replaces the arcs and adds its notes after the notes as written", async () => {
     const trackId = await newTrack();
