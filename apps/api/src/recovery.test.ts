@@ -137,7 +137,7 @@ describe("recovery after a worker dies mid-job", () => {
     expect(before.activities).toHaveLength(1);
 
     expect(await recoverAbandonedWork(t.db)).toEqual([
-      { sessionId, messages: 1, activities: 1, checks: [], lesson: false },
+      { sessionId, messages: 1, activities: 1, checks: [], asides: 0, lesson: false },
     ]);
 
     expect(await eventsOf(sessionId, "message-retracted")).toEqual([{ id: messageId }]);
@@ -187,7 +187,7 @@ describe("recovery after a worker dies mid-job", () => {
     await deadJob("check", { sessionId, stepId: "s1" });
 
     expect(await recoverAbandonedWork(t.db)).toEqual([
-      { sessionId, messages: 0, activities: 0, checks: ["s1"], lesson: false },
+      { sessionId, messages: 0, activities: 0, checks: ["s1"], asides: 0, lesson: false },
     ]);
 
     const thread = (await snapshot(cookie, sessionId)).checks;
@@ -260,7 +260,7 @@ describe("recovery after a worker dies mid-job", () => {
     await deadJob("lesson", { sessionId });
 
     expect(await recoverAbandonedWork(t.db)).toEqual([
-      { sessionId, messages: 0, activities: 0, checks: [], lesson: true },
+      { sessionId, messages: 0, activities: 0, checks: [], asides: 0, lesson: true },
     ]);
     const s = await snapshot(cookie, sessionId);
     expect(s.state.lesson.status).toBe("failed");

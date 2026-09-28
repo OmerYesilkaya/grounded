@@ -10,6 +10,7 @@ import type { FileStore } from "./files/store.js";
 import type { JobQueue } from "./engine/queue.js";
 import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
+import { registerAsideRoutes } from "./routes/asides.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerTrackRoutes } from "./routes/tracks.js";
 
@@ -175,6 +176,7 @@ export function createApp(deps: AppDependencies) {
 
   registerTrackRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerSessionRoutes(app, { db, queue: deps.queue, files: deps.files });
+  registerAsideRoutes(app, { db, queue: deps.queue });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

@@ -1,8 +1,10 @@
 import type { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import { initialSession, loadMethod, type SessionState } from "@grounded/core";
-import { checkMessages, eq, learningSessions } from "@grounded/db";
+import { checkMessages, eq, learningSessions, lessons } from "@grounded/db";
 import type { JobHelpers } from "graphile-worker";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createAsideTasks } from "./engine/aside-tasks.js";
+import { createAside, recordAsideMessage } from "./engine/asides.js";
 import { estimateTokens, PROMPT_BUDGETS, type BudgetedPhase } from "./engine/prompt-budget.js";
 import { createSessionTasks } from "./engine/session-tasks.js";
 import { offlineWeb } from "./media/web.js";
@@ -13,6 +15,7 @@ import {
   createLargeTrack,
   CURRENT_ARC,
   LEFT_OFF,
+  STEP_SOURCE,
   termName,
 } from "./test/large-track.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -24,14 +27,15 @@ import { scriptedModels } from "./test/scripted-models.js";
 
 const models = scriptedModels();
 const t = createTestHarness();
-const tasks = createSessionTasks({
+const deps = {
   db: t.db,
   models: models.access,
   method: loadMethod(),
   queue: { enqueue: () => Promise.resolve(), close: () => Promise.resolve() },
   files: t.files,
   media: { web: offlineWeb },
-});
+};
+const tasks = { ...createSessionTasks(deps), ...createAsideTasks(deps) };
 const run = async (job: string, payload: object) => {
   // A job may fail after its calls (a state it doesn't expect); only its prompts are measured here.
   await Promise.resolve(tasks[job]?.(payload, {} as JobHelpers)).catch(() => undefined);
@@ -68,13 +72,24 @@ const lesson: SessionState = {
   currentStep: null,
 };
 
+const LESSON_STEPS = ["s1", "s2", "s3", "s4", "s5", "s6"];
+const ASIDE_ANCHOR = {
+  blockId: "s2.b2",
+  quote: "so the read has two choices",
+  prefix: "The row is being changed by another transaction, ",
+  suffix: ". The row is being changed",
+};
+const ASIDE_ANSWER =
+  "It can wait until the change is finished, or it can read the row as it was before the change began. Which one happens is a setting of the database, and the lesson builds it shortly.";
+
 /** A session of the large track in the given state, and the job that runs its phase. */
 const scenarios: Record<
   BudgetedPhase,
   {
     /** The session's state for the job; the large track's session is mid-lesson, on step s1. */
     state?: SessionState;
-    setup?: (sessionId: string) => Promise<void>;
+    /** Returns more of the job's payload, if it needs any. */
+    setup?: (sessionId: string) => Promise<object | undefined>;
     script: () => void;
     job: string;
   }
@@ -159,6 +174,47 @@ const scenarios: Record<
     },
     job: "recap",
   },
+  aside: {
+    state: {
+      ...lesson,
+      lesson: { status: "ready", steps: LESSON_STEPS.map((id) => ({ id, check: null })) },
+      steps: Object.fromEntries(
+        LESSON_STEPS.map((id) => [id, { status: "unchecked", misses: 0, offerGate: false }]),
+      ),
+    },
+    script: () => {
+      models.script("aside", { text: "It waits because the row is still being changed." });
+      models.script("aside-record", {
+        thenGenerate: [JSON.stringify({ evidence: [], tangent: null })],
+      });
+    },
+    setup: async (sessionId) => {
+      // A whole lesson of a real one's size, and two questions already asked on it.
+      await t.db
+        .update(lessons)
+        .set({
+          outline: {
+            steps: LESSON_STEPS.map((id) => ({
+              heading: `Step ${id}`,
+              establishes: "",
+              introduces: [],
+              restsOn: [],
+            })),
+          },
+          stepSources: Object.fromEntries(LESSON_STEPS.map((id) => [id, STEP_SOURCE])),
+        })
+        .where(eq(lessons.sessionId, sessionId));
+      const asked = (question: string) =>
+        createAside(t.db, sessionId, { stepId: "s2", anchor: ASIDE_ANCHOR, question });
+      for (const question of ["Why two choices?", "What does waiting cost?"]) {
+        const { aside } = await asked(question);
+        await recordAsideMessage(t.db, sessionId, aside.id, { role: "tutor", text: ASIDE_ANSWER });
+      }
+      const { aside } = await asked("Why can't the read just go ahead?");
+      return { asideId: aside.id };
+    },
+    job: "aside",
+  },
 };
 
 /** The phase whose budget a call is held to: its prompt is that phase's. */
@@ -166,6 +222,7 @@ const PHASE_OF: Record<string, BudgetedPhase> = {
   "probe-decision": "probe",
   "term-sweep": "close",
   "left-off": "close",
+  "aside-record": "aside",
 };
 
 const withinBudgets = () => {
@@ -185,6 +242,7 @@ describe("prompt budgets on a large track", () => {
     check: ["check"],
     homework: ["homework"],
     close: ["close", "term-sweep", "left-off"],
+    aside: ["aside", "aside-record"],
   };
   for (const [phase, scenario] of Object.entries(scenarios)) {
     it(`keeps every call of the ${phase} within ${String(PROMPT_BUDGETS[phase as BudgetedPhase])} tokens`, async () => {
@@ -197,9 +255,9 @@ describe("prompt budgets on a large track", () => {
           .update(learningSessions)
           .set({ state: scenario.state })
           .where(eq(learningSessions.id, sessionId));
-      await scenario.setup?.(sessionId);
+      const payload = await scenario.setup?.(sessionId);
       scenario.script();
-      await run(scenario.job, { sessionId, stepId: "s1" });
+      await run(scenario.job, { sessionId, stepId: "s1", ...payload });
       expect(withinBudgets()).toEqual(purposes[phase as BudgetedPhase]);
     });
   }

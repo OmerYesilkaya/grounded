@@ -12,6 +12,7 @@ import {
   type Db,
 } from "@grounded/db";
 import { log, withLogContext } from "../log.js";
+import { asideFailedText, loadAsides, recordAsideMessage, waitingFor } from "./asides.js";
 import { messagesBeingWritten } from "./chat.js";
 import { publish, runningActivities } from "./events.js";
 import { applyEvent, loadSession } from "./session-store.js";
@@ -27,6 +28,8 @@ export interface RecoveredSession {
   activities: number;
   /** Steps whose check answer was told it didn't go through. */
   checks: string[];
+  /** Questions in the margin told they didn't go through. */
+  asides: number;
   /** Whether a lesson that stopped being written was marked failed. */
   lesson: boolean;
 }
@@ -93,22 +96,35 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
 
   const checks: string[] = [];
   for (const stepId of await answersWaiting(db, sessionId)) {
-    if (await queued(db, "check", sessionId, stepId)) continue;
+    if (await queued(db, "check", sessionId, { stepId })) continue;
     await recordCheckMessage(db, sessionId, stepId, checkFailedText(), null);
     checks.push(stepId);
+  }
+
+  // A question in the margin still waiting for its answer is told in its card, like a check.
+  let asides = 0;
+  for (const aside of await loadAsides(db, sessionId)) {
+    if (!waitingFor(aside) || (await queued(db, "aside", sessionId, { asideId: aside.id })))
+      continue;
+    await recordAsideMessage(db, sessionId, aside.id, { role: "tutor", text: asideFailedText() });
+    asides++;
   }
 
   const lesson =
     (await lessonUnfinished(db, sessionId)) && !(await queued(db, "lesson", sessionId));
   if (lesson) await applyEvent(db, sessionId, { type: "lesson-failed" });
 
-  if (!messages.length && !activities.length && !checks.length && !lesson) return null;
-  await publish(db, sessionId, "error", { message: lesson ? LESSON_INTERRUPTED : INTERRUPTED });
+  // An aside's card says what happened itself; the session hears about the rest.
+  const told = messages.length > 0 || activities.length > 0 || checks.length > 0 || lesson;
+  if (!told && asides === 0) return null;
+  if (told)
+    await publish(db, sessionId, "error", { message: lesson ? LESSON_INTERRUPTED : INTERRUPTED });
   return {
     sessionId,
     messages: messages.length,
     activities: activities.length,
     checks,
+    asides,
     lesson,
   };
 }
@@ -137,10 +153,18 @@ async function lessonUnfinished(db: Db, sessionId: string): Promise<boolean> {
 }
 
 /**
- * Whether a job for the session (and step) is waiting to run. A job whose worker died is not: it was
- * attempted, and jobs are attempted once (queue.ts).
+ * Whether a job for the session (and the step or aside its payload names) is waiting to run. A job
+ * whose worker died is not: it was attempted, and jobs are attempted once (queue.ts).
  */
-async function queued(db: Db, task: string, sessionId: string, stepId?: string): Promise<boolean> {
+async function queued(
+  db: Db,
+  task: string,
+  sessionId: string,
+  match: { stepId?: string; asideId?: string } = {},
+): Promise<boolean> {
+  const also = Object.entries(match).map(
+    ([key, value]) => sql`and jobs.payload->>${key} = ${value}`,
+  );
   const rows = await db.execute(sql`
     select 1
     from graphile_worker._private_jobs as jobs
@@ -148,7 +172,7 @@ async function queued(db: Db, task: string, sessionId: string, stepId?: string):
     where tasks.identifier = ${task}
       and jobs.is_available
       and jobs.payload->>'sessionId' = ${sessionId}
-      ${stepId === undefined ? sql`` : sql`and jobs.payload->>'stepId' = ${stepId}`}
+      ${sql.join(also, sql` `)}
     limit 1`);
   return rows.length > 0;
 }

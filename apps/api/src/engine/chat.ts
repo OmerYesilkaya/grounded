@@ -22,7 +22,7 @@ import { generateText, streamText, type Instructions, type ModelMessage } from "
 import { v7 as uuidv7 } from "uuid";
 import { content, log } from "../log.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
-import { batcher, publish, startActivity, withActivity } from "./events.js";
+import { batcher, publish, startActivity, withActivity, type Activity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
 /** Attempts at getting a reply with any text in it (the message, or its rewrite). */
@@ -47,15 +47,41 @@ export interface ChatMessageResult {
   blocks: Block[];
 }
 
+/** A tutor reply streamed to the learner and then validated: a chat message, or an aside's answer. */
+export interface ReplyOptions {
+  db: Db;
+  sessionId: string;
+  model: LanguageModelV4;
+  system: Instructions;
+  messages: ModelMessage[];
+  terms: readonly TrackTerm[];
+  surface: Surface;
+  /** Terms the surroundings teach (a lesson's steps so far), usable here. */
+  introduced?: readonly string[];
+  /** Receives the text as it streams, in batches. */
+  onText: (text: string) => Promise<void>;
+  /**
+   * Show "Thinking…" and a rewrite in the session's activity line (default true). An aside's card
+   * shows its own state instead.
+   */
+  activities?: boolean;
+  /** Ids for its log lines: the message, the aside. */
+  logFields: Record<string, unknown>;
+  /** Where the reply's links are verified before it is stored (design §6.4). */
+  media: VerifierOptions;
+}
+
 function chatIssues(
   text: string,
   surface: Surface,
   terms: readonly TrackTerm[],
+  introduced: readonly string[] = [],
 ): { blocks: Block[]; errors: Issue[] } {
   const parsed = parseBlocks(text);
-  const errors = [...parsed.issues, ...validate(parsed.blocks, { surface, terms })].filter(
-    (i) => i.severity !== "review",
-  );
+  const errors = [
+    ...parsed.issues,
+    ...validate(parsed.blocks, { surface, terms, introduced }),
+  ].filter((i) => i.severity !== "review");
   return { blocks: parsed.blocks, errors };
 }
 
@@ -81,7 +107,13 @@ export async function writeChatMessage(options: ChatMessageOptions): Promise<Cha
   await publish(db, sessionId, "message-start", { id: messageId, role: "tutor", kind });
   let written: Omit<ChatMessageResult, "messageId">;
   try {
-    written = await composeMessage(options, messageId);
+    written = await composeReply({
+      ...options,
+      surface: options.surface ?? "chat",
+      onText: (text) =>
+        publish(db, sessionId, "message-delta", { id: messageId, text }).then(() => undefined),
+      logFields: { messageId, kind },
+    });
     await db.insert(sessionMessages).values({
       id: messageId,
       sessionId,
@@ -104,25 +136,35 @@ export async function writeChatMessage(options: ChatMessageOptions): Promise<Cha
   return { messageId, ...written };
 }
 
-async function composeMessage(
-  options: ChatMessageOptions,
-  messageId: string,
+/** Stands in for an activity that isn't shown. */
+const unseen: Activity = {
+  update: () => Promise.resolve(),
+  reasoning: () => Promise.resolve(),
+  done: () => Promise.resolve(),
+};
+
+/**
+ * Streams a tutor reply through `onText`, then validates it against the surface's rules; if it
+ * breaks one, it is rewritten once with the issues (the rewrite replaces what was streamed). A reply
+ * without text is asked for again; if every attempt is empty, it fails.
+ */
+export async function composeReply(
+  options: ReplyOptions,
 ): Promise<Omit<ChatMessageResult, "messageId">> {
-  const { db, sessionId } = options;
-  const surface = options.surface ?? "chat";
-  const deltas = batcher((text) =>
-    publish(db, sessionId, "message-delta", { id: messageId, text }).then(() => undefined),
-  );
+  const { db, sessionId, surface, logFields } = options;
+  const shown = options.activities ?? true;
+  const deltas = batcher(options.onText);
   let text = "";
   for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(text); attempt++) {
-    if (attempt > 0)
-      log.info({ messageId, kind: options.kind, attempt }, "reply came back empty; asking again");
+    if (attempt > 0) log.info({ ...logFields, attempt }, "reply came back empty; asking again");
     // Thinking lasts until the text starts: from then on the learner watches it being written.
-    const thinking = await startActivity(
-      db,
-      sessionId,
-      attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
-    );
+    const thinking = shown
+      ? await startActivity(
+          db,
+          sessionId,
+          attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
+        )
+      : unseen;
     try {
       const reply = streamText({
         model: options.model,
@@ -146,43 +188,40 @@ async function composeMessage(
   if (isBlank(text))
     throw new ProviderCallError("unknown", "The tutor's reply came back empty. Try again.");
 
-  const first = chatIssues(text, surface, options.terms);
+  const first = chatIssues(text, surface, options.terms, options.introduced);
   let { blocks } = first;
   if (first.errors.length > 0) {
     log.info(
       {
-        messageId,
-        kind: options.kind,
+        ...logFields,
         surface,
         issues: first.errors.map((i) => i.code),
         ...content({ issues: first.errors.map((i) => i.message) }),
       },
       "message broke rules; rewriting it",
     );
-    const rewrite = await withActivity(
-      db,
-      sessionId,
-      "Rewriting the message (it broke a chat rule)",
-      () => rewritten(options, text, first.errors),
-    );
+    const rewrite = shown
+      ? await withActivity(db, sessionId, "Rewriting the message (it broke a chat rule)", () =>
+          rewritten(options, text, first.errors),
+        )
+      : await rewritten(options, text, first.errors);
     // An empty rewrite is worse than the message the learner has already read.
     if (!isBlank(rewrite)) {
       text = rewrite;
-      const second = chatIssues(text, surface, options.terms);
+      const second = chatIssues(text, surface, options.terms, options.introduced);
       ({ blocks } = second);
       if (second.errors.length > 0)
         log.warn(
-          { messageId, kind: options.kind, issues: second.errors.map((i) => i.code) },
+          { ...logFields, issues: second.errors.map((i) => i.code) },
           "rewritten message still breaks rules; keeping it",
         );
-    } else
-      log.warn({ messageId, kind: options.kind }, "rewrite came back empty; keeping the message");
+    } else log.warn(logFields, "rewrite came back empty; keeping the message");
   }
   return { text, blocks: await withVerifiedLinks(blocks, options.media) };
 }
 
 async function rewritten(
-  options: ChatMessageOptions,
+  options: ReplyOptions,
   text: string,
   errors: readonly Issue[],
 ): Promise<string> {

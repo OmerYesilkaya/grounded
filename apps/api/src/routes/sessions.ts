@@ -15,6 +15,7 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import { writeLessonAgain } from "../engine/lesson-again.js";
@@ -146,6 +147,9 @@ export function registerSessionRoutes(
         blocks: m.blocks,
         verdict: m.verdict,
       })),
+      // Questions asked in the margin (design §7.5), and whether the learner has ever asked one.
+      asides: await asidesSnapshot(db, session.id, cursor),
+      hasAskedAside: await hasAskedAside(db, session.userId),
       // What jobs are doing at the cursor; later changes arrive on the stream as activity events.
       activities: await runningActivities(db, session.id, cursor),
       lastEventId: cursor,

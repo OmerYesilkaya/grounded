@@ -145,6 +145,20 @@ export function createDemoModels(): ModelAccess {
       model(
         "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
       ),
+    // Every second question in the margin opens a tangent, which the card offers to save.
+    aside: (n) =>
+      model(
+        n % 2 === 1
+          ? "The number itself never moves: it stays in memory the whole time. What changes is a **copy** of it, held by the part that does the arithmetic, and only the last move puts the new value back."
+          : "Yes, and it isn't only a problem for programs on one machine: databases meet it all the time, with many people changing the same row. That's a story of its own; we can save it for a future session.",
+      ),
+    "aside-record": (n) =>
+      model("", [
+        JSON.stringify({
+          evidence: [],
+          tangent: n % 2 === 1 ? null : "How databases keep updates from getting lost",
+        }),
+      ]),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
     "term-sweep": () =>

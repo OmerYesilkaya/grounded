@@ -44,6 +44,18 @@ export {
   sweepActionsSchema,
   trackActionsSchema,
 } from "./decisions.js";
+export {
+  ASIDE_LIMITS,
+  ASIDE_RECORD_PROMPT,
+  asideAnchorSchema,
+  asideBlocksLine,
+  asideLesson,
+  asidePassage,
+  asideRecord,
+  asideRecordSchema,
+  stepOfBlock,
+} from "./aside.js";
+export type { AsideAnchor, AsideLessonStep, AsideRecord, AsideThread, AsideTurn } from "./aside.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";
 export {

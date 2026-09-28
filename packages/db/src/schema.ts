@@ -13,7 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Block, LessonStep } from "@grounded/content";
-import type { AttachmentKind, LessonOutline, SessionState } from "@grounded/core";
+import type { AsideAnchor, AttachmentKind, LessonOutline, SessionState } from "@grounded/core";
 import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
 
@@ -381,6 +381,48 @@ export const checkMessages = pgTable("check_messages", {
   verdict: text("verdict").$type<"landed" | "missed">(),
   createdAt: createdAt(),
 });
+
+/**
+ * A question the learner asked on a passage of the lesson, answered in the margin (design §7.5). Its
+ * thread is in aside_messages.
+ */
+export const asides = pgTable(
+  "asides",
+  {
+    id: id(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => learningSessions.id, { onDelete: "cascade" }),
+    /** The step the passage is in. */
+    stepId: text("step_id").notNull(),
+    /** The passage: its block, the quote and the text around it. */
+    anchor: jsonb("anchor").$type<AsideAnchor>().notNull(),
+    /** A tangent the tutor offered to save for a future session, in a few words; null if none. */
+    tangent: text("tangent"),
+    /** When the learner saved the tangent (it is then in the plan's notes); null until they do. */
+    savedAt: timestamp("saved_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("asides_session").on(table.sessionId, table.createdAt)],
+);
+
+/** An aside's thread: the learner's question, the answer, and follow-ups. */
+export const asideMessages = pgTable(
+  "aside_messages",
+  {
+    id: id(),
+    asideId: uuid("aside_id")
+      .notNull()
+      .references(() => asides.id, { onDelete: "cascade" }),
+    role: text("role").$type<"learner" | "tutor">().notNull(),
+    /** The learner's words as typed; the tutor's markdown as written. */
+    text: text("text").notNull(),
+    /** The tutor's answer as validated blocks; null for the learner's messages. */
+    blocks: jsonb("blocks").$type<Block[]>(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("aside_messages_aside").on(table.asideId, table.createdAt)],
+);
 
 /** An ordered log of everything that happened in a session; SSE replays it from any point. */
 export const sessionEvents = pgTable(

@@ -150,8 +150,10 @@ about, test and debug.
   jobs, it recovers every open session whose work lock it can take (exclusively, so no job can start
   there meanwhile): a tutor message still being written is retracted, running activities are ended,
   a check answer still waiting for a verdict gets the tutor's "That didn't go through… Answer again"
-  (unless its check job is still queued), and a lesson that stopped being written, outlined or not,
-  is marked failed (unless its job is still queued); each such session gets an `error` event.
+  (unless its check job is still queued), so does a question in the margin still waiting for its
+  answer ("… Ask again", in its card, unless its aside job is queued), and a lesson that stopped
+  being written, outlined or not, is marked failed (unless its job is still queued); each such
+  session gets an `error` event (not for an aside alone: its card already says so).
   A lesson job that fails for any reason (the provider included) marks its lesson failed itself
   before telling the learner why, so an unfinished lesson is always one whose job died, and a failed
   one is never reported twice.
@@ -342,7 +344,9 @@ about, test and debug.
   the notes as written). The term sweep then got the session's conversation too (#17): ~19,900 →
   ~22,000, about what the recap sends. Budgets sit about a fifth above: probe 12,000, plan 17,000, lesson and
   homework 12,500, check 10,000, close 25,000. The method's sections are now the largest part
-  (18–24 KB per phase), and they are the part every call reuses from the cache.
+  (18–24 KB per phase), and they are the part every call reuses from the cache. An aside (#37)
+  carries the whole lesson: ~13,300 with six steps of a real one's size (about 20 KB) and two
+  earlier asides, budget 16,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -366,8 +370,8 @@ about, test and debug.
   records of what the conversation already showed think little (`low`): the probe's decision
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
-  it) and the close's term sweep
-  (`term-sweep`, apart from the recap), and so do the summaries of what is already written ("where
+  it), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
+  (`aside-record`, apart from its answer), and so do the summaries of what is already written ("where
   you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
   keeps the provider's default, above all plans, lessons and check grading.
 
@@ -440,19 +444,19 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
+| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                         |
 | `usage_events`                                   | per model call                                                                                                                           |
 | `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
 
 Planned for v1, not built yet:
 
-| Table                      | Holds                                                                                                 | Issue    |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
-| `learner_profile_notes`    | teaching notes: text, evidence refs, created/revised at; editable by the learner                      | #44      |
-| `borrowed_terms`           | term used in this track, confirmed in another                                                         | #52      |
-| `asides`, `aside_messages` | anchor (block id + quote selector), thread, saved-for-later flag                                      | #37      |
-| `assignments`              | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
-| `submissions`              | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
-| `reviews`                  | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
+| Table                   | Holds                                                                                                 | Issue    |
+| ----------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
+| `learner_profile_notes` | teaching notes: text, evidence refs, created/revised at; editable by the learner                      | #44      |
+| `borrowed_terms`        | term used in this track, confirmed in another                                                         | #52      |
+| `assignments`           | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
+| `submissions`           | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
+| `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
 
 Research notes are not stored on the track yet; the first plan's notes go only into that plan's calls
 (#51). Which session closes each arc isn't recorded yet (#42).
@@ -752,6 +756,39 @@ HTML/SVG). To be measured, then adjusted.
   A tangent can be **saved for a future session** (added to the plan as a candidate).
 - Anchoring: block id + the quoted passage with a little text before and after it, so a card survives
   a repair note being added nearby. Cards feed the check-back and the next session.
+
+How it is built (#37, decided 2026-09-29):
+
+- **Asking** (`apps/api/src/routes/asides.ts`): `POST /api/sessions/:id/asides` with the anchor
+  (`blockId`, `quote`, and up to 64 characters of `prefix` and `suffix`, `AsideAnchor` in
+  `@grounded/core`) and the question; follow-ups go to `…/asides/:asideId/messages`. Only a step the
+  learner can read takes questions (every check before it landed or was continued past), and only
+  while the session is open: asides feed its checks and its close, and a closed session has none to
+  feed. One question at a time per card: a follow-up waits for the answer.
+- **The answer** is a job (`aside`, `apps/api/src/engine/aside-tasks.ts`): the cheap model, purpose
+  `aside`, streamed into the card (`aside-delta` events, replying to the question's id) and then
+  validated like a chat message (`composeReply` in `chat.ts`), against the aside allowlist and the
+  term list, where the terms the lesson introduced up to the learner's step count as taught; a
+  broken answer is rewritten once. It shows no activity in the session's status line: the card says
+  it is thinking. Its prompt is the aside phase's method and the track, then (stable first, so asides
+  on a lesson share a cached start) the whole lesson with each step marked readable, locked ("don't
+  spoil it") or not written yet, the earlier asides on the lesson, and the passage in its step with
+  the blocks the answer may use; the card's thread is the conversation. A failed answer says so in
+  the card ("That didn't go through… Ask again"), and the session goes on.
+- **The record** follows the answer, so the answer never waits for it: a structured call (purpose
+  `aside-record`, cheap model, little reasoning) returns evidence on the track's terms and a tangent,
+  if the answer offered one. Evidence goes straight into `term_events` in the aside's own job (not at
+  the close's sweep), source `aside`, one row per term with its status unchanged (`from_status` =
+  `to_status`): the method has an aside change no status, and the checks, the sweep and the next
+  session weigh the evidence. Terms not on the list are left out. If the record fails, the aside has
+  none.
+- **Saving a tangent**: the card offers "Save for a future session" when the record named one; saving
+  adds it to the plan's notes (`add-plan-notes`, with the learner's question), which the close folds
+  into the plan and "where you left off", so a later session's plan hears it. Once per aside.
+- **Where asides go**: the check on the steps they were asked on, and the homework, the recap, the
+  term sweep and "where you left off" (so the next session), under "Questions the learner asked in
+  the margin of the lesson", each with its step, quote and thread.
+- **Recovery**: an aside still waiting when its job died is told so in its card (§4.2).
 
 ## 8. Learner profile and stats
 

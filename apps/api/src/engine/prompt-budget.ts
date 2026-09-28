@@ -1,9 +1,9 @@
 import type { Phase } from "@grounded/core";
 
-/** The phases the session's jobs run today; review, asides, the final and profile refreshes have none yet. */
+/** The phases the session's jobs run today; review, the final and profile refreshes have none yet. */
 export type BudgetedPhase = Extract<
   Phase,
-  "probe" | "plan" | "lesson" | "check" | "homework" | "close"
+  "probe" | "plan" | "lesson" | "check" | "homework" | "close" | "aside"
 >;
 
 /**
@@ -14,6 +14,7 @@ export type BudgetedPhase = Extract<
  * every one of these calls sent about 30,000.
  * - plan: the whole plan, every arc with its terms (it places its new terms in the arcs they belong to).
  * - close: the whole plan and the plan's notes as written, which only the close reads.
+ * - aside: the whole lesson (six steps of a real one's size, about 20 KB) and two earlier asides.
  */
 export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {
   probe: 12_000,
@@ -22,6 +23,7 @@ export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {
   check: 10_000,
   homework: 12_500,
   close: 25_000,
+  aside: 16_000,
 };
 
 /** A rough count of tokens: about four characters each for English prose and markdown. */

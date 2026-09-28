@@ -37,6 +37,7 @@ import {
 } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
+import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
 import { alreadyHeldSoFar, checkRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
@@ -170,15 +171,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     const brought = originals ? withoutBrought(loaded) : loaded;
     // The calls after the lesson hear what happened at its checks: the answers, what leaked, and what
     // the learner showed they already held.
-    const checks = AFTER_CHECKS_PHASES.includes(phase)
-      ? await checksSoFar(sessionId, session)
-      : null;
-    const track = checks
-      ? {
-          ...brought,
-          extra: [{ heading: "What happened at the lesson's checks", body: checks }],
-        }
-      : brought;
+    const after = AFTER_CHECKS_PHASES.includes(phase);
+    const checks = after ? await checksSoFar(sessionId, session) : null;
+    // And the questions asked in the margin, which the close carries on to the next session.
+    const asked = after ? await asidesRecord(db, sessionId) : null;
+    const extra = [
+      ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
+      ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
+    ];
+    const track = extra.length ? { ...brought, extra } : brought;
     const terms: TrackTerm[] = track.current;
     const history = await db
       .select()
@@ -272,6 +273,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     const introduced = (lesson.outline?.steps ?? [])
       .slice(0, index + 1)
       .flatMap((s) => s.introduces);
+    // Where the learner asked about these steps in the margin, the steps were unclear to them.
+    const asked = await asidesRecord(db, sessionId, covered);
     const system = systemFor("check", {
       ...track,
       extra: [
@@ -297,6 +300,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               },
             ]
           : []),
+        ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
         {
           heading: "Where this step stands",
           body: [
