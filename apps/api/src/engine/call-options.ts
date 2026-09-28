@@ -7,8 +7,14 @@ import type { SystemPrompt } from "@grounded/core";
 import type { ProviderId } from "@grounded/providers";
 import type { SystemModelMessage } from "ai";
 
-/** Anthropic's mark for a cache breakpoint: the prompt up to here is cached (5 minutes). */
-const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral" } } };
+/**
+ * Anthropic's mark for a cache breakpoint: the prompt up to here is cached for an hour (design
+ * §4.4). A learner reads, answers and asks at their own pace, often more than the default five
+ * minutes apart; a write then costs 2x base input instead of 1.25x. Every mark, the top-level one
+ * included, has the same lifetime: Anthropic requires longer-lived breakpoints before shorter ones.
+ * The 1-hour lifetime needs no beta header.
+ */
+const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } };
 
 /**
  * The most cache breakpoints Anthropic accepts in one request; more is an error. The top-level

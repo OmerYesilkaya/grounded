@@ -316,16 +316,20 @@ about, test and debug.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
-  block per part, with a cache breakpoint (`cacheControl: { type: "ephemeral" }`, 5 minutes) after the
+  block per part, with a cache breakpoint (`cacheControl: { type: "ephemeral", ttl: "1h" }`) after the
   all-phase method sections (about 16 KB of the 18–24 KB, shared by every phase's calls: a check
   reuses what the lesson before it cached), after the phase's own sections and after the track's
   state, and the top-level `cacheControl` caches the whole prompt for the conversation's next call.
   That is 4 breakpoints, Anthropic's maximum per request (more is an error); the top-level one
   counts, though `@ai-sdk/anthropic` counts only the marks on blocks, so the limit is kept in
   `call-options.ts` (`MAX_CACHE_BREAKPOINTS`): an empty part gets no block and no mark, and the
-  top-level mark is left out when a prompt already carries 4. Google caches implicitly. For OpenAI
-  and Google the parts are joined back into one system message, so every provider reads exactly
-  the assembled prompt.
+  top-level mark is left out when a prompt already carries 4. Every breakpoint lives an hour
+  (decided 2026-09-28): a learner's calls are often more than the default 5 minutes apart (reading
+  a step, working out an answer), and each read renews the hour. A cache write then costs 2x base
+  input instead of 1.25x (a read stays about 0.1x), so a prefix pays off from its third use. All
+  breakpoints share the lifetime because Anthropic requires longer-lived ones before shorter ones;
+  the 1-hour TTL needs no beta header. Google caches implicitly. For OpenAI and Google the parts
+  are joined back into one system message, so every provider reads exactly the assembled prompt.
 - **Reasoning effort per purpose** (`REASONING` in `apps/api/src/engine/call-options.ts`), set in
   the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
   effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured

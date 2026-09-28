@@ -571,7 +571,7 @@ describe("provider cache hints", () => {
     await streamText({ model, system: systemMessages(prompt), prompt: "hi" }).text;
 
     const [call] = mock.doStreamCalls;
-    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral" } } };
+    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } };
     expect(call?.providerOptions).toEqual(breakpoint);
     const system = call?.prompt.filter((m) => m.role === "system") ?? [];
     expect(system).toEqual([
@@ -588,8 +588,10 @@ describe("provider cache hints", () => {
     /** The request bodies @ai-sdk/anthropic sends, through a fetch that answers in place of the API. */
     function anthropicRequests() {
       const bodies: Record<string, unknown>[] = [];
+      const headers: Headers[] = [];
       const fetch = (_url: string | URL | Request, init?: RequestInit) => {
         bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+        headers.push(new Headers(init?.headers));
         const message = {
           id: "msg_1",
           type: "message",
@@ -612,7 +614,7 @@ describe("provider cache hints", () => {
         createLanguageModel: (_provider, modelId, apiKey) =>
           createAnthropic({ apiKey, fetch })(modelId),
       });
-      return { caller, bodies };
+      return { caller, bodies, headers };
     }
 
     /** Every cache_control in a request body, the top-level one included. */
@@ -647,8 +649,25 @@ describe("provider cache hints", () => {
         const system = bodies[i]?.system as { text: string }[];
         // Read as one text, the blocks are exactly the assembled prompt.
         expect(system.map((block) => block.text).join("")).toBe(joinSystemPrompt(parts));
-        expect(bodies[i]?.cache_control).toEqual({ type: "ephemeral" });
+        expect(bodies[i]?.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
       }
+    });
+
+    it("caches for an hour at every breakpoint, with no beta header", async () => {
+      const userId = await userWithKey("anthropic", "claude-opus-5-5");
+      const { caller, bodies, headers } = anthropicRequests();
+      const model = await caller.model({
+        userId,
+        purpose: "check",
+        role: "strong",
+        trackId: "t-1",
+      });
+
+      await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
+
+      // All the same lifetime, so none outlives one before it (Anthropic requires longer first).
+      expect(cacheControls(bodies[0])).toEqual(Array(4).fill({ type: "ephemeral", ttl: "1h" }));
+      expect(headers[0]?.get("anthropic-beta")).toBeNull();
     });
 
     it("leaves out the top-level breakpoint when the prompt's own marks already fill the 4", async () => {
