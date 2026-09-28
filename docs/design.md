@@ -403,6 +403,10 @@ A refined "typographic index":
   second, faster when far behind, always caught up within 1.5 s), fading in the newest words; a
   message turns into its rendered blocks once all of it is shown. The server's batching stays as it
   is. Text already there when the page loads, and everything under reduced motion, shows at once.
+- The chat sticks to the bottom while the learner is at (or near) it: new text, the reveal,
+  late-rendering blocks and a growing composer keep the latest line above the composer. A learner
+  who scrolls up to reread stays put, with a "Jump to latest" button; sending goes to the bottom.
+  Scrolls glide, except under reduced motion.
 
 ### 9.4 Phones (requirements; not prototyped)
 

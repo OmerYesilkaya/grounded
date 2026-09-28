@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
+import { fakePage } from "@/test-page";
 import { ChatView } from "./chat-view";
 
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
@@ -53,9 +54,67 @@ function renderChat(messages: ChatMessage[]) {
   };
 }
 
+let page: ReturnType<typeof fakePage>;
+
 beforeEach(() => {
   vi.mocked(api).mockClear();
-  Element.prototype.scrollIntoView = vi.fn();
+  // A 2000px conversation in an 800px viewport, scrolled to the bottom.
+  page = fakePage({ height: 2000, viewport: 800, y: 1200 });
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+});
+
+describe("ChatView: following the conversation", () => {
+  function renderFollowing(streaming: boolean) {
+    const { container } = render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatView
+          model={model([message("m1", "tutor", "What do you already know?", streaming)])}
+          onOpenLesson={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    const chat = container.firstElementChild;
+    if (!chat) throw new Error("the chat didn't render");
+    return chat;
+  }
+  const jumpButton = () => screen.queryByRole("button", { name: "Jump to latest" });
+
+  it("keeps the latest line in view as the reply grows, and leaves a learner who scrolled up", async () => {
+    const user = userEvent.setup();
+    const chat = renderFollowing(true);
+    page.resize(chat, 2300);
+    expect(page.page.y).toBe(1500);
+    expect(jumpButton()).toBeNull();
+
+    page.scroll(700);
+    page.resize(chat, 2600);
+    expect(page.page.y).toBe(700);
+
+    const jump = jumpButton();
+    if (!jump) throw new Error("no jump button");
+    await user.click(jump);
+    expect(page.scrollTo).toHaveBeenLastCalledWith({ top: 2600, behavior: "smooth" });
+    expect(jumpButton()).toBeNull();
+    page.resize(chat, 2900);
+    expect(page.page.y).toBe(2100);
+  });
+
+  it("goes to the bottom when the learner sends", async () => {
+    const user = userEvent.setup();
+    const chat = renderFollowing(false);
+    page.scroll(300);
+    expect(jumpButton()).toBeInTheDocument();
+
+    await user.type(screen.getByRole("textbox", { name: "Message" }), "not much{Enter}");
+    expect(page.page.y).toBe(1200);
+    expect(jumpButton()).toBeNull();
+    page.resize(chat, 2400);
+    expect(page.page.y).toBe(1600);
+  });
 });
 
 describe("ChatView: the composer", () => {

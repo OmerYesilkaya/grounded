@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState } from "react";
+import { usePrefersReducedMotion } from "@/lib/motion";
 import { cn } from "@/lib/utils";
 
 /** The steady reading pace, in characters per second. */
@@ -102,23 +103,4 @@ export function StreamedText({
       ))}
     </p>
   );
-}
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-
-function subscribeToReducedMotion(onChange: () => void): () => void {
-  if (typeof window.matchMedia !== "function") return () => undefined;
-  const query = window.matchMedia(REDUCED_MOTION);
-  query.addEventListener("change", onChange);
-  return () => {
-    query.removeEventListener("change", onChange);
-  };
-}
-
-function prefersReducedMotion(): boolean {
-  return typeof window.matchMedia === "function" && window.matchMedia(REDUCED_MOTION).matches;
-}
-
-function usePrefersReducedMotion(): boolean {
-  return useSyncExternalStore(subscribeToReducedMotion, prefersReducedMotion, () => false);
 }

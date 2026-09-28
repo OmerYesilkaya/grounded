@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { ArrowDown } from "lucide-react";
+import { useLayoutEffect, useState } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
@@ -8,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
+import { useStickToBottom } from "@/lib/stick-to-bottom";
 import { cn } from "@/lib/utils";
 
 const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
@@ -16,7 +18,7 @@ const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
   recap: "Recap",
 };
 
-function Message({ message, onGrow }: { message: ChatMessage; onGrow: () => void }) {
+function Message({ message }: { message: ChatMessage }) {
   if (message.role === "learner") {
     return (
       <div className="max-w-[85%] self-end rounded-xl bg-muted px-3.5 py-2 text-[15px] leading-relaxed whitespace-pre-wrap">
@@ -24,20 +26,13 @@ function Message({ message, onGrow }: { message: ChatMessage; onGrow: () => void
       </div>
     );
   }
-  return <TutorMessage message={message} onGrow={onGrow} />;
+  return <TutorMessage message={message} />;
 }
 
-function TutorMessage({ message, onGrow }: { message: ChatMessage; onGrow: () => void }) {
+function TutorMessage({ message }: { message: ChatMessage }) {
   const revealed = useRevealedText(message.text ?? "", message.streaming === true);
   // The blocks wait for the reveal to finish, so the text doesn't jump ahead as it turns into them.
   const blocks = revealed.done ? message.blocks : null;
-
-  const [live] = useState(message.streaming === true);
-  const shownLength = revealed.text.length;
-  const showsBlocks = blocks !== null;
-  useEffect(() => {
-    if (live) onGrow();
-  }, [live, onGrow, shownLength, showsBlocks]);
 
   const label = KIND_LABEL[message.kind];
   return (
@@ -66,7 +61,6 @@ export function ChatView({
   onOpenLesson: () => void;
 }) {
   const [draft, setDraft] = useState("");
-  const endRef = useRef<HTMLDivElement>(null);
   const { phase, plan } = model.state;
   const writing = model.messages.some((m) => m.streaming);
   const hasSteps = (model.lesson?.steps.length ?? 0) > 0;
@@ -93,13 +87,10 @@ export function ChatView({
     },
   });
 
-  const barRef = useRef<HTMLDivElement>(null);
-  const barHeight = useBarHeight(barRef, phase === "probe" || phase === "plan");
-
-  const scrollToEnd = useCallback(() => {
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, []);
-  useEffect(scrollToEnd, [scrollToEnd, model.messages.length]);
+  const [content, setContent] = useState<HTMLDivElement | null>(null);
+  const [bar, setBar] = useState<HTMLDivElement | null>(null);
+  const barHeight = useHeight(bar);
+  const stick = useStickToBottom({ content, overlay: bar });
 
   const canWrite =
     (phase === "probe" || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
@@ -112,12 +103,13 @@ export function ChatView({
 
   return (
     <div
+      ref={setContent}
       className="mx-auto flex w-full max-w-[68ch] flex-1 flex-col px-6 pt-9"
       style={{ paddingBottom: `${String(barHeight + 40)}px` }}
     >
       <div className="flex flex-col gap-5">
         {model.messages.map((m) => (
-          <Message key={m.id} message={m} onGrow={scrollToEnd} />
+          <Message key={m.id} message={m} />
         ))}
         <ActivityLine
           activities={model.activities}
@@ -156,7 +148,6 @@ export function ChatView({
           </div>
         )}
         {model.error && <p className="text-sm text-destructive">{model.error}</p>}
-        <div ref={endRef} />
       </div>
 
       {phase === "plan" && plan === "proposed" && !writing && (
@@ -164,6 +155,7 @@ export function ChatView({
           <Button
             disabled={approve.isPending}
             onClick={() => {
+              stick.scrollToBottom();
               approve.mutate();
             }}
           >
@@ -173,9 +165,28 @@ export function ChatView({
         </div>
       )}
 
+      {!stick.following && (
+        <div
+          className="pointer-events-none fixed right-0 left-0 flex justify-center md:left-[248px]"
+          style={{ bottom: `${String(barHeight + 12)}px` }}
+        >
+          <Button
+            variant="outline"
+            size="sm"
+            className="pointer-events-auto rounded-full bg-card shadow-sm dark:bg-card"
+            onClick={() => {
+              stick.scrollToBottom({ smooth: true });
+            }}
+          >
+            <ArrowDown aria-hidden />
+            Jump to latest
+          </Button>
+        </div>
+      )}
+
       {(phase === "probe" || phase === "plan") && (
         <div
-          ref={barRef}
+          ref={setBar}
           className="fixed right-0 bottom-0 left-0 bg-background/90 pt-2 pb-4 backdrop-blur md:left-[248px]"
         >
           <div className="mx-auto max-w-[68ch] px-6">
@@ -186,6 +197,7 @@ export function ChatView({
               value={draft}
               onChange={setDraft}
               onSubmit={(text) => {
+                stick.scrollToBottom();
                 send.mutate(text);
               }}
               disabled={!canWrite}
@@ -206,39 +218,20 @@ export function ChatView({
 }
 
 /**
- * The composer bar's height, kept current: the bar is fixed over the page and grows with its text,
- * so the conversation leaves that much room below its last message.
+ * An element's height, kept current: the composer bar is fixed over the page and grows with its
+ * text, so the conversation leaves that much room below its last message.
  */
-function useBarHeight(ref: RefObject<HTMLElement | null>, present: boolean): number {
+function useHeight(element: HTMLElement | null): number {
   const [height, setHeight] = useState(0);
-  const pinToBottom = useRef(false);
-
   useLayoutEffect(() => {
-    const element = ref.current;
-    if (!present || !element || typeof ResizeObserver === "undefined") return;
-    let last = 0;
-    // Called once on observe, then on every change.
+    if (!element || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      const next = element.offsetHeight;
-      if (next === last) return;
-      const root = document.documentElement;
-      pinToBottom.current =
-        next > last && window.innerHeight + window.scrollY >= root.scrollHeight - 8;
-      last = next;
-      setHeight(next);
+      setHeight(element.offsetHeight);
     });
     observer.observe(element);
     return () => {
       observer.disconnect();
     };
-  }, [ref, present]);
-
-  // A reader at the bottom stays there as the bar grows, so their last message isn't covered.
-  useLayoutEffect(() => {
-    if (!pinToBottom.current) return;
-    pinToBottom.current = false;
-    window.scrollTo({ top: document.documentElement.scrollHeight });
-  }, [height]);
-
-  return present ? height : 0;
+  }, [element]);
+  return element ? height : 0;
 }
