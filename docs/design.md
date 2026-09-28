@@ -186,6 +186,14 @@ about, test and debug.
   withheld. A test runs a session through the real model caller, with a failing call and an
   unparseable reply, and asserts that its key, sealed key, magic-link token, title and answers never
   appear in the log.
+  **The one exception, `LOG_CONTENT=true`** (off by default; an operator's switch, production
+  included, for diagnosing what a model was asked and answered): every model call's line then also
+  carries, under `content`, the prompt's message count, its last turn (the instruction, the answer
+  or a retry's feedback; the system prompt and earlier turns are left out), whether it asked for
+  JSON, and the reply (text, reasoning, tool calls), a failed call's as far as it got. Rejected track
+  edits carry their reasons and the batch, a rewritten chat message its issues' messages, and errors
+  keep the messages that quote content. Keys and tokens stay out regardless. Turn it on for a
+  deploy, reproduce, turn it off: while it is on, the log holds learners' words.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite. One image (`Dockerfile`) runs both processes: the API by
   default, the worker with `node --import tsx src/worker.ts`. The API runs its TypeScript through tsx
@@ -620,7 +628,9 @@ Three structurally different variants were explored
 
 A refined "typographic index":
 
-- A clearly visible **+ New track** button at the top (accent, dashed border), then search (`/`).
+- At the very top, the **Grounded** wordmark (Notable, accent colour) in a row as tall as the Chat /
+  Lesson bar, so the sidebar and the main view share one header band. It links home.
+- Below it, a clearly visible **+ New track** button (accent, dashed border), then search (`/`).
 - **The current track** expanded as a ruled list (serif name; items with small-caps kind: session,
   homework, arc exam); the current session marked by an accent bar; due items tagged ("tonight").
 - **Other tracks** as single serif lines with what is waiting ("1 due", "1 open"); click to expand;
@@ -632,7 +642,8 @@ A refined "typographic index":
 ### 9.3 Look
 
 - Dark by default, light mode, "follow system".
-- Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat).
+- Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat), Notable for the
+  wordmark only.
 - One accent colour, shared by diagram highlights, checks, cards and due tags.
 - Colour tokens defined once; Mermaid's theme generated from them.
 - Streamed text appears as if written: the page reveals it at a reading pace (~90 characters a

@@ -60,6 +60,7 @@
 @theme inline {
   --font-sans: Montserrat, system-ui, sans-serif;
   --font-serif: "Source Serif 4", Georgia, serif;
+  --font-brand: Notable, Montserrat, sans-serif;
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
