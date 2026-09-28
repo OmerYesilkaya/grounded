@@ -6,6 +6,7 @@ import { useTracks } from "@/lib/tracks";
 import { AccountMenu } from "./account-menu";
 import { Brand } from "./brand";
 import { TrackGroup } from "./track-list";
+import { TrackMenu } from "./track-menu";
 
 /** The track list: the "typographic index" from the prototype (design §9.2). */
 export function TrackSidebar({ email }: { email: string }) {
@@ -113,6 +114,7 @@ export function TrackSidebar({ email }: { email: string }) {
                 currentItemId={currentItem?.id}
                 expanded={expanded}
                 found={items ?? undefined}
+                actions={<TrackMenu track={track} current={current} />}
                 onToggle={() => {
                   setToggled((was) => ({ ...was, [track.id]: !expanded }));
                 }}

@@ -58,7 +58,7 @@ export function TrackGroup(props: {
         </Link>
         {/* What is waiting, while the items aren't shown; the menu takes its place on hover. */}
         {!expanded && waiting > 0 && (
-          <span className="shrink-0 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden">
+          <span className="shrink-0 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden group-has-data-[state=open]/track:hidden">
             {waiting} open
           </span>
         )}

@@ -819,6 +819,11 @@ and marked the current track with bolder text):
 - **Other tracks** start closed, one line each with what is waiting ("1 open", later "1 due"); the
   chevron opens them in place. Finished items fold into one line ("3 done ›") above the rest; the
   item on the page is never folded away.
+- **A track's menu** (`⋯`, at the end of its line while the line is hovered or focused, in place of
+  what is waiting) holds **Delete track…**, which asks first in a dialog naming what goes with it
+  (sessions and lessons, what the learner has shown they know, the files they brought) and that it
+  can't be undone ("Keep it" / "Delete track"). Deleting the track on the page goes home, which opens
+  the next track (§4.5 for what is deleted).
 - **Ordered by recent activity** (always): the latest change to the track or to anything in it
   (`activeAt` in `GET /api/tracks`, from `apps/api/src/track-list.ts`). **At scale (15+):** the six
   most recently active shown, plus the page's track wherever it falls, the rest under "N more
