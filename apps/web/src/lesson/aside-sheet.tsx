@@ -13,16 +13,22 @@ const CLOSE_SPEED = 0.6; // px per ms
 
 /**
  * A card on a phone (design §9.4): a sheet from the bottom, over the lesson, with the passage it is
- * about. It stays above the on-screen keyboard, and dragging it down by its top closes it.
+ * about. It stays above the on-screen keyboard, and dragging it down by its top closes it. `label`
+ * names the dialog: what kind of card it holds.
  */
-export function AsideSheet(props: { quote: string; onClose: () => void; children: ReactNode }) {
+export function AsideSheet(props: {
+  label: string;
+  quote: string;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   const viewport = useVisibleViewport();
   const drag = useDragDown(props.onClose);
   return (
     <div
       {...ASIDE_UI}
       role="dialog"
-      aria-label="Question in the margin"
+      aria-label={props.label}
       style={{
         bottom: viewport.keyboard,
         // Room for the passage above it, whatever the keyboard leaves.

@@ -240,6 +240,7 @@ export function AsideLayer(props: AsideLayerProps) {
         )}
         {sheet && (draft ?? activeAside) && (
           <AsideSheet
+            label="Question in the margin"
             quote={draft?.anchor.quote ?? activeAside?.anchor.quote ?? ""}
             onClose={() => {
               close();

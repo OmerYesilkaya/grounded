@@ -125,6 +125,7 @@ export function ReviewLayer(props: ReviewLayerProps) {
     const open = comments.find((c) => c.id === active);
     return open ? (
       <AsideSheet
+        label="A comment on your answer"
         quote={open.anchor.quote || props.fieldLabel(open)}
         onClose={() => {
           onActivate(null);

@@ -10,7 +10,7 @@ beforeEach(() => {
 function renderSheet() {
   const onClose = vi.fn();
   render(
-    <AsideSheet quote="copied out" onClose={onClose}>
+    <AsideSheet label="Question in the margin" quote="copied out" onClose={onClose}>
       <p>The answer</p>
     </AsideSheet>,
   );
