@@ -23,6 +23,7 @@ import { assignmentOf, closeAfterReview, type AssignmentRow } from "./assignment
 import { withActivity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
+import { afterTakenUpReview } from "./opening-review.js";
 import { createReviewer } from "./review.js";
 import { reviewPrompt, settleReview, type SettledReview } from "./review-call.js";
 import { createReplyTask } from "./review-reply.js";
@@ -185,12 +186,15 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
         await publishReview(db, assignment);
         // The session doesn't wait for a review that failed: it can be started again from the page.
         await closeAfterReview(db, queue, assignment);
+        await afterTakenUpReview(db, queue, assignment.id);
         if (!known) throw error;
         reportHandledFailure(error);
         return;
       }
     }
     await closeAfterReview(db, queue, assignment);
+    // A later session's review may be waiting for this one (design §7.1).
+    await afterTakenUpReview(db, queue, assignment.id);
   };
 
   return { review, "review-reply": createReplyTask(deps) };

@@ -1,13 +1,14 @@
 import { awaitedJob, type AwaitedJob } from "@grounded/core";
 import { desc, eq, sessionMessages, type Db } from "@grounded/db";
+import { reviewsUnderWay } from "./opening-review.js";
 import { jobWaiting, type JobQueue } from "./queue.js";
 import { loadSession } from "./session-store.js";
 import { unlessWorkedOn } from "./work-locks.js";
 
 /*
- * A job the learner can't set going again by writing (the probe's turn after their answer, a plan,
- * the homework, the recap) that failed, or died with its worker, leaves the session waiting on
- * nothing (design §4.2). Such a session is stalled, and "Try again" queues the same job again.
+ * A job the learner can't set going again by writing (the opening review's or the probe's turn after
+ * their answer, a plan, the homework, the recap) that failed, or died with its worker, leaves the
+ * session waiting on nothing (design §4.2). Such a session is stalled, and "Try again" queues the same job again.
  */
 
 /** The job a session waits on, if nothing is doing it: none is queued, and none is running. */
@@ -29,7 +30,13 @@ async function waitedOn(
     .orderBy(desc(sessionMessages.createdAt), desc(sessionMessages.id))
     .limit(1);
   const job = awaitedJob(state, last?.role ?? null);
-  return job ? { job, queued: await jobWaiting(db, job, sessionId) } : null;
+  if (!job) return null;
+  // The opening review waiting for a review it took up isn't stalled: that review's end, done or
+  // failed, sets it going (opening-review.ts).
+  const queued =
+    (await jobWaiting(db, job, sessionId)) ||
+    (job === "opening-review" && (await reviewsUnderWay(db, sessionId)));
+  return { job, queued };
 }
 
 export type RetryResult = { ok: true; job: AwaitedJob } | { ok: false; reason: string };

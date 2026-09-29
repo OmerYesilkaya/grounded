@@ -1,10 +1,11 @@
 import { awaitedJob } from "@grounded/core/session";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
-import { useLayoutEffect, useState, type ReactNode } from "react";
+import { Fragment, useLayoutEffect, useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
 import { HomeworkFooter } from "@/components/homework-footer";
+import { ReviewDone, ReviewHeading } from "@/components/opening-review";
 import { PlanPicture } from "@/components/session-pictures";
 import { ExamOpenWarning, useStartSession } from "@/components/start-session";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
@@ -105,14 +106,14 @@ export function ChatView({
   const { keyboard } = useVisibleViewport();
   const stick = useStickToBottom({ content, overlay: bar });
 
-  const canWrite =
-    (phase === "probe" || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
-  const placeholder =
-    phase === "probe"
-      ? "Answer in your own words; “I don't know” is fine."
-      : phase === "plan"
-        ? "Reply to change the plan…"
-        : "";
+  // The opening review is answered in the chat like the probe (design §7.1).
+  const talking = phase === "review" || phase === "probe";
+  const canWrite = (talking || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
+  const placeholder = talking
+    ? "Answer in your own words; “I don't know” is fine."
+    : phase === "plan"
+      ? "Reply to change the plan…"
+      : "";
 
   return (
     <div
@@ -121,25 +122,41 @@ export function ChatView({
       style={{ paddingBottom: `${String(barHeight + 40)}px` }}
     >
       <div className="flex flex-col gap-5">
-        {model.messages.map((m) => (
-          <Message
-            key={m.id}
-            message={m}
-            footer={
-              m.kind === "plan" ? (
-                <PlanPicture model={model} messageId={m.id} />
-              ) : m.kind === "homework" || m.kind === "exam" ? (
-                <HomeworkFooter model={model} messageId={m.id} />
-              ) : null
-            }
-          />
-        ))}
+        {/* The review's first message may wait for the review of work just handed in. */}
+        {phase === "review" && model.messages.length === 0 && (
+          <ReviewHeading takenUp={model.takenUp} />
+        )}
+        {model.messages.map((m, i) => {
+          const before = model.messages[i - 1];
+          return (
+            <Fragment key={m.id}>
+              {m.kind === "review" && before?.kind !== "review" && (
+                <ReviewHeading takenUp={model.takenUp} />
+              )}
+              {before?.kind === "review" && m.kind !== "review" && <ReviewDone />}
+              <Message
+                message={m}
+                footer={
+                  m.kind === "plan" ? (
+                    <PlanPicture model={model} messageId={m.id} />
+                  ) : m.kind === "homework" || m.kind === "exam" ? (
+                    <HomeworkFooter model={model} messageId={m.id} />
+                  ) : null
+                }
+              />
+            </Fragment>
+          );
+        })}
         <ActivityLine
           activities={model.activities}
           fallback={
-            !stuck && (waiting || (phase === "plan" && plan !== "proposed" && !writing))
-              ? "Thinking…"
-              : undefined
+            stuck
+              ? undefined
+              : phase === "review" && model.messages.length === 0
+                ? "Looking over what came up since last time…"
+                : waiting || (phase === "plan" && plan !== "proposed" && !writing)
+                  ? "Thinking…"
+                  : undefined
           }
         />
         {/* While the first step is written, the activity line above says so; the card is the way in. */}
@@ -231,7 +248,7 @@ export function ChatView({
         </div>
       )}
 
-      {(phase === "probe" || phase === "plan") && (
+      {(talking || phase === "plan") && (
         <div
           ref={setBar}
           style={{ bottom: keyboard }}

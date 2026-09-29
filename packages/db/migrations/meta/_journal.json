@@ -183,6 +183,13 @@
       "when": 1790676227641,
       "tag": "0025_arc_exam_warning",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790679022043,
+      "tag": "0026_opening_review",
+      "breakpoints": true
     }
   ]
 }

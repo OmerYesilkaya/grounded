@@ -46,6 +46,20 @@ describe("session phases", () => {
     expect(run(initialSession(), { type: "skip-to-plan" }).phase).toBe("plan");
   });
 
+  it("opens with the review when something waits for it, which takes answers and hands over to the probe", () => {
+    const reviewing = initialSession("review");
+    expect(reviewing.phase).toBe("review");
+    expect(run(reviewing, { type: "learner-message" }).phase).toBe("review");
+    // The review comes first: the plan waits for the probe after it.
+    expect(rejected(reviewing, { type: "skip-to-plan" })).toBe(
+      "The review comes before the probe.",
+    );
+    expect(rejected(reviewing, { type: "probe-done" })).toBe("The review comes before the probe.");
+    const probing = run(reviewing, { type: "review-done" });
+    expect(probing.phase).toBe("probe");
+    expect(rejected(probing, { type: "review-done" })).toBe("No review is under way.");
+  });
+
   it("writes no lesson before the plan is proposed and approved", () => {
     const planning = run(initialSession(), { type: "probe-done" });
     expect(rejected(planning, { type: "plan-approved" })).toBe("There is no plan to approve yet.");
@@ -267,6 +281,15 @@ describe("the job a session waits on", () => {
     expect(awaitedJob(initialSession(), null)).toBe("probe-turn");
     expect(awaitedJob(initialSession(), "learner")).toBe("probe-turn");
     expect(awaitedJob(initialSession(), "tutor")).toBeNull();
+  });
+
+  it("is the opening review's turn in the same way, while it lasts", () => {
+    expect(awaitedJob(initialSession("review"), null)).toBe("opening-review");
+    expect(awaitedJob(initialSession("review"), "learner")).toBe("opening-review");
+    expect(awaitedJob(initialSession("review"), "tutor")).toBeNull();
+    // The review's last answer is the probe's to follow, with its opening question.
+    const probing = run(initialSession("review"), { type: "review-done" });
+    expect(awaitedJob(probing, "learner")).toBe("probe-turn");
   });
 
   it("is the plan while one is written or revised, not once it is proposed", () => {

@@ -2,6 +2,7 @@ import type { SessionItem, TrackItem, TrackSummary } from "./tracks";
 
 /** Where an open session stands, when its lesson's terms can't say what it is about yet. */
 const UNDER_WAY: Record<SessionItem["phase"], string> = {
+  review: "Looking back at last time",
   probe: "Finding where you start",
   plan: "Choosing what comes next",
   lesson: "The lesson is being written",
@@ -11,6 +12,7 @@ const UNDER_WAY: Record<SessionItem["phase"], string> = {
 };
 
 const PHASE: Record<SessionItem["phase"], string> = {
+  review: "looking back",
   probe: "getting started",
   plan: "planning",
   lesson: "lesson",

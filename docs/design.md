@@ -199,8 +199,9 @@ about, test and debug.
   otherwise. A request that fails part-way is simply sent again: every write before the state change
   can be made twice.
 - **A job the learner can't set going again by writing can be tried again** (`engine/retry.ts`,
-  `awaitedJob` in `packages/core/src/session.ts`; #21). Those are the probe's turn (the opening
-  question, or the one after the learner's answer: the composer waits for the tutor), a plan being
+  `awaitedJob` in `packages/core/src/session.ts`; #21). Those are the opening review's and the
+  probe's turn (the first message, or the one after the learner's answer: the composer waits for
+  the tutor; an opening review waiting for a review still being written isn't stalled, §7.1), a plan being
   written or revised, the homework being written and the recap (an assigned homework waits for the
   learner, not a job). When the one the session waits on failed, or died
   with its worker, nothing is queued for it and nothing runs: the session is **stalled** (the
@@ -438,7 +439,8 @@ about, test and debug.
   records of what the conversation already showed think little (`low`): the probe's decision
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
-  it), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
+  it), the opening review's decision (`opening-review-decision`, apart from its messages and from
+  `opening-review-summary`, §7.1), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
   (`aside-record`, apart from its answer), whether a reply in a review's card found the flaw
   (`review-record`, apart from the answer, §7.4), the wording review (`wording-review`, §3.3), and so do
   the summaries of what is already written ("where
@@ -509,8 +511,8 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                           |
 | `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                          |
 | `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                            |
-| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized               |
-| `session_messages`                               | the chat (probe, plan, homework, arc exam, recap): the learner's text, the tutor's block trees, a plan's terms                                         |
+| `learning_sessions`                              | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, older turns summarized              |
+| `session_messages`                               | the chat (opening review, probe, plan, homework, arc exam, recap): the learner's text, the tutor's block trees, a plan's terms                         |
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                |
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                    |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                  |
@@ -523,7 +525,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `assignments`                                    | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
 | `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
 | `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
-| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked held / leaked / missing                          |
+| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up               |
 | `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads       |
 
 An assignment also holds when it is snoozed until (`snoozed_until`, "Later"), the later homework
@@ -811,6 +813,55 @@ learner's knowledge ends, and their goal — so the record the plan is built on 
 low-effort decision (the decision runs every turn; this runs once). It is stored on the session (`probe_summary`) and
 given to the plan's calls, research included; when the learner skips ahead to the plan there is none.
 
+**The review opens the session** (decided 2026-09-29, #40; `apps/api/src/engine/opening-review.ts`,
+the `opening-review` job in `session-tasks.ts`), before the probe, over what came up since the last
+session (method.md, "Review"):
+
+- **What waits for it**: the reviews of handed-in work (§7.4) no session has taken up yet, an arc
+  exam's first, then oldest first: each item with its mark and each comment with its thread, the
+  comments still open labelled L1, L2… (`reviewRecord` with labels); then the steps the last session
+  continued past while still shaky (`settling`, §7.3), each with its check thread (`checkRecord`).
+  Starting a session **takes up** the reviews there are (`reviews.taken_up_in`, one session each),
+  done or still under way, so the next review never goes over them again; a failed review started
+  again is left for the next session. A review with every item held and nothing open in its margin
+  leaves nothing to take up.
+- **Nothing waiting, no review**: the session then opens with the probe, as it did before, with no
+  model call (`sinceLastSession`, asked before the session is made, chooses `initialSession("review")`
+  or the probe). What waits is worked out again as each turn begins, so work taken up in its margin
+  meanwhile (a leak found in its card) is gone from it; if nothing is left before the first message,
+  the probe follows without a call.
+- **A review still being written** as the session starts (an exam handed in a minute before) is
+  waited for: the chat says "Looking over what came up since last time…", the session isn't stalled
+  (`retry.ts` counts the review as the work under way), and that review's end, done or failed,
+  queues the opening review (`afterTakenUpReview`). The exam matters most here: it decides whether
+  the next arc may start.
+- **It talks in the chat, shaped like the probe**: decide first, then write. Its first message (kind
+  `review`) says what it will look at and asks; each answer (the learner's messages in the review are
+  kind `review` too, so the probe's opening question knows it follows them) gets a structured call
+  first (`opening-review-decision`, little reasoning, `openingReviewDecisionSchema`): term edits from
+  how the learner used the terms (source `review`: a settled term that didn't hold goes back to
+  `taught`, so the plan and lesson re-teach it before building on it), the labels of the leaks they
+  found (resolved in this session, `resolveLeaks`, as a card's resolution would), and whether the
+  review is finished. It teaches nothing (method.md): what didn't hold is the plan's to re-teach.
+  **It ends** when the decision says every item is taken up or the learner wants to move on, or after
+  five answers (a few questions, not a quiz), with no closing message: a call at the default effort
+  (`opening-review-summary`) writes what it found, stored as `review_summary`, then `review-done`
+  moves the session to the probe, whose opening question acknowledges the last answer and asks
+  ("The review is over…"). The probe's calls and the plan's hear the summary under "What the opening
+  review found".
+- **An arc that didn't hold reaches the plan through the summary**: told to say first whether an
+  exam's arc held and, if not, what must be re-taught before the next arc builds on it. The plan's
+  method already says the next arc then waits ("The arc exam"); the plan is the model's call, as
+  every other judgement of what to teach next is, not a rule the app enforces on its arcs.
+- **"Pause here" stays inside its session** (decided): a step paused mid-lesson leaves the session
+  open, and no session can close with a step paused, so the next session never finds one. "Next
+  time" is the learner coming back to that session: "Pick it up again" asks a fresh question on the
+  idea in the step's check card (`fresh-question`), as before. What the review takes up from a
+  lesson is the step continued past while shaky, which did close with its session.
+- **The chat**: the review's messages are headed "Since last time" with the work it takes up, each
+  linked to its page (the snapshot's `takenUp`, and a `taken-up` event as the first message starts),
+  and a quiet "This session" rule marks where the probe begins.
+
 ### 7.2 Lesson generation pipeline
 
 1. **Research, then outline**: research checks on the web what the lesson will state and the model
@@ -866,9 +917,9 @@ HTML/SVG). To be measured, then adjusted.
   happens outside the lesson), then a **fresh** question on the same idea — never the same one again.
   A marked "After the check-back" note is added under the check; later steps are not rewritten.
 - **Still shaky after a repair:** if a later step **rests on** the check (every check but the last), offer
-  **Pause here** (next time opens with a fresh question on this idea — the incubation option) or
-  **Continue anyway** (step flagged "settling", its terms stay `taught`, homework and the next session
-  re-test it). After the last check, continue freely with the step flagged.
+  **Pause here** (the lesson waits, and coming back to it opens with a fresh question on this idea —
+  the incubation option; it stays inside its session, §7.1) or **Continue anyway** (step flagged
+  "settling", its terms stay `taught`, homework and the next session's opening review re-test it). After the last check, continue freely with the step flagged.
 - **"I already knew this."** The grader records what the learner showed they held before the lesson
   taught it (`lessons.already_held`, by step; logged, so it can be counted: the lesson was pitched
   below them there). The later checks of the lesson hear it and don't re-explain it; the reply never
@@ -1045,12 +1096,12 @@ How the review is built (#39, decided 2026-09-29; `packages/core/src/assignment-
   little reasoning: `reviewReplyRecordSchema`) says whether the learner has now found the flaw in
   their own words, which **resolves the leak** and closes the card's box. Replies change no term:
   a flaw found in the card is re-probed by the next session, as the method asks.
-- **Open leaks carry into the next session's review** (the interface for #40): `openLeaks(db,
-trackId)` gives the track's comments on done reviews not resolved yet, oldest first, each with
-  its assignment, field, quote and thread; `openLeaksRecord` gives them for a prompt, labelled L1,
-  L2…, with the labels mapped back to comment ids, so the review phase's record can name the ones
-  it dealt with; `resolveLeaks(db, ids, sessionId)` marks them resolved in that session
-  (`resolved_in_session`; a card's resolution leaves it null).
+- **Open leaks carry into the next session's review** (built with #40, §7.1): the session after a
+  review takes it up, and its opening review goes over the comments still open, labelled L1, L2…;
+  those the learner finds in the chat are marked resolved in that session (`resolveLeaks(db, ids,
+sessionId)`, `resolved_in_session`; a card's resolution leaves it null). A leak the learner
+  doesn't find there stays open in its card, and goes to the plan through the review's summary,
+  not to the next review again.
 - **Failed, and started again**: a known failure (key, provider) or ours marks the review `failed`
   with its reason; the page offers "Review it again" (`POST …/review`, only for a failed one). A
   review whose job died is marked failed by recovery (`recoverReviews`, run with §4.2's recovery
@@ -1114,12 +1165,10 @@ How arc exams are built (#42, decided 2026-09-29; `packages/core/src/arc-exam.ts
   2 · Derivation", its title, what it asks, and its own answer boxes (or, handed in, its answer
   with the review's comments, which find their words across every part). The chat shows the exam's
   message with "Open the exam" and Later.
-- **For the review phase (#40)**: an exam is reviewed on hand-in like homework (§7.4, the review),
-  with source `exam` on its term events. `openLeaks` gives an exam's open leaks first, then the
-  rest oldest first, so `openLeaksRecord`'s L1, L2… put the exam first, as the method's review
-  does. `openExamsOf(db, trackId)` gives the exams not handed in; the review phase should review an
-  exam handed in since the last session first (its `reviews` row, `sessionReviewRecord`), and if
-  the review shows the arc didn't hold, say so to the plan (method.md: the next arc waits).
+- **In the next session's review** (#40, §7.1): an exam is reviewed on hand-in like homework (§7.4,
+  the review), with source `exam` on its term events; the session after it takes the review up
+  first, before any homework's, and waits for it if it is still being written. Its summary tells
+  the plan whether the arc held (method.md: if not, the next arc waits).
 
 ### 7.5 Asides
 
@@ -1234,8 +1283,8 @@ Three structurally different variants were explored
 (docs margin, focus reader, paged steps) and combined into:
 
 - **Left: the track list**, collapsible (☰) for distraction-free reading.
-- **Top: a Chat / Lesson switch.** Chat holds the session's conversation (probe, plan with its picture
-  and approval). Lesson is the reading view.
+- **Top: a Chat / Lesson switch.** Chat holds the session's conversation (opening review, probe,
+  plan with its picture and approval). Lesson is the reading view.
 - **The pictures of what rests on what** (decided 2026-09-29, #47; `apps/api/src/term-map.ts`,
   `GET /api/sessions/:id/pictures`, drawn by `TermMapPicture` in `apps/web/src/components/term-map.tsx`).
   All of them are drawn by the app from `term_dependencies`, never by the model, the same way: a
@@ -1532,7 +1581,7 @@ progress, so a step is done when its issues are closed.
    cheap model's review (#52).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
-   checks with repair and the gate, close with structured state edits. Owed: the opening review (#40).
+   checks with repair and the gate, close with structured state edits, the opening review (#40).
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).

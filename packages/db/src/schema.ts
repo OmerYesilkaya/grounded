@@ -351,6 +351,12 @@ export const learningSessions = pgTable(
      */
     probeSummary: text("probe_summary"),
     /**
+     * What the opening review found, for the probe's and the plan's prompts (design §7.1): whether
+     * an arc exam showed its arc held, and what held and what still leaks. Null without a review, or
+     * until it is done.
+     */
+    reviewSummary: text("review_summary"),
+    /**
      * A long session's older turns, summarized (design §4.4): prompts carry this in place of the
      * session's messages up to and including `summarized_through`, and the rest in full. Null
      * until the conversation first grows past the limit.
@@ -369,7 +375,10 @@ export const learningSessions = pgTable(
   ],
 );
 
-/** The session chat: probe, plan, homework (and an arc exam) and recap. */
+/**
+ * The session chat: the opening review, probe, plan, homework (and an arc exam) and recap. The
+ * review's messages, the learner's answers included, are of kind `review`.
+ */
 export const sessionMessages = pgTable("session_messages", {
   id: id(),
   sessionId: uuid("session_id")
@@ -380,7 +389,7 @@ export const sessionMessages = pgTable("session_messages", {
   text: text("text"),
   blocks: jsonb("blocks").$type<Block[]>(),
   kind: text("kind")
-    .$type<"message" | "plan" | "homework" | "exam" | "recap">()
+    .$type<"review" | "message" | "plan" | "homework" | "exam" | "recap">()
     .notNull()
     .default("message"),
   /**
@@ -596,6 +605,11 @@ export const reviews = pgTable("reviews", {
   /** Why a failed review failed, for the learner (their key, their provider); null otherwise. */
   failure: text("failure"),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  /**
+   * The later session whose opening review takes it up (design §7.1), claimed as that session
+   * starts; null until one does. Each review is taken up once.
+   */
+  takenUpIn: uuid("taken_up_in").references(() => learningSessions.id, { onDelete: "set null" }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

@@ -4,6 +4,7 @@ import {
   checkVerdictSchema,
   generateLesson,
   LessonOutlineError,
+  openingReviewDecisionSchema,
   planActionsSchema,
   probeDecisionSchema,
   placeChecks,
@@ -35,6 +36,7 @@ import { systemMessages } from "./call-options.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
 import {
   assignmentOf,
+  assignmentSummary,
   createAssignment,
   OPEN_HOMEWORK,
   openHomeworkRecord,
@@ -81,7 +83,14 @@ import { profileDue } from "./profile.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
-import { HOMEWORK_REVIEWED, sessionReviewRecord } from "./reviews.js";
+import { HOMEWORK_REVIEWED, resolveLeaks, sessionReviewRecord } from "./reviews.js";
+import {
+  openingReviewRecord,
+  REVIEW_FOUND,
+  REVIEW_WAITING,
+  reviewsUnderWay,
+  takenUpBy,
+} from "./opening-review.js";
 import { recordEdits } from "./track-edits.js";
 import { markCardsTaught } from "./word-cards.js";
 import { createReviewer } from "./review.js";
@@ -125,6 +134,14 @@ const PROBE_DECISION_PROMPT =
   "(For the app; the learner doesn't see this.) Record what the learner's answers so far showed that isn't recorded yet. Then say whether probing is finished: you know where the learner's knowledge ends and what they want to reach, well enough to plan against, or they asked to move on to the plan. If it is finished, you won't write another probe message: the plan comes next, in its own message.";
 const PROBE_SUMMARY_PROMPT =
   "(For the app; the learner doesn't see this.) The probe is finished. Write what it found, for the plan: for each strand the lesson will lean on, what the learner holds and where it stops, in their own words where you can. Where you found where a strand stops but not what they hold below it, say so; that is not the same as holding nothing. Then what they want to reach. Plain prose, no preamble.";
+const REVIEW_OPENING_PROMPT = `(For the app; the learner doesn't see this.) Before the probe, open the session with the review of what came up since the last one, under "${REVIEW_WAITING}", as the method's review says: the arc exam first. Say in a sentence what you'll look at, then ask the first question.`;
+const REVIEW_DECISION_PROMPT = `(For the app; the learner doesn't see this.) Record what the learner's answers in the review showed that isn't recorded yet, and the labels of the leaks still open (under "${REVIEW_WAITING}") that they have now found. Then say whether the review is finished: every item there taken up, or they asked to move on. If it is, you won't write another review message: the probe comes next.`;
+const REVIEW_SUMMARY_PROMPT =
+  "(For the app; the learner doesn't see this.) The review is finished. Write what it found, for the probe and the plan. If it took up an arc exam, say first whether the arc held; if it didn't, what has to be re-taught before the next arc builds on it (the next arc waits). Then, for each item it took up, whether it held now or still leaks, and where, in the learner's words where you can. Plain prose, no preamble.";
+/** The review hands over to the probe, whose opening question follows the review's last answer. */
+const REVIEW_HANDOVER_PROMPT = `(For the app; the learner doesn't see this.) The review is over; what it found is under "${REVIEW_FOUND}". Now the probe: acknowledge their last answer in a few neutral words, then ask the first probe question.`;
+/** The most answers a review takes: a few questions, not a quiz (method.md, "Review"). */
+const REVIEW_ANSWERS = 5;
 const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. An idea the plan leans on that the learner holds in another track (under \"Held in the learner's other tracks\", with the same meaning here) is borrowed with borrow-term instead of planned; planned terms may rest on it. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const SWEEP_REQUEST =
@@ -229,7 +246,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // The probe folds an arc exam still open into its questions (method.md, "The arc exam").
     const examOpen =
       phase === "probe" ? await openExamRecord(db, session.trackId, sessionId) : null;
+    // The probe hears what the opening review found; the plan's call adds it itself.
+    const found = phase === "probe" ? reviewFound(session) : [];
     const extra = [
+      ...found,
       ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
       ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
       ...(reviewed ? [{ heading: HOMEWORK_REVIEWED, body: reviewed }] : []),
@@ -284,8 +304,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           : opening,
       });
     }
-    const learnerHasSpoken = history.some((m) => m.role === "learner");
-    return { session, track, terms, messages, learnerHasSpoken, system };
+    // The review's answers are their own kind: the probe's opening question follows them.
+    const answered = (kind: "review" | "message") =>
+      history.filter((m) => m.role === "learner" && m.kind === kind).length;
+    return { session, track, terms, messages, answered, history, system };
   };
 
   /** The session's homework or recap, if it has been written. */
@@ -545,14 +567,144 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     };
 
   return {
+    // The review that opens a session (design §7.1), a conversation shaped like the probe's:
+    // after each answer a structured call records what it showed and whether the review is done,
+    // and only then is the next message written. Done, what it found is written once, for the
+    // probe and the plan, and the probe's opening question follows.
+    "opening-review": guarded(async ({ sessionId }) => {
+      const session = await loadSession(db, sessionId);
+      if (session.state.phase !== "review") return;
+      // A review it took up is still being written: that review's end queues this job again.
+      if (await reviewsUnderWay(db, sessionId)) return;
+      const onTo = async () => {
+        await applyEvent(db, sessionId, { type: "review-done" });
+        await queue.enqueue("probe-turn", { sessionId });
+      };
+      // What waits, labelled as the call reads it, and the call's context with it.
+      const load = async () => {
+        const waiting = await openingReviewRecord(db, session);
+        const context = await contextFor(sessionId, "review", [
+          {
+            heading: REVIEW_WAITING,
+            body: waiting?.text ?? "Nothing is left open: the learner has taken it all up since.",
+          },
+        ]);
+        return { waiting, context };
+      };
+      let { waiting, context } = await load();
+      // Already answered: the job was queued twice (the review's end, and "Try again").
+      if (context.history.at(-1)?.role === "tutor") return;
+      const answers = context.answered("review");
+      // Nothing left to take up before a word was said (every flaw found in the margin meanwhile,
+      // say): the probe, without a call.
+      if (!waiting && answers === 0) return onTo();
+      const modelFor = (purpose: string) =>
+        models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          sessionId: session.id,
+          purpose,
+          role: "strong",
+        });
+
+      if (answers > 0) {
+        const decider = await modelFor("opening-review-decision");
+        const asking: ModelMessage[] = [
+          ...context.messages,
+          { role: "user", content: REVIEW_DECISION_PROMPT },
+        ];
+        const { output } = await withActivity(
+          db,
+          sessionId,
+          "Noting what your answers showed",
+          () =>
+            generateText({
+              model: decider,
+              system: context.system,
+              output: Output.object({ schema: openingReviewDecisionSchema }),
+              messages: asking,
+            }),
+        );
+        if (output.actions.length)
+          await recordEdits(db, {
+            sessionId,
+            trackId: session.trackId,
+            actions: output.actions,
+            source: "review",
+            label: "Noting what your answers showed",
+            askAgain: async (feedback) =>
+              (
+                await generateText({
+                  model: decider,
+                  system: context.system,
+                  output: Output.object({ schema: trackActionsSchema }),
+                  messages: [
+                    ...asking,
+                    { role: "assistant", content: JSON.stringify(output) },
+                    { role: "user", content: feedback },
+                  ],
+                })
+              ).output.actions,
+          });
+        // The leaks they found in the chat, as the margin's card would have resolved them.
+        const found = output.resolved.flatMap((label) => {
+          const id = waiting?.labels.get(label.trim());
+          return id ? [id] : [];
+        });
+        await resolveLeaks(db, found, sessionId);
+        if (output.finished || !waiting || answers >= REVIEW_ANSWERS) {
+          const summarizer = await modelFor("opening-review-summary");
+          const { text: summary } = await withActivity(
+            db,
+            sessionId,
+            "Taking stock of what held",
+            () =>
+              generateText({
+                model: summarizer,
+                system: context.system,
+                messages: [...context.messages, { role: "user", content: REVIEW_SUMMARY_PROMPT }],
+              }),
+          );
+          await db
+            .update(learningSessions)
+            .set({ reviewSummary: summary.trim() || null })
+            .where(eq(learningSessions.id, sessionId));
+          return onTo();
+        }
+        // The next question is written with what was just recorded.
+        if (output.actions.length || found.length) ({ waiting, context } = await load());
+      } else {
+        // The chat links the work it takes up, whose reviews may have finished since the page
+        // was opened.
+        await publish(db, sessionId, "taken-up", {
+          assignments: (await takenUpBy(db, sessionId)).map(assignmentSummary),
+        });
+      }
+      await writeChatMessage({
+        db,
+        media: deps.media,
+        review: reviewerFor(session),
+        sessionId,
+        model: await modelFor("opening-review"),
+        system: context.system,
+        messages:
+          answers === 0
+            ? [...context.messages, { role: "user", content: REVIEW_OPENING_PROMPT }]
+            : context.messages,
+        terms: context.terms,
+        kind: "review",
+      });
+    }),
+
     // Decide first, then write: a turn that finishes the probe writes no probe message, so a model
     // that feels done can't present the plan there; the plan job is the only place a plan appears.
     "probe-turn": guarded(async ({ sessionId }) => {
       let context = await contextFor(sessionId, "probe");
       const { session } = context;
+      const answered = context.answered("message");
       // Before the opening question, once: long notes with no summary yet get one (an import), and
       // files with no summary yet get one.
-      if (!context.learnerHasSpoken) {
+      if (!answered) {
         const leftOff = await catchUpLeftOff(session);
         const brief = await catchUpBrief(session);
         if (leftOff || brief) context = await contextFor(sessionId, "probe");
@@ -565,8 +717,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           purpose,
           role: "strong",
         });
-      // The opening question follows nothing the learner said: nothing to record, nothing decided.
-      if (context.learnerHasSpoken) {
+      // The opening question follows nothing the learner said in the probe: nothing to record,
+      // nothing decided.
+      if (answered) {
         // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
         const decider = await modelFor("probe-decision");
         const { output } = await withActivity(
@@ -636,7 +789,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         sessionId,
         model: await modelFor("probe"),
         system: context.system,
-        messages: context.messages,
+        // After a review, the opening question follows its last answer.
+        messages:
+          !answered && context.answered("review")
+            ? [...context.messages, { role: "user", content: REVIEW_HANDOVER_PROMPT }]
+            : context.messages,
         terms: context.terms,
         kind: "message",
       });
@@ -1088,14 +1245,17 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
       // Research runs before the first plan only, as its own call: a search can't take the plan's place.
       // The probe's conclusion, stated for the plan (null when the learner skipped ahead to it).
-      const probeFound = session.probeSummary
-        ? [
-            {
-              heading: "What the probe found (the learner hasn't seen this)",
-              body: session.probeSummary,
-            },
-          ]
-        : [];
+      const probeFound = [
+        ...reviewFound(session),
+        ...(session.probeSummary
+          ? [
+              {
+                heading: "What the probe found (the learner hasn't seen this)",
+                body: session.probeSummary,
+              },
+            ]
+          : []),
+      ];
       const search =
         session.state.plan === "none" ? await models.searchTool(session.userId) : undefined;
       const found = search
@@ -1200,6 +1360,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
     }),
   };
+}
+
+/** What the opening review found, for the probe's and the plan's calls; none without one. */
+function reviewFound(session: { reviewSummary: string | null }) {
+  return session.reviewSummary ? [{ heading: REVIEW_FOUND, body: session.reviewSummary }] : [];
 }
 
 /** The track's context without what the learner brought, for a call that reads the files themselves. */

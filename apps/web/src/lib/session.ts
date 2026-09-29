@@ -11,7 +11,8 @@ import { followSession, type StreamEvent } from "./session-stream";
 export interface ChatMessage {
   id: string;
   role: "learner" | "tutor";
-  kind: "message" | "plan" | "homework" | "exam" | "recap";
+  /** `review`: the opening review's, the learner's answers included. */
+  kind: "review" | "message" | "plan" | "homework" | "exam" | "recap";
   text: string | null;
   blocks: Block[] | null;
   /** Still arriving: `text` grows until the message is done. */
@@ -41,6 +42,8 @@ export interface SessionModel {
   checks: CheckEntry[];
   /** The homework (and arc exam) the session assigned (design §7.4). */
   assignments: AssignmentSummary[];
+  /** The earlier work whose reviews the opening review takes up, an arc exam first (design §7.1). */
+  takenUp: AssignmentSummary[];
   /** Questions asked in the margin of the lesson, oldest first. */
   asides: Aside[];
   /** Whether the learner has ever asked one (until then the lesson shows how). */
@@ -225,6 +228,8 @@ export function reduceSession(model: SessionModel, event: StreamEvent): SessionM
       const others = model.assignments.filter((a) => a.id !== assignment.id);
       return { ...next, assignments: [...others, assignment] };
     }
+    case "taken-up":
+      return { ...next, takenUp: (data as { assignments: AssignmentSummary[] }).assignments };
     case "error":
       return { ...next, error: data.message as string };
     default: {
@@ -251,6 +256,7 @@ const EVENT_TYPES = [
   "activity",
   "activity-reasoning",
   "assignment",
+  "taken-up",
   ...ASIDE_EVENT_TYPES,
   // Also the name of EventSource's own connection error; the listener tells them apart by data.
   "error",

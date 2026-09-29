@@ -7,6 +7,29 @@ import { closeActionSchema, planActionSchema, trackActionSchema } from "./action
  */
 
 /**
+ * After each of the learner's answers in the opening review, before the next message: what the
+ * answers showed, the leaks the learner found, and whether the review is done. When it is, no review
+ * message is written; what it found is its own call, and the probe follows.
+ */
+export const openingReviewDecisionSchema = z.object({
+  actions: z
+    .array(trackActionSchema)
+    .describe(
+      "Changes to the track the learner's answers showed, from how they used the terms (with their own words as evidence): a term that held is confirmed, one that didn't goes back to taught; misconceptions as fix-list items. Empty if none.",
+    ),
+  resolved: z
+    .array(z.string())
+    .describe(
+      "The labels (L1, L2…) of the leaks the learner has now found and put right in their own words. Empty if none.",
+    ),
+  finished: z
+    .boolean()
+    .describe(
+      "True when every item waiting for the review has been taken up, or the learner asked to move on.",
+    ),
+});
+
+/**
  * Before each probe question after the opening one: what the learner's answers showed, and whether
  * probing is done. When it is, no probe message is written; the summary for the plan is its own call.
  */

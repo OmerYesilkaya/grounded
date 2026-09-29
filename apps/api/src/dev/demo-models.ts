@@ -214,6 +214,26 @@ export function createDemoModels(): ModelAccess {
           : "That's the flaw: both read the same value, so one addition is written over the other.",
       ),
     "review-record": (n) => model("", [JSON.stringify({ resolved: n % 2 === 0 })]),
+    // The review that opens the next session: two questions, the first answer finding the leak
+    // on the prediction, the second ending it.
+    "opening-review": (n) =>
+      model(
+        n % 2 === 1
+          ? "Before we start, your homework. You predicted the counter would reach 2000. Look at the two lines inside the loop: what can the other worker do between reading `counter` and writing it back?"
+          : "And the number changing from run to run: what decides how often the two workers' moves overlap?",
+      ),
+    "opening-review-decision": (n) =>
+      model("", [
+        JSON.stringify({
+          actions: [],
+          resolved: n % 2 === 1 ? ["L1"] : [],
+          finished: n % 2 === 0,
+        }),
+      ]),
+    "opening-review-summary": () =>
+      model(
+        "The lost update held once looked at: they now see both workers reading the same value. What decides how often the moves overlap is still open: they said it's luck.",
+      ),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
     "wording-review": () => model("", [JSON.stringify({ flagged: [], jargon: [] })]),

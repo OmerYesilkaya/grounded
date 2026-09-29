@@ -57,4 +57,24 @@ describe("reviewRecord", () => {
     expect(record).toContain("- On «one step» in Your explanation (the learner found the flaw):");
     expect(record).toContain("  Learner: It reads it.");
   });
+
+  it("names a comment by its label, for a call to say which it means", () => {
+    const record = reviewRecord({
+      title: "Two workers",
+      kind: "exam",
+      checklist: [],
+      marks: [],
+      comments: [
+        {
+          field: "Your explanation",
+          quote: "",
+          messages: [{ role: "tutor", text: "What does the CPU do first?" }],
+          resolved: false,
+          label: "L1",
+        },
+      ],
+    });
+    expect(record).toContain('### "Two workers" (arc exam)');
+    expect(record).toContain("- L1, on Your explanation (still open):");
+  });
 });

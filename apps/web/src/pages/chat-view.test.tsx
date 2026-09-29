@@ -3,13 +3,17 @@ import type { SessionState } from "@grounded/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
 import { fakePage } from "@/test-page";
 import { ChatView } from "./chat-view";
 
-vi.mock("@tanstack/react-router", () => ({ useNavigate: () => vi.fn() }));
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => vi.fn(),
+  Link: ({ children }: { children: ReactNode }) => <a href="/homework">{children}</a>,
+}));
 vi.mock("@/lib/api", () => ({ api: vi.fn(() => Promise.resolve(undefined)) }));
 
 const state: SessionState = {
@@ -30,6 +34,7 @@ function model(messages: ChatMessage[]): SessionModel {
     checks: [],
     asides: [],
     assignments: [],
+    takenUp: [],
     hasAskedAside: false,
     activities: [],
     lastEventId: 0,
@@ -243,5 +248,44 @@ describe("ChatView: a streamed reply", () => {
     });
     expect(screen.getByText("two workers").tagName).toBe("STRONG");
     expect(screen.getByText(/^Picture/)).toHaveTextContent(markdown.replaceAll("**", "").trim());
+  });
+});
+
+describe("ChatView: the review that opens a session", () => {
+  const written = (m: ChatMessage): ChatMessage =>
+    m.role === "tutor" ? { ...m, blocks: parseBlocks(m.text ?? "").blocks } : m;
+  const review = (id: string, role: ChatMessage["role"], text: string) =>
+    written({ ...message(id, role, text), kind: "review" });
+  const homework = {
+    id: "a1",
+    kind: "homework" as const,
+    title: "Two workers, one counter",
+    messageId: "m0",
+    submittedAt: "2026-09-28T10:00:00Z",
+    snoozedUntil: null,
+    subsumedBy: null,
+  };
+
+  it("heads its messages with the work it takes up, and marks where the session proper begins", () => {
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <ChatView
+          model={{
+            ...model([
+              review("m1", "tutor", "Your homework said adding one is one step. Is it?"),
+              review("m2", "learner", "No: it reads, adds, then writes."),
+              written(message("m3", "tutor", "Next one.")),
+            ]),
+            takenUp: [homework],
+          }}
+          onOpenLesson={vi.fn()}
+        />
+      </QueryClientProvider>,
+    );
+    expect(screen.getByRole("heading", { name: "Since last time" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Two workers, one counter/ })).toBeInTheDocument();
+    const divider = screen.getByRole("separator", { name: "This session" });
+    const probe = screen.getByText("Next one.");
+    expect(divider.compareDocumentPosition(probe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });

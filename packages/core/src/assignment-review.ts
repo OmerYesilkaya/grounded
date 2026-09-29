@@ -160,6 +160,8 @@ export interface ReviewedAssignment {
     quote: string;
     messages: readonly { role: "learner" | "tutor"; text: string }[];
     resolved: boolean;
+    /** A label for a call to name it by (L1, L2…: the opening review's leaks still open). */
+    label?: string;
   }[];
 }
 
@@ -176,7 +178,8 @@ export function reviewRecord(review: ReviewedAssignment): string {
       (m) => `  ${m.role === "learner" ? "Learner" : "Tutor"}: ${m.text}`,
     );
     const state = comment.resolved ? "the learner found the flaw" : "still open";
-    return [`- On ${where} (${state}):`, ...thread].join("\n");
+    const label = comment.label ? `${comment.label}, on` : "On";
+    return [`- ${label} ${where} (${state}):`, ...thread].join("\n");
   });
   return [
     `### "${review.title}" (${what})`,

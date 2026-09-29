@@ -55,6 +55,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     checks: [],
     asides: [],
     assignments: [],
+    takenUp: [],
     hasAskedAside: false,
     lastEventId: 7,
     activities: [],

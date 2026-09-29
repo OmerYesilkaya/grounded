@@ -1,4 +1,4 @@
-export type SessionPhase = "probe" | "plan" | "lesson" | "homework" | "close" | "closed";
+export type SessionPhase = "review" | "probe" | "plan" | "lesson" | "homework" | "close" | "closed";
 
 /**
  * open: waiting for an answer · passed · settling: continued past while shaky · paused ·
@@ -50,6 +50,8 @@ export interface SessionState {
 
 export type SessionEvent =
   | { type: "learner-message" }
+  /** The opening review has taken up what came up since the last session: the probe follows. */
+  | { type: "review-done" }
   | { type: "probe-done" }
   | { type: "skip-to-plan" }
   | { type: "plan-proposed" }
@@ -80,20 +82,22 @@ export type SessionEvent =
 export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
 
 /** The jobs a session can wait on that the learner can't set going again by writing. */
-export type AwaitedJob = "probe-turn" | "plan" | "homework" | "review" | "recap";
+export type AwaitedJob = "opening-review" | "probe-turn" | "plan" | "homework" | "review" | "recap";
 
 /**
  * The job the session is waiting on, when the learner can't move it on themselves (design §4.2):
- * the probe's next turn (the opening question, or after the learner's answer), a plan being written
- * or revised, the homework being written or reviewed, the recap. Null when it is the learner's turn (an
- * assigned homework is theirs to hand in or put off), and in the lesson, whose
- * jobs are set going again by answering a check or by writing the lesson again.
+ * the opening review's or the probe's next turn (its first message, or after the learner's answer),
+ * a plan being written or revised, the homework being written or reviewed, the recap. Null when it
+ * is the learner's turn (an assigned homework is theirs to hand in or put off), and in the lesson,
+ * whose jobs are set going again by answering a check or by writing the lesson again.
  */
 export function awaitedJob(
   state: SessionState,
   lastMessage: "learner" | "tutor" | null,
 ): AwaitedJob | null {
   switch (state.phase) {
+    case "review":
+      return lastMessage === "tutor" ? null : "opening-review";
     case "probe":
       return lastMessage === "tutor" ? null : "probe-turn";
     case "plan":
@@ -108,9 +112,13 @@ export function awaitedJob(
   }
 }
 
-export function initialSession(): SessionState {
+/**
+ * A new session: it opens with the review when something came up since the last session for it to
+ * take up (design §7.1), and with the probe otherwise.
+ */
+export function initialSession(opening: "review" | "probe" = "probe"): SessionState {
   return {
-    phase: "probe",
+    phase: opening,
     plan: "none",
     lesson: { status: "none", steps: [] },
     steps: {},
@@ -138,13 +146,17 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
   switch (event.type) {
     case "learner-message":
-      if (state.phase === "probe") return ok({});
+      if (state.phase === "review" || state.phase === "probe") return ok({});
       if (state.phase === "plan") return ok({ plan: state.plan === "none" ? "none" : "revising" });
       if (state.phase === "lesson") return no("Questions during the lesson go in the margin.");
       return no("The session isn't taking messages now.");
 
+    case "review-done":
+      return state.phase === "review" ? ok({ phase: "probe" }) : no("No review is under way.");
+
     case "probe-done":
     case "skip-to-plan":
+      if (state.phase === "review") return no("The review comes before the probe.");
       return state.phase === "probe" ? ok({ phase: "plan" }) : no("The probe is already over.");
 
     case "plan-proposed":

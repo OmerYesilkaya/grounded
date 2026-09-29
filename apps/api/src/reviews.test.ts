@@ -10,7 +10,6 @@ import {
 import { initialSession, type SessionState } from "@grounded/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { recoverReviews } from "./engine/review-recovery.js";
-import { openLeaks, openLeaksRecord } from "./engine/reviews.js";
 import type { ReviewView } from "./engine/reviews.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -173,19 +172,14 @@ describe("the review of handed-in homework", () => {
     expect((await post(cookie, `/api/assignments/${id}/review`)).status).toBe(409);
   });
 
-  it("takes replies in a comment's card until the learner finds the flaw, and keeps open leaks for the next session", async () => {
-    const { cookie, id, trackId } = await written({ ...initialSession(), phase: "closed" });
+  it("takes replies in a comment's card until the learner finds the flaw", async () => {
+    const { cookie, id } = await written({ ...initialSession(), phase: "closed" });
     models.script("review", { thenGenerate: [JSON.stringify(REVIEW)] });
     await post(cookie, `/api/assignments/${id}/submit`);
     await reviewed(cookie, id);
     const comment = (await reviewOf(cookie, id))?.comments[0];
     const path = `/api/assignments/${id}/review/comments/${comment?.id ?? ""}/replies`;
     const threadOf = async () => (await reviewOf(cookie, id))?.comments[0];
-
-    // The leak is open: the next session's review can read it, labelled for its record.
-    const record = await openLeaksRecord(t.db, trackId);
-    expect(record?.text).toContain('L1: in their homework "Two workers", on «one step» in');
-    expect(record?.labels.get("L1")).toBe(comment?.id);
 
     models.script("review-reply", { text: "And what can the other worker do meanwhile?" });
     models.script("review-record", { thenGenerate: [JSON.stringify({ resolved: false })] });
@@ -210,7 +204,6 @@ describe("the review of handed-in homework", () => {
     );
     expect(replied).toContain(REVIEW.comments[0]?.comment);
     expect(replied).toContain("It reads, then writes.");
-    expect(await openLeaks(t.db, trackId)).toEqual([]);
     expect((await post(cookie, path, { text: "More?" })).status).toBe(409);
   });
 
@@ -222,41 +215,5 @@ describe("the review of handed-in homework", () => {
       .values({ assignmentId: id, updatedAt: new Date(Date.now() - 60_000) });
     await recoverReviews(t.db, 30_000);
     expect((await reviewOf(cookie, id))?.status).toBe("failed");
-  });
-
-  it("gives an arc exam's open leaks first, as the next session's review takes an exam first", async () => {
-    const { cookie, id, trackId } = await written({ ...initialSession(), phase: "closed" });
-    const [homework] = await t.db.select().from(assignments).where(eq(assignments.id, id));
-    if (!homework) throw new Error("no homework");
-    const [exam] = await t.db
-      .insert(assignments)
-      .values({
-        trackId,
-        userId: homework.userId,
-        sessionId: homework.sessionId,
-        kind: "exam",
-        title: "Counters everywhere",
-        tasks: homework.tasks,
-        checklist: homework.checklist,
-        messageId: crypto.randomUUID(),
-      })
-      .returning();
-    const examId = exam?.id ?? "";
-    await t.request(`/api/assignments/${examId}/answers`, {
-      method: "PUT",
-      cookie,
-      body: JSON.stringify({ taskId: "t1", fields: { text: ANSWER } }),
-    });
-    models.script("review", { thenGenerate: [JSON.stringify(REVIEW)] });
-    await post(cookie, `/api/assignments/${id}/submit`);
-    await reviewed(cookie, id);
-    models.script("review", { thenGenerate: [JSON.stringify(REVIEW)] });
-    await post(cookie, `/api/assignments/${examId}/submit`);
-    await reviewed(cookie, examId);
-    const leaks = await openLeaks(t.db, trackId);
-    expect(leaks.map((leak) => leak.assignment.kind)).toEqual(["exam", "homework"]);
-    expect((await openLeaksRecord(t.db, trackId))?.text).toMatch(
-      /^L1: in their arc exam "Counters everywhere"/,
-    );
   });
 });

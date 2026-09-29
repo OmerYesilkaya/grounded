@@ -56,6 +56,7 @@ export {
 } from "./review.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
 export {
+  openingReviewDecisionSchema,
   planActionsSchema,
   probeDecisionSchema,
   sweepActionsSchema,

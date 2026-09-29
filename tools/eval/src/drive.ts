@@ -125,9 +125,10 @@ export async function driveSession(options: DriveOptions): Promise<string> {
 
     if (state.phase === "closed") return sessionId;
 
-    if (state.phase === "probe") {
+    // The opening review is answered in the chat like the probe.
+    if (state.phase === "review" || state.phase === "probe") {
       const text = await learner.reply(await seen(), TASKS.chat);
-      progress(`probe: ${text}`);
+      progress(`${state.phase}: ${text}`);
       await post(`/api/sessions/${sessionId}/messages`, { text });
       continue;
     }

@@ -114,7 +114,8 @@ export async function publishReview(db: Db, assignment: AssignmentRow): Promise<
 
 /**
  * Starts the review of a handed-in assignment (design §7.4: review starts on submit), or starts a
- * failed one again: the review job is queued. False when it is already under way or done.
+ * failed one again: the review job is queued. False when it is already under way or done. A failed
+ * one started again is for the next session's review to take up, whichever took it up as it failed.
  */
 export async function startReview(
   db: Db,
@@ -126,7 +127,7 @@ export async function startReview(
     .values({ assignmentId: assignment.id })
     .onConflictDoUpdate({
       target: reviews.assignmentId,
-      set: { status: "reviewing", failure: null, updatedAt: sql`now()` },
+      set: { status: "reviewing", failure: null, takenUpIn: null, updatedAt: sql`now()` },
       where: eq(reviews.status, "failed"),
     })
     .returning({ id: reviews.id });
@@ -159,7 +160,8 @@ export async function recordReviewMessage(
 
 /**
  * Marks leaks resolved (design §7.4): by the learner, in the comment's card (`inSession` null), or
- * by a later session's review, which carried them on (#40). A leak resolved already stays as it was.
+ * in the review that opens a later session, where they found it in the chat (design §7.1). A leak
+ * resolved already stays as it was.
  */
 export async function resolveLeaks(
   db: Db,
@@ -191,11 +193,16 @@ export async function resolveLeaks(
   }
 }
 
+/** A done review as other calls read it (reviewRecord), each comment with its id. */
+export type ReviewedWork = Omit<ReviewedAssignment, "comments"> & {
+  comments: readonly (ReviewedAssignment["comments"][number] & { id: string })[];
+};
+
 /** A done review of an assignment as other calls read it (reviewRecord); null if there is none. */
 export async function reviewedAssignment(
   db: Db,
   assignment: AssignmentRow,
-): Promise<ReviewedAssignment | null> {
+): Promise<ReviewedWork | null> {
   const [row] = await db
     .select()
     .from(reviews)
@@ -208,6 +215,7 @@ export async function reviewedAssignment(
     checklist: assignment.checklist,
     marks: row.checklist,
     comments: comments.map((c) => ({
+      id: c.id,
       field: labelIn(assignment, c.anchor),
       quote: c.anchor.quote,
       messages: c.messages.map(({ role, text }) => ({ role, text })),
@@ -243,84 +251,4 @@ export async function sessionReviewRecord(db: Db, sessionId: string): Promise<st
     if (reviewed) records.push(reviewRecord(reviewed));
   }
   return records.length ? records.join("\n\n") : null;
-}
-
-/** A leak still open: a comment on the track's reviewed work that no card or later review resolved. */
-export interface OpenLeak {
-  commentId: string;
-  assignment: Pick<AssignmentRow, "id" | "title" | "kind" | "sessionId">;
-  /** The answer field's label, as the learner saw it. */
-  field: string;
-  quote: string;
-  messages: { role: "learner" | "tutor"; text: string }[];
-}
-
-/**
- * The track's open leaks (design §7.4: unresolved leaks carry into the next session's review): an
- * arc exam's first, as the review takes an exam first (method.md, "Review"), then oldest first.
- * What #40's review phase reads, and resolves with resolveLeaks once it has dealt with them.
- */
-export async function openLeaks(db: Db, trackId: string): Promise<OpenLeak[]> {
-  const rows = await db
-    .select({ id: reviewComments.id, reviewId: reviews.id, assignment: assignments })
-    .from(reviewComments)
-    .innerJoin(reviews, eq(reviews.id, reviewComments.reviewId))
-    .innerJoin(assignments, eq(assignments.id, reviews.assignmentId))
-    .where(
-      and(
-        eq(assignments.trackId, trackId),
-        eq(reviews.status, "done"),
-        isNull(reviewComments.resolvedAt),
-      ),
-    )
-    .orderBy(
-      sql`${assignments.kind} = 'exam' desc`,
-      asc(assignments.createdAt),
-      asc(assignments.id),
-      asc(reviewComments.position),
-    );
-  const comments = await commentsOf(db, [...new Set(rows.map((r) => r.reviewId))]);
-  return rows.flatMap(({ id, assignment }) => {
-    const comment = comments.find((c) => c.id === id);
-    if (!comment) return [];
-    const { title, kind, sessionId } = assignment;
-    return [
-      {
-        commentId: id,
-        assignment: { id: assignment.id, title, kind, sessionId },
-        field: labelIn(assignment, comment.anchor),
-        quote: comment.anchor.quote,
-        messages: comment.messages.map(({ role, text }) => ({ role, text })),
-      },
-    ];
-  });
-}
-
-/**
- * The track's open leaks for a prompt, each labelled L1, L2…, for the call to name the ones it
- * resolved; `labels` maps them back to comment ids. Null when none is open.
- */
-export async function openLeaksRecord(
-  db: Db,
-  trackId: string,
-): Promise<{ text: string; labels: Map<string, string> } | null> {
-  const leaks = await openLeaks(db, trackId);
-  if (leaks.length === 0) return null;
-  const labels = new Map<string, string>();
-  const text = leaks
-    .map((leak, i) => {
-      const label = `L${String(i + 1)}`;
-      labels.set(label, leak.commentId);
-      const what = leak.assignment.kind === "exam" ? "arc exam" : "homework";
-      const where = leak.quote ? `«${leak.quote}» in ${leak.field}` : leak.field;
-      const thread = leak.messages.map(
-        (m) => `  ${m.role === "learner" ? "Learner" : "Tutor"}: ${m.text}`,
-      );
-      return [
-        `${label}: in their ${what} "${leak.assignment.title}", on ${where}:`,
-        ...thread,
-      ].join("\n");
-    })
-    .join("\n\n");
-  return { text, labels };
 }

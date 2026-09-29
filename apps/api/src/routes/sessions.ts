@@ -17,6 +17,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { warnOfOpenExam } from "../engine/arc-exams.js";
 import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
+import { claimForReview, sinceLastSession, takenUpBy } from "../engine/opening-review.js";
 import { assignmentSummary, sessionAssignments } from "../engine/assignments.js";
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
@@ -90,14 +91,22 @@ export function registerSessionRoutes(
         409,
       );
 
+    // It opens with the review when something came up since the last session, and otherwise with
+    // the probe (design §7.1). Either way it takes up the reviews of work handed in since: the next
+    // session's review won't go over them again.
+    const since = await sinceLastSession(db, trackId);
+    const opening = since.waiting ? "review" : "probe";
     const [session] = await db
       .insert(learningSessions)
-      .values({ trackId, userId, state: initialSession() })
+      .values({ trackId, userId, state: initialSession(opening) })
       .returning();
     if (!session) throw new Error("session insert returned nothing");
     addLogContext({ sessionId: session.id });
+    await claimForReview(db, session.id, since.reviewIds);
     await publish(db, session.id, "state", session.state);
-    await queue.enqueue("probe-turn", { sessionId: session.id });
+    await queue.enqueue(opening === "review" ? "opening-review" : "probe-turn", {
+      sessionId: session.id,
+    });
     return c.json({ id: session.id }, 201);
   });
 
@@ -165,6 +174,8 @@ export function registerSessionRoutes(
       })),
       // The homework (and arc exam) it assigned (design §7.4).
       assignments: (await sessionAssignments(db, session.id)).map(assignmentSummary),
+      // The earlier work its opening review took up (design §7.1).
+      takenUp: (await takenUpBy(db, session.id)).map(assignmentSummary),
       // Questions asked in the margin (design §7.5), and whether the learner has ever asked one.
       asides: await asidesSnapshot(db, session.id, cursor),
       hasAskedAside: await hasAskedAside(db, session.userId),
@@ -193,20 +204,22 @@ export function registerSessionRoutes(
 
     const applied = await apply(session.id, { type: "learner-message" });
     if (!applied.ok) return c.json({ error: applied.reason }, 409);
+    const { phase } = applied.state;
+    // An answer in the review is the review's: the probe's opening question follows it.
+    const kind = phase === "review" ? "review" : "message";
     const [message] = await db
       .insert(sessionMessages)
-      .values({ sessionId: session.id, role: "learner", text: parsed.data.text })
+      .values({ sessionId: session.id, role: "learner", kind, text: parsed.data.text })
       .returning();
     if (!message) throw new Error("message insert returned nothing");
     await publish(db, session.id, "message", {
       id: message.id,
       role: "learner",
-      kind: "message",
+      kind,
       text: message.text,
     });
-    await queue.enqueue(applied.state.phase === "probe" ? "probe-turn" : "plan", {
-      sessionId: session.id,
-    });
+    const job = phase === "review" ? "opening-review" : phase === "probe" ? "probe-turn" : "plan";
+    await queue.enqueue(job, { sessionId: session.id });
     return c.json({ id: message.id }, 201);
   });
 
