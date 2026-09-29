@@ -34,14 +34,11 @@ describe("model list", () => {
     expect(offeredModels("openai", { includeUngated: false }).map((m) => m.id)).toContain(
       "gpt-6-luna",
     );
-    // Not yet tested by Omer: development only.
-    expect(offeredModels("google", { includeUngated: false })).toEqual([]);
-    expect(offeredModels("google", { includeUngated: true }).map((m) => m.id)).toEqual([
+    expect(offeredModels("google", { includeUngated: false }).map((m) => m.id)).toEqual([
       "gemini-3.8-flash",
     ]);
     expect(cheapModelFor("google")?.id).toBe("gemini-3.5-flash-lite");
-    expect(offeredModels("deepseek", { includeUngated: false })).toEqual([]);
-    expect(offeredModels("deepseek", { includeUngated: true }).map((m) => m.id)).toEqual([
+    expect(offeredModels("deepseek", { includeUngated: false }).map((m) => m.id)).toEqual([
       "deepseek-v4-pro",
       "deepseek-flash",
     ]);

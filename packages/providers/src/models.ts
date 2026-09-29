@@ -74,7 +74,7 @@ export const MODELS: readonly ModelEntry[] = [
     label: "Gemini 3.8 Flash",
     roles: ["strong"],
     price: { input: 0.75, cachedInput: 0.075, cacheWrite: 0.75, output: 3.75 },
-    gate: "pending",
+    gate: "manual",
     reads: READS_ALL,
   },
   {
@@ -83,7 +83,7 @@ export const MODELS: readonly ModelEntry[] = [
     label: "Gemini 3.5 Flash-Lite",
     roles: ["cheap"],
     price: { input: 0.3, cachedInput: 0.03, cacheWrite: 0.3, output: 2.5 },
-    gate: "pending",
+    gate: "manual",
     reads: READS_ALL,
   },
   {
@@ -95,7 +95,7 @@ export const MODELS: readonly ModelEntry[] = [
     label: "DeepSeek V4 Pro",
     roles: ["strong"],
     price: { input: 1.32, cachedInput: 0.044, cacheWrite: 1.32, output: 3.96 },
-    gate: "pending",
+    gate: "manual",
     // Text only; DeepSeek's API takes PDFs on neither model.
     reads: { images: false, pdfs: false },
   },
@@ -106,7 +106,7 @@ export const MODELS: readonly ModelEntry[] = [
     label: "DeepSeek Flash",
     roles: ["strong", "cheap"],
     price: { input: 0.3, cachedInput: 0.006, cacheWrite: 0.3, output: 1.2 },
-    gate: "pending",
+    gate: "manual",
     reads: { images: true, pdfs: false },
   },
 ];

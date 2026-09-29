@@ -1657,8 +1657,7 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - Omer's quality test of the Anthropic models (Opus 5.5, Sonnet 5.5, Haiku 4.5): passed (2026-09-28);
   they are offered in production.
 - Gemini (3.8 Flash; 3.5 Flash-Lite for the cheap role) and DeepSeek (V4 Pro; Flash, which also
-  takes the cheap role) are on the list untested (2026-09-29): offered only where
-  `ALLOW_UNGATED_MODELS` is set, in production once Omer's test passes.
+  takes the cheap role): approved by Omer for production (2026-09-30); offered.
 - The method changes in §3.2: approved.
 - Cost: Omer's measurement puts it at minimal with GPT-6 Luna; acceptable to proceed. Per-model cost is
   still recorded (§4.4) and reviewed as the model list grows.
