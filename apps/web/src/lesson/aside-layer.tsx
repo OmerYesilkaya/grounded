@@ -8,6 +8,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react";
+import { LearnerText } from "@/content/learner-text";
 import { cn } from "@/lib/utils";
 import { AskDraft, AsideThread, QuotedPassage, Thinking } from "./aside-card";
 import { HintCard } from "./aside-hint";
@@ -464,7 +465,7 @@ function SentQuestion({ question }: { question: string }) {
   return (
     <div>
       <p className="mb-1.5 text-[13px] leading-snug font-medium whitespace-pre-wrap text-foreground">
-        {question}
+        <LearnerText text={question} />
       </p>
       <Thinking />
     </div>

@@ -1,6 +1,7 @@
 import type { CheckBlock } from "@grounded/content";
 import { useState } from "react";
 import { Composer } from "@/components/composer";
+import { LearnerText } from "@/content/learner-text";
 import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
@@ -56,7 +57,9 @@ export function CheckCard({
                 <div className="text-[11.5px] tracking-wide text-subtle-foreground uppercase">
                   You
                 </div>
-                <div className="text-muted-foreground">{message.text}</div>
+                <div className="whitespace-pre-wrap text-muted-foreground">
+                  <LearnerText text={message.text} />
+                </div>
               </div>
             ) : (
               <div key={i}>
@@ -119,6 +122,7 @@ export function CheckCard({
             disabled={progress.grading === true}
             placeholder={progress.thread.length ? "Answer the new question…" : "One or two lines…"}
             stackActions
+            rich
             autoFocus
             focusKey={progress.thread.length}
             className="bg-background"

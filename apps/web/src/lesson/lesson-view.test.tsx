@@ -137,12 +137,13 @@ describe("LessonView: answering a check", () => {
     await user.type(input, "again{Enter}");
     expect(props.onAnswer).toHaveBeenLastCalledWith("s1", "again");
 
-    await user.type(input, "x = 5{Shift>}{Enter}{/Shift}y = 6");
-    expect(input).toHaveValue("x = 5\ny = 6");
+    await user.type(input, "x = 5{Shift>}{Enter}{/Shift}y = `6`");
+    expect(input.querySelector("br")).not.toBeNull();
     expect(props.onAnswer).toHaveBeenCalledTimes(2);
     await user.type(input, "{Enter}");
-    expect(props.onAnswer).toHaveBeenLastCalledWith("s1", "x = 5\ny = 6");
-    expect(input).toHaveValue("");
+    // Sent as markdown: the line break, and the code typed as code.
+    expect(props.onAnswer).toHaveBeenLastCalledWith("s1", "x = 5\ny = `6`");
+    expect(input).toHaveTextContent("");
 
     await user.click(screen.getByRole("button", { name: "I don't know" }));
     expect(props.onDontKnow).toHaveBeenCalledWith("s1");
@@ -173,7 +174,10 @@ describe("LessonView: answering a check", () => {
     renderLesson({
       s1: { status: "open", thread: [{ from: "learner", text: "5" }], grading: true },
     });
-    expect(screen.getByRole("textbox", { name: "Your answer" })).toBeDisabled();
+    expect(screen.getByRole("textbox", { name: "Your answer" })).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
     expect(screen.getByText("Checking your answer…")).toHaveClass("text-shimmer");
   });
 

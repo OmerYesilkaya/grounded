@@ -2,6 +2,7 @@ import type { Block } from "@grounded/content";
 import { BookmarkCheck, BookmarkPlus } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
+import { LearnerText } from "@/content/learner-text";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
@@ -109,7 +110,7 @@ export function AsideThread({
       {shown.map((exchange, i) => (
         <div key={exchange.id} className={cn(i > 0 && "mt-3 border-t pt-3")}>
           <p className="mb-1.5 text-[13px] leading-snug font-medium whitespace-pre-wrap text-foreground">
-            {exchange.question}
+            <LearnerText text={exchange.question} />
           </p>
           {exchange.answer && (
             <div
@@ -225,7 +226,8 @@ export function QuestionBox({
         placeholder={placeholder}
         minRows={minRows}
         autoFocus={autoFocus}
-        className="rounded-lg bg-background [&_textarea]:px-3 [&_textarea]:pt-2 [&_textarea]:text-[14px]"
+        rich
+        className="rounded-lg bg-background [&_.line-field]:px-3 [&_.line-field]:pt-2 [&_.line-prose]:text-[14px]"
         actions={children}
       />
       {error && <p className="mt-1.5 text-[12px] text-destructive">{error}</p>}

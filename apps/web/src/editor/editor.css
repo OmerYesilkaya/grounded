@@ -1,0 +1,135 @@
+/* The answer editors (answer-editor.tsx, line-editor.tsx): the learner's own writing, in the
+   app's sans, set like the lesson's blocks so an answer reads as part of the same page. */
+
+.answer-prose {
+  padding: 0.75rem 0.875rem 0.5rem;
+  min-height: 5.5rem;
+  font-size: 15px;
+  line-height: 1.65;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+.answer-editor [contenteditable="false"] .answer-prose,
+.answer-prose[contenteditable="false"] {
+  min-height: 0;
+  padding: 0.25rem 0;
+}
+.answer-prose > * + * {
+  margin-top: 0.6em;
+}
+.answer-prose h2,
+.answer-prose h3 {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin-top: 1em;
+}
+.answer-prose h2 {
+  font-size: 1.2em;
+}
+.answer-prose h3 {
+  font-size: 1.05em;
+}
+.answer-prose ul {
+  list-style: disc;
+  padding-left: 1.4em;
+}
+.answer-prose ol {
+  list-style: decimal;
+  padding-left: 1.4em;
+}
+.answer-prose li > p {
+  margin: 0;
+}
+.answer-prose blockquote {
+  border-left: 2px solid var(--border-strong);
+  padding-left: 0.9em;
+  color: var(--muted-foreground);
+}
+.answer-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.answer-prose pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13.5px;
+  line-height: 1.55;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 0.9rem;
+  overflow-x: auto;
+}
+.answer-prose pre code {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
+.answer-prose img {
+  display: block;
+  max-width: 100%;
+  max-height: 520px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.answer-prose img.ProseMirror-selectednode {
+  outline: 2px solid var(--ring);
+}
+.answer-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Maths: rendered as it is typed; a click turns it back into text to edit. */
+.answer-prose .tiptap-mathematics-render--editable {
+  cursor: pointer;
+  border-radius: 4px;
+}
+.answer-prose .tiptap-mathematics-render--editable:hover {
+  background: var(--highlight);
+}
+.answer-prose [data-type="block-math"] {
+  text-align: center;
+  padding: 0.25em 0;
+}
+.answer-prose .inline-math-error,
+.answer-prose .block-math-error {
+  color: var(--destructive);
+}
+
+/* The empty box's words. */
+.answer-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--subtle-foreground);
+}
+
+/* The one-line version, for checks and asides: no box of its own (its composer draws one). */
+.line-prose {
+  font-size: 14.5px;
+  line-height: 1.55;
+  outline: none;
+  overflow-wrap: anywhere;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.line-prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  background: var(--muted);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+}
+.line-prose p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--subtle-foreground);
+}

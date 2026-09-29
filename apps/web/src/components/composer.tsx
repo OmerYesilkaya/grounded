@@ -10,6 +10,7 @@ import {
   type RefObject,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { LineEditor } from "@/editor/line-editor";
 import { cn } from "@/lib/utils";
 
 export interface ComposerProps {
@@ -57,6 +58,11 @@ export interface ComposerProps {
   autoFocus?: boolean;
   /** A new value (e.g. a fresh question arriving) is another moment to take focus. */
   focusKey?: string | number;
+  /**
+   * The one-line answer editor instead of a plain box (design §7.4): `code`, **bold** and `$…$`
+   * maths as the learner types them, sent as markdown. For check answers and asides.
+   */
+  rich?: boolean;
   className?: string;
 }
 
@@ -65,7 +71,7 @@ export interface ComposerProps {
  * to a maximum height, then scrolls. Enter sends, Shift+Enter starts a new line (or, with
  * `submitShortcut="mod-enter"`, Enter starts a line and ⌘/Ctrl+Enter sends).
  *
- * A plain textarea for now; answers move to a Tiptap editor with homework (design §7.4, step 7).
+ * A plain textarea, or with `rich` the one-line answer editor (Enter always sends there).
  */
 export function Composer({
   value,
@@ -87,9 +93,12 @@ export function Composer({
   attachments,
   autoFocus = false,
   focusKey,
+  rich = false,
   className,
 }: ComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const lineRef = useRef<HTMLElement>(null);
+  const field = () => (rich ? lineRef.current : textareaRef.current);
   const pickerRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const acceptsFiles = onAddFiles !== undefined && !disabled;
@@ -98,14 +107,15 @@ export function Composer({
   useAutoHeight(textareaRef, value);
 
   useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!autoFocus || disabled || !textarea || busyElsewhere(textarea)) return;
+    const box = rich ? lineRef.current : textareaRef.current;
+    if (!autoFocus || disabled || !box || busyElsewhere(box)) return;
     // The page scrolls on its own terms (the lesson glides to a new step); focus must not jump it.
-    textarea.focus({ preventScroll: true });
-  }, [autoFocus, disabled, focusKey]);
+    box.focus({ preventScroll: true });
+  }, [autoFocus, disabled, focusKey, rich]);
 
-  const submit = () => {
-    if (canSubmit) onSubmit(value.trim());
+  /** Sends `text`: what the box holds, which the rich editor gives as it is this moment. */
+  const submit = (text = value) => {
+    if (!disabled && !submitDisabled && text.trim() !== "") onSubmit(text.trim());
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -153,30 +163,43 @@ export function Composer({
         event.preventDefault();
         submit();
         // Clicking send moved focus to the button; the next message starts in the box again.
-        textareaRef.current?.focus();
+        field()?.focus();
       }}
     >
-      <textarea
-        ref={textareaRef}
-        id={id}
-        aria-label={label}
-        rows={minRows}
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={(event) => {
-          onChange(event.target.value);
-        }}
-        onKeyDown={onKeyDown}
-        onPaste={(event) => {
-          // A picture copied on its own arrives as a file; text (even with a picture) pastes as text.
-          const files = [...event.clipboardData.files];
-          if (!acceptsFiles || !files.length || event.clipboardData.getData("text/plain")) return;
-          event.preventDefault();
-          onAddFiles(files);
-        }}
-        className="block max-h-52 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3 pb-1 text-[15px] leading-relaxed outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed"
-      />
+      {rich ? (
+        <LineEditor
+          value={value}
+          onChange={onChange}
+          onEnter={submit}
+          label={label}
+          id={id}
+          placeholder={placeholder}
+          disabled={disabled}
+          fieldRef={lineRef}
+        />
+      ) : (
+        <textarea
+          ref={textareaRef}
+          id={id}
+          aria-label={label}
+          rows={minRows}
+          value={value}
+          disabled={disabled}
+          placeholder={placeholder}
+          onChange={(event) => {
+            onChange(event.target.value);
+          }}
+          onKeyDown={onKeyDown}
+          onPaste={(event) => {
+            // A picture copied on its own arrives as a file; text (even with a picture) pastes as text.
+            const files = [...event.clipboardData.files];
+            if (!acceptsFiles || !files.length || event.clipboardData.getData("text/plain")) return;
+            event.preventDefault();
+            onAddFiles(files);
+          }}
+          className="block max-h-52 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3 pb-1 text-[15px] leading-relaxed outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed"
+        />
+      )}
       {attachments}
       <div
         className={cn(
@@ -235,10 +258,10 @@ export function Composer({
 }
 
 /** The learner is typing in another field, or selecting text (to ask about it, say). */
-function busyElsewhere(textarea: HTMLTextAreaElement): boolean {
+function busyElsewhere(box: HTMLElement): boolean {
   const active = document.activeElement;
   if (
-    active !== textarea &&
+    active !== box &&
     (active instanceof HTMLInputElement ||
       active instanceof HTMLTextAreaElement ||
       active instanceof HTMLSelectElement ||
