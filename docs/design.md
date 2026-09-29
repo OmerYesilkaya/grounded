@@ -880,6 +880,23 @@ How it is built (#37, decided 2026-09-29):
   sessions done, open homework and exams, and the track's map. Learner-facing text never uses the
   method's scaffolding words — "ideas you own / still settling / to revisit", not
   "confirmed / taught / assumed".
+- **The track page** (built 2026-09-29, #45; `GET /api/tracks/:id/progress`,
+  `apps/api/src/track-progress.ts`, `apps/web/src/components/track-progress.tsx`):
+  - **Open now**: the track's items not done, each a row as the track list says it (§9.2) that
+    goes on with it; it stands in for a "continue" button. It reads the track list's items, not the
+    progress endpoint, so homework and arc exams (#38, #42) show here as they join the list as kinds.
+    "Start a session" shows while no session is open.
+  - Three figures: ideas you own, still settling, sessions done (the done sessions of the items).
+  - **Still settling** (taught) first, since that is what the next sessions come back to, then
+    **ideas you own** (confirmed, assumed and borrowed; assumed marked "you brought it", borrowed
+    "from <track>"). Each idea is a button: it opens where it stands in plain words (how it came
+    to be owned or that it isn't solid yet), the learner's words its latest change recorded, the
+    session it happened in (a link; found by time, as a track's sessions never overlap) and what it
+    rests on. Ideas still to come are counted, never named: they haven't been taught.
+  - **To revisit**: the open fix-list items, as the tutor wrote them.
+  - **The map**, one arc at a time (tabs, the arc the track has reached first, marked "now"), with
+    its counts; the arc's picture (§9.1) draws the arc's ideas and what they rest on, and an owned or
+    settling idea in it opens the same details.
 
 ## 9. UI
 
@@ -911,7 +928,7 @@ Three structurally different variants were explored
     plan message names them already; the picture adds what rests on what.
   - **The lesson's end**, after the last check (the session in homework or later), draws "What you
     just built": the ideas the outline introduces. Never before: the lesson has no opener (§3.2).
-  - **The track page** (#45) will draw one arc at a time (§8).
+  - **The track page** draws one arc at a time (§8).
 - **Lesson view:** one continuous scroll; steps stack as they unlock (no pages, no prev/next).
   A **step timeline in the empty left gutter** of the reading column — only in Lesson view — follows
   the scroll; clicking an unlocked step scrolls to it; locked steps show as `·····` (upcoming headings

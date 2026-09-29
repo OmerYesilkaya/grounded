@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { AttachmentChip } from "@/components/attachment-chip";
+import { OpenWork, TrackProgressView } from "@/components/track-progress";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api";
 import { useTracks } from "@/lib/tracks";
@@ -19,25 +20,23 @@ export function TrackPage({ trackId }: { trackId: string }) {
   });
 
   if (!track) return null;
+  const open = track.items.filter((item) => !item.done);
   return (
-    <main className="mx-auto w-full max-w-xl px-6 pt-24">
+    <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24">
       <p className="text-xs tracking-widest text-subtle-foreground uppercase">
         Track{track.language ? ` · taught in ${track.language}` : ""}
       </p>
       <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">{track.title}</h1>
       <div className="mt-8">
-        {track.openSession ? (
-          <Button
-            onClick={() => {
-              void navigate({
-                to: "/sessions/$sessionId",
-                params: { sessionId: track.openSession?.id ?? "" },
-              });
-            }}
-          >
-            Continue the session
-          </Button>
-        ) : (
+        {open.length > 0 && (
+          <section className="mb-6">
+            <h2 className="mb-3 text-xs tracking-widest text-subtle-foreground uppercase">
+              Open now
+            </h2>
+            <OpenWork items={open} />
+          </section>
+        )}
+        {!track.openSession && (
           <Button
             disabled={start.isPending}
             onClick={() => {
@@ -53,6 +52,7 @@ export function TrackPage({ trackId }: { trackId: string }) {
           </p>
         )}
       </div>
+      <TrackProgressView trackId={trackId} items={track.items} />
       {track.files.length > 0 && (
         <section className="mt-10">
           <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">

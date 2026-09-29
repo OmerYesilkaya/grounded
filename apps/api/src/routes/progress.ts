@@ -12,6 +12,7 @@ import type { Hono } from "hono";
 import { z } from "zod";
 import { addLogContext } from "../log.js";
 import { loadTrackTerms, termMap, type TermMap } from "../term-map.js";
+import { trackProgress } from "../track-progress.js";
 
 interface Env {
   Variables: { user: { id: string; email: string; name: string } };
@@ -31,9 +32,18 @@ export interface SessionPictures {
 /** The phases after the lesson's last check. */
 const AFTER_LESSON = new Set(["homework", "close", "closed"]);
 
-/** The pictures drawn from the map (design §3.2, §9.1). */
+/** A track's page (design §8), and the pictures drawn from the map (§3.2, §9.1). */
 export function registerProgressRoutes(app: Hono<Env>, deps: { db: Db }) {
   const { db } = deps;
+
+  app.get("/api/tracks/:id/progress", async (c) => {
+    const trackId = c.req.param("id");
+    if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    addLogContext({ trackId });
+    const progress = await trackProgress(db, c.get("user").id, trackId);
+    if (!progress) return c.json({ error: "Not found." }, 404);
+    return c.json(progress);
+  });
 
   app.get("/api/sessions/:id/pictures", async (c) => {
     const sessionId = c.req.param("id");
