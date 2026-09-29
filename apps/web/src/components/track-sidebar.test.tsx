@@ -181,7 +181,8 @@ describe("the track list", () => {
     const items = within(screen.getByRole("list", { name: "In Backend interviews" }));
     expect(items.getAllByRole("link").map((link) => link.textContent)).toEqual([
       "Homework h1dueHomework · session 1",
-      expect.stringMatching(/^Homework h2(tomorrow|\d+ \w+)Homework · session 1$/),
+      // The date is in the browser's locale: "1 Oct" on one machine, "Oct 1" on another.
+      expect.stringMatching(/^Homework h2(tomorrow|\d+ \w+|\w+ \d+)Homework · session 1$/),
     ]);
   });
 });
