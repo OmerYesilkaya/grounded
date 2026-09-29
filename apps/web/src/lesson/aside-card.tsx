@@ -183,7 +183,7 @@ export function QuestionBox({
   onSubmit: (text: string) => Promise<unknown>;
   onCancel?: (() => void) | undefined;
   minRows?: number;
-  autoFocus?: boolean;
+  autoFocus?: boolean | "always";
   children?: ReactNode;
 }) {
   const [draft, setDraft] = useState("");
@@ -266,7 +266,7 @@ export function AskDraft(props: {
         placeholder="Ask about this passage…"
         submitLabel="Ask"
         minRows={2}
-        autoFocus
+        autoFocus="always"
         onSubmit={props.onSubmit}
         onCancel={props.onCancel}
       >

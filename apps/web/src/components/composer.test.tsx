@@ -205,5 +205,12 @@ describe("Composer", () => {
       expect(screen.getByRole("textbox", { name: "Message" })).not.toHaveFocus();
       document.getSelection()?.removeAllRanges();
     });
+
+    it("leaves the keyboard down on a touch screen, until the box is tapped", () => {
+      vi.stubGlobal("matchMedia", (query: string) => ({ matches: query === "(pointer: coarse)" }));
+      render(<Composer {...props} />);
+      expect(screen.getByRole("textbox", { name: "Message" })).not.toHaveFocus();
+      vi.unstubAllGlobals();
+    });
   });
 });

@@ -18,3 +18,8 @@ export function useMediaQuery(query: string, fallback: boolean): boolean {
     () => fallback,
   );
 }
+
+/** The main pointer is a finger (a phone or a tablet), as the CSS `pointer-coarse:` variant says. */
+export function isTouchScreen(): boolean {
+  return typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
+}

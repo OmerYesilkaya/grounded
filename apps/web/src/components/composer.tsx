@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { LineEditor } from "@/editor/line-editor";
+import { isTouchScreen } from "@/lib/media-query";
 import { cn } from "@/lib/utils";
 
 export interface ComposerProps {
@@ -53,9 +54,11 @@ export interface ComposerProps {
   attachments?: ReactNode;
   /**
    * Take focus when the composer opens, whenever it is enabled again, and whenever `focusKey`
-   * changes, unless the learner is busy in another field or selecting text.
+   * changes, unless the learner is busy in another field or selecting text. On a touch screen,
+   * where focus brings up the keyboard over what is being read, only with "always": for a box the
+   * learner has just tapped to open.
    */
-  autoFocus?: boolean;
+  autoFocus?: boolean | "always";
   /** A new value (e.g. a fresh question arriving) is another moment to take focus. */
   focusKey?: string | number;
   /**
@@ -109,6 +112,8 @@ export function Composer({
   useEffect(() => {
     const box = rich ? lineRef.current : textareaRef.current;
     if (!autoFocus || disabled || !box || busyElsewhere(box)) return;
+    // On a touch screen the learner taps the box when they are ready to write.
+    if (autoFocus !== "always" && isTouchScreen()) return;
     // The page scrolls on its own terms (the lesson glides to a new step); focus must not jump it.
     box.focus({ preventScroll: true });
   }, [autoFocus, disabled, focusKey, rich]);
