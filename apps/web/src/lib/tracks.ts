@@ -41,7 +41,10 @@ export interface SessionItem {
   lessonTitle: string | null;
 }
 
-/** A session's homework, listed after it: open (not `done`) until it is handed in. */
+/**
+ * A session's homework, listed after it: open (not `done`) until it is handed in or folded into a
+ * later homework.
+ */
 export interface HomeworkItem {
   kind: "homework";
   id: string;
@@ -52,11 +55,15 @@ export interface HomeworkItem {
   /** A few words naming it. */
   title: string;
   form: TaskForm;
+  /** Put off with a snooze: when it is due again, for its tag (design §9.2); null otherwise. */
+  due: string | null;
+  /** Folded into a later homework: the number of the session that assigned that one. */
+  foldedInto: number | null;
 }
 
-/** How many of a track's homework assignments are still open (not handed in). */
-export const openHomework = (track: TrackSummary): number =>
-  track.items.filter((item) => item.kind === "homework" && !item.done).length;
+/** Homework whose snooze has run out: due now (design §9.2, "1 due"). */
+export const isDue = (item: TrackItem, now: Date): item is HomeworkItem & { due: string } =>
+  item.kind === "homework" && !item.done && item.due !== null && new Date(item.due) <= now;
 
 export interface TrackFile {
   id: string;

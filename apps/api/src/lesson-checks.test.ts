@@ -1,4 +1,15 @@
-import { and, eq, researchNotes, termEvents, terms, tracks as tracksTable } from "@grounded/db";
+import {
+  and,
+  assignments,
+  eq,
+  learningSessions,
+  researchNotes,
+  submissions,
+  termEvents,
+  terms,
+  tracks as tracksTable,
+} from "@grounded/db";
+import { initialSession } from "@grounded/core";
 import { APICallError } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -576,6 +587,65 @@ describe("closing the session", () => {
       );
     }
     expect(promptOf("homework")).toContain("Learner: I know this, no need to explain.");
+  });
+
+  it("folds the homework the learner put off into the next one (method.md, Homework)", async () => {
+    const { cookie, sessionId, trackId } = await inLesson();
+    // An earlier session's homework, put off with an answer begun, and one handed in.
+    const [current] = await t.db
+      .select()
+      .from(learningSessions)
+      .where(eq(learningSessions.id, sessionId));
+    const userId = current?.userId ?? "";
+    const [earlier] = await t.db
+      .insert(learningSessions)
+      .values({
+        trackId,
+        userId,
+        state: { ...initialSession(), phase: "closed" },
+        closedAt: new Date(),
+      })
+      .returning();
+    const old = (title: string, submittedAt: Date | null) => ({
+      trackId,
+      userId,
+      sessionId: earlier?.id ?? "",
+      kind: "homework" as const,
+      title,
+      tasks: [{ id: "t1", title: null, form: "explain" as const, blocks: [], source: "Tell it." }],
+      checklist: [{ id: "c1", text: "Names the three moves" }],
+      messageId: crypto.randomUUID(),
+      submittedAt,
+    });
+    const [open, done] = await t.db
+      .insert(assignments)
+      .values([old("The counter, put off", null), old("Handed in already", new Date())])
+      .returning();
+    await t.db.insert(submissions).values({
+      assignmentId: open?.id ?? "",
+      answers: { t1: { fields: { text: "Copy, add" }, lockedAt: null } },
+    });
+
+    const landed = verdict({ verdict: "landed", reply: "Yes." });
+    models.script("check", landed, landed, landed);
+    models.script("homework", homework("Explain it to a friend."));
+    for (const id of ["s1", "s2", "s3"]) {
+      await answer(cookie, sessionId, id, { text: "an answer" });
+      await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
+    }
+    const next = await assignedHomework(cookie, sessionId);
+
+    const prompt = JSON.stringify(
+      models.used.find((u) => u.purpose === "homework")?.model.doStreamCalls[0]?.prompt,
+    );
+    expect(prompt).toContain("Homework the learner put off, still open");
+    expect(prompt).toContain('\\"The counter, put off\\"');
+    expect(prompt).toContain("Names the three moves");
+    expect(prompt).toContain("Copy, add");
+    expect(prompt).not.toContain("Handed in already");
+    const rows = await t.db.select().from(assignments);
+    expect(rows.find((r) => r.id === open?.id)?.subsumedBy).toBe(next);
+    expect(rows.find((r) => r.id === done?.id)?.subsumedBy).toBeNull();
   });
 
   it("keeps what validates of a term sweep rejected every time", async () => {

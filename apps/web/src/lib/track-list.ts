@@ -23,13 +23,19 @@ const PHASE: Record<SessionItem["phase"], string> = {
  * What an item's row says (design §9.2): what it is about, over what it is. A session shows its
  * lesson's title (or, for a lesson outlined before titles, the terms it introduces) over its number
  * and phase; before there is a lesson, what is under way stands in. Homework shows its name over
- * "Homework · session 4".
+ * "Homework · session 4" (and "· handed in", or "· folded into session 6").
  */
 export function describeItem(item: TrackItem): { title: string; meta: string } {
   if (item.kind === "homework")
     return {
       title: item.title,
-      meta: `Homework · session ${String(item.session)}${item.done ? " · handed in" : ""}`,
+      meta: `Homework · session ${String(item.session)}${
+        item.foldedInto !== null
+          ? ` · folded into session ${String(item.foldedInto)}`
+          : item.done
+            ? " · handed in"
+            : ""
+      }`,
     };
   const number = `Session ${String(item.number)}`;
   if (item.lessonTitle === null && item.terms.length === 0)

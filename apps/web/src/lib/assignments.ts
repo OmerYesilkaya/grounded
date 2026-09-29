@@ -1,7 +1,9 @@
 import type { Block } from "@grounded/content";
 import type { Answers, ChecklistItem, TaskAnswer, TaskForm } from "@grounded/core/assignment";
+import type { Snooze } from "@grounded/core/snooze";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "./api";
+import { browserTimeZone } from "./snooze";
 
 /** An assignment as its session's chat and snapshot know it (api: engine/assignments.ts). */
 export interface AssignmentSummary {
@@ -11,6 +13,10 @@ export interface AssignmentSummary {
   /** The chat message it was written as. */
   messageId: string;
   submittedAt: string | null;
+  /** Put off with a snooze: when it is due again. */
+  snoozedUntil: string | null;
+  /** The later homework it was folded into, if it was. */
+  subsumedBy: string | null;
 }
 
 /** An assignment in full, for its page (GET /api/assignments/:id). */
@@ -28,6 +34,10 @@ export interface Assignment {
   answers: Answers;
   createdAt: string;
   submittedAt: string | null;
+  /** Put off with a snooze: when it is due again. */
+  snoozedUntil: string | null;
+  /** The later homework it was folded into (method.md, "Homework"): closed, and that one covers it. */
+  subsumedBy: { id: string; title: string } | null;
   lastEventId: number;
 }
 
@@ -57,7 +67,12 @@ export const assignmentApi = {
   lock: (id: string, taskId: string) =>
     post<TaskAnswer>(`/api/assignments/${id}/tasks/${taskId}/lock`),
   submit: (id: string) => post<{ submittedAt: string }>(`/api/assignments/${id}/submit`),
-  later: (id: string) => post<object>(`/api/assignments/${id}/later`),
+  /** "Later": puts it off until tonight or tomorrow, in the browser's time zone. */
+  later: (id: string, snooze: Snooze) =>
+    post<{ snoozedUntil: string }>(`/api/assignments/${id}/later`, {
+      snooze,
+      timeZone: browserTimeZone(),
+    }),
   /** Stores a picture for an answer; the markdown links it by the URL it comes back with. */
   picture: (id: string, file: File) => {
     const form = new FormData();

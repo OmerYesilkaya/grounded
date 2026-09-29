@@ -36,12 +36,17 @@ describe("an item's row", () => {
       form: "predict",
       done: false,
       activeAt: "2026-09-29T00:00:00.000Z",
+      due: null,
+      foldedInto: null,
     };
     expect(describeItem(homework)).toEqual({
       title: "Two workers, one counter",
       meta: "Homework · session 4",
     });
     expect(describeItem({ ...homework, done: true }).meta).toBe("Homework · session 4 · handed in");
+    expect(describeItem({ ...homework, done: true, foldedInto: 6 }).meta).toBe(
+      "Homework · session 4 · folded into session 6",
+    );
   });
 
   it("says what the session's lesson teaches, over its number and phase", () => {

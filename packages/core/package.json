@@ -8,7 +8,8 @@
     "./assignment": "./src/assignment.ts",
     "./attachments": "./src/attachments.ts",
     "./aside-anchor": "./src/aside-anchor.ts",
-    "./session": "./src/session.ts"
+    "./session": "./src/session.ts",
+    "./snooze": "./src/snooze.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

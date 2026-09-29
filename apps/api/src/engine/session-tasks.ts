@@ -33,7 +33,13 @@ import { generateText, Output, type ModelMessage } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
-import { assignmentOf, createAssignment, recordAssignment } from "./assignments.js";
+import {
+  assignmentOf,
+  createAssignment,
+  OPEN_HOMEWORK,
+  openHomeworkRecord,
+  recordAssignment,
+} from "./assignments.js";
 import { alreadyHeldSoFar, loadCheckRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
@@ -207,9 +213,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     const checks = after ? await loadCheckRecord(db, sessionId, session.state) : null;
     // And the questions asked in the margin, which the close carries on to the next session.
     const asked = after ? await asidesRecord(db, sessionId) : null;
+    // The homework hears the track's homework still open, which it subsumes (method.md, "Homework").
+    const putOff =
+      phase === "homework" ? await openHomeworkRecord(db, session.trackId, sessionId) : null;
     const extra = [
       ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
       ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
+      ...(putOff ? [{ heading: OPEN_HOMEWORK, body: putOff }] : []),
     ];
     const track = extra.length ? { ...brought, extra } : brought;
     const terms: TrackTerm[] = track.current;

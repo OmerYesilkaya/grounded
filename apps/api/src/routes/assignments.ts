@@ -3,6 +3,9 @@ import {
   ANSWER_LIMITS,
   ATTACHMENT_LIMITS,
   answerProblem,
+  isTimeZone,
+  snoozeUntil,
+  SNOOZES,
   type TaskAnswer,
 } from "@grounded/core";
 import {
@@ -11,6 +14,7 @@ import {
   assignments,
   desc,
   eq,
+  isNull,
   learningSessions,
   lte,
   sessionEvents,
@@ -25,7 +29,9 @@ import { v7 as uuidv7 } from "uuid";
 import { z } from "zod";
 import {
   closeAfterHomework,
+  closedReason,
   publishAssignment,
+  snoozeAssignment,
   type AssignmentRow,
 } from "../engine/assignments.js";
 import type { JobQueue } from "../engine/queue.js";
@@ -43,7 +49,11 @@ const answerInput = z.object({
   fields: z.record(z.string(), z.string()),
 });
 
-const HANDED_IN = "This has been handed in.";
+const laterInput = z.object({
+  snooze: z.enum(SNOOZES),
+  // The learner's time zone, from their browser: what "tonight" and "tomorrow" mean.
+  timeZone: z.string().max(100).refine(isTimeZone),
+});
 
 /**
  * Homework and arc exams (design §7.4): reading one, writing its answers (saved as the learner
@@ -64,6 +74,15 @@ export function registerAssignmentRoutes(
     if (row)
       addLogContext({ trackId: row.trackId, sessionId: row.sessionId, assignmentId: row.id });
     return row ?? null;
+  };
+
+  /** Why an assignment found open a moment ago can't be changed now. */
+  const closedMeanwhile = async (assignmentId: string) => {
+    const [row] = await db
+      .select({ submittedAt: assignments.submittedAt, subsumedBy: assignments.subsumedBy })
+      .from(assignments)
+      .where(eq(assignments.id, assignmentId));
+    return (row && closedReason(row)) ?? "This homework is closed.";
   };
 
   const answersOf = async (assignmentId: string) => {
@@ -90,12 +109,13 @@ export function registerAssignmentRoutes(
         .from(submissions)
         .where(eq(submissions.assignmentId, assignment.id))
         .for("update");
-      // Handed in meanwhile: the answers stand as they were handed in.
+      // Handed in (or folded into a later homework) meanwhile: the answers stand as they were.
       const [current] = await tx
-        .select({ submittedAt: assignments.submittedAt })
+        .select({ submittedAt: assignments.submittedAt, subsumedBy: assignments.subsumedBy })
         .from(assignments)
         .where(eq(assignments.id, assignment.id));
-      if (current?.submittedAt) return HANDED_IN;
+      const closed = current ? closedReason(current) : null;
+      if (closed) return closed;
       const answers = row?.answers ?? {};
       const changed = change(answers[taskId] ?? { fields: {}, lockedAt: null });
       if (typeof changed === "string") return changed;
@@ -157,6 +177,16 @@ export function registerAssignmentRoutes(
       answers: await answersOf(row.id),
       createdAt: row.createdAt.toISOString(),
       submittedAt: row.submittedAt?.toISOString() ?? null,
+      snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
+      // The homework it was folded into, which covers its ground: the page links to it.
+      subsumedBy: row.subsumedBy
+        ? ((
+            await db
+              .select({ id: assignments.id, title: assignments.title })
+              .from(assignments)
+              .where(eq(assignments.id, row.subsumedBy))
+          )[0] ?? null)
+        : null,
       lastEventId: last?.id ?? 0,
     });
   });
@@ -209,7 +239,8 @@ export function registerAssignmentRoutes(
   app.post("/api/assignments/:id/files", pictureLimit, async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
     if (!assignment) return c.json({ error: "Not found." }, 404);
-    if (assignment.submittedAt) return c.json({ error: HANDED_IN }, 409);
+    const closed = closedReason(assignment);
+    if (closed) return c.json({ error: closed }, 409);
     const form = await c.req.parseBody().catch(() => null);
     const file = form?.file;
     if (!(file instanceof File)) return c.json({ error: "Choose a picture." }, 400);
@@ -273,7 +304,8 @@ export function registerAssignmentRoutes(
   app.post("/api/assignments/:id/submit", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
     if (!assignment) return c.json({ error: "Not found." }, 404);
-    if (assignment.submittedAt) return c.json({ error: HANDED_IN }, 409);
+    const closed = closedReason(assignment);
+    if (closed) return c.json({ error: closed }, 409);
     const answers = await answersOf(assignment.id);
     for (const task of assignment.tasks) {
       const problem = answerProblem(task, answers[task.id], { complete: true });
@@ -282,23 +314,37 @@ export function registerAssignmentRoutes(
     const [submitted] = await db
       .update(assignments)
       .set({ submittedAt: new Date() })
-      .where(and(eq(assignments.id, assignment.id), sql`${assignments.submittedAt} is null`))
+      .where(
+        and(
+          eq(assignments.id, assignment.id),
+          isNull(assignments.submittedAt),
+          isNull(assignments.subsumedBy),
+        ),
+      )
       .returning();
-    if (!submitted) return c.json({ error: HANDED_IN }, 409);
+    if (!submitted) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
     await publishAssignment(db, submitted);
     await closeAfterHomework(db, deps.queue, submitted, "homework-handed-in");
     return c.json({ submittedAt: submitted.submittedAt?.toISOString() ?? null });
   });
 
   /**
-   * "Later": the learner puts the homework off, never skips it (design §3.2). What they wrote so far
-   * stays; the session that assigned it goes on to its close, and the homework stays open.
+   * "Later" with a snooze: the learner puts the homework off until tonight or tomorrow, in their
+   * time zone, never skips it (design §3.2, §7.4). What they wrote so far stays; while its session
+   * waits for it, the session goes on to its close. Open homework can be put off again.
    */
   app.post("/api/assignments/:id/later", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
     if (!assignment) return c.json({ error: "Not found." }, 404);
-    if (assignment.submittedAt) return c.json({ error: HANDED_IN }, 409);
-    await closeAfterHomework(db, deps.queue, assignment, "homework-later");
-    return c.json({});
+    const closed = closedReason(assignment);
+    if (closed) return c.json({ error: closed }, 409);
+    const parsed = laterInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Choose when: tonight or tomorrow." }, 400);
+    const until = snoozeUntil(parsed.data.snooze, new Date(), parsed.data.timeZone);
+    if (!until) return c.json({ error: "Tonight is over; choose tomorrow." }, 409);
+    const snoozed = await snoozeAssignment(db, assignment, until);
+    if (!snoozed) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
+    await closeAfterHomework(db, deps.queue, snoozed, "homework-later");
+    return c.json({ snoozedUntil: until.toISOString() });
   });
 }

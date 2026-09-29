@@ -1,4 +1,5 @@
 import { answerProblem, TASK_FORM_SPECS } from "@grounded/core/assignment";
+import type { Snooze } from "@grounded/core/snooze";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Check } from "lucide-react";
@@ -7,9 +8,11 @@ import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { ContentProvider } from "@/content/environment";
 import { SelfCheck, useSelfCheck } from "@/homework/checklist";
+import { LaterMenu } from "@/homework/later-menu";
 import { TaskFields } from "@/homework/task-fields";
 import { useAnswers, type SaveStatus } from "@/homework/use-answers";
 import { assignmentApi, useAssignment, type Assignment } from "@/lib/assignments";
+import { dueWords, useNow } from "@/lib/snooze";
 import { cn } from "@/lib/utils";
 
 /** The homework page, at /homework/:assignmentId. */
@@ -32,17 +35,21 @@ const when = (iso: string) =>
 
 /**
  * Homework on a page of its own (design §7.4): what it asks, the answer boxes of its kind, what a
- * good answer shows to check against, and handing it in, whole. It can be put off ("Later") while
- * its session waits for it; it stays open in the track list either way.
+ * good answer shows to check against, and handing it in, whole. It can be put off ("Later") till
+ * tonight or tomorrow, which closes its session while that waits for it; it stays open in the track
+ * list either way, until it is handed in or folded into a later homework.
  */
 export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   const queryClient = useQueryClient();
   const { answers, status, error, setError, change, lock, flush } = useAnswers(assignment);
   const [submittedAt, setSubmittedAt] = useState(assignment.submittedAt);
   const [waiting, setWaiting] = useState(assignment.session.waiting);
+  const [snoozedUntil, setSnoozedUntil] = useState(assignment.snoozedUntil);
   const [busy, setBusy] = useState(false);
   const selfCheck = useSelfCheck(assignment.id);
   const handedIn = submittedAt !== null;
+  // Folded into a later homework: closed, read only, and that one is the one to do.
+  const closed = handedIn || assignment.subsumedBy !== null;
   const [task] = assignment.tasks;
 
   const refresh = async () => {
@@ -75,12 +82,14 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
     }
   };
 
-  const later = async () => {
+  const later = async (snooze: Snooze) => {
     setBusy(true);
     try {
       await flush();
-      await assignmentApi.later(assignment.id);
+      const result = await assignmentApi.later(assignment.id, snooze);
+      setSnoozedUntil(result.snoozedUntil);
       setWaiting(false);
+      setError(null);
       await refresh();
     } catch (failed) {
       setError(failed instanceof Error ? failed.message : "That didn't go through. Try again.");
@@ -92,7 +101,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   if (!task) return null;
   return (
     <ContentProvider>
-      <TopBar assignment={assignment} status={handedIn ? null : status} />
+      <TopBar assignment={assignment} status={closed ? null : status} />
       <div className="grid grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)] pt-12 pb-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(280px,1fr)]">
         <main className="col-start-2 min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
@@ -115,7 +124,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
               items={assignment.checklist}
               ticked={selfCheck.ticked}
               onToggle={selfCheck.toggle}
-              readOnly={handedIn}
+              readOnly={closed}
             />
           </div>
 
@@ -123,7 +132,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             <TaskFields
               form={task.form}
               answer={answers[task.id]}
-              readOnly={handedIn}
+              readOnly={closed}
               onChange={(key, value) => {
                 change(task.id, key, value);
               }}
@@ -133,14 +142,19 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             />
           </section>
 
-          <HandIn
-            submittedAt={submittedAt}
-            waiting={waiting}
-            busy={busy}
-            error={error}
-            onHandIn={() => void handIn()}
-            onLater={() => void later()}
-          />
+          {assignment.subsumedBy ? (
+            <Folded into={assignment.subsumedBy} />
+          ) : (
+            <HandIn
+              submittedAt={submittedAt}
+              snoozedUntil={snoozedUntil}
+              waiting={waiting}
+              busy={busy}
+              error={error}
+              onHandIn={() => void handIn()}
+              onLater={(snooze) => void later(snooze)}
+            />
+          )}
         </main>
         <aside className="col-start-3 ml-10 hidden max-w-[280px] lg:block">
           <div className="sticky top-24">
@@ -148,7 +162,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
               items={assignment.checklist}
               ticked={selfCheck.ticked}
               onToggle={selfCheck.toggle}
-              readOnly={handedIn}
+              readOnly={closed}
             />
           </div>
         </aside>
@@ -190,15 +204,37 @@ function TopBar({ assignment, status }: { assignment: Assignment; status: SaveSt
   );
 }
 
-/** Handing it in (whole, never half-done), or putting it off while its session waits. */
+/** Folded into a later homework (method.md, "Homework"): that one covers this one's ground. */
+function Folded({ into }: { into: { id: string; title: string } }) {
+  return (
+    <div className="mt-12 rounded-xl border bg-card px-4 py-3.5 text-[14px]">
+      Folded into a later homework, which covers this one too:{" "}
+      <Link
+        to="/homework/$assignmentId"
+        params={{ assignmentId: into.id }}
+        className="font-medium text-primary underline-offset-2 hover:underline"
+      >
+        {into.title}
+      </Link>
+      .
+    </div>
+  );
+}
+
+/**
+ * Handing it in (whole, never half-done), or putting it off till tonight or tomorrow: "Later"
+ * closes the session while it waits for this, and can put the homework off again after.
+ */
 function HandIn(props: {
   submittedAt: string | null;
+  snoozedUntil: string | null;
   waiting: boolean;
   busy: boolean;
   error: string | null;
   onHandIn: () => void;
-  onLater: () => void;
+  onLater: (snooze: Snooze) => void;
 }) {
+  const now = useNow();
   if (props.submittedAt)
     return (
       <div className="mt-12 flex items-center gap-2.5 rounded-xl border bg-card px-4 py-3.5 text-[14px]">
@@ -214,15 +250,11 @@ function HandIn(props: {
         <Button type="button" disabled={props.busy} onClick={props.onHandIn}>
           Hand it in
         </Button>
-        {props.waiting && (
-          <Button type="button" variant="ghost" disabled={props.busy} onClick={props.onLater}>
-            Later
-          </Button>
-        )}
+        <LaterMenu disabled={props.busy} onChoose={props.onLater} />
         <span className="text-[12.5px] text-subtle-foreground">
           {props.waiting
-            ? "Later closes the session; the homework stays open in your track."
-            : "It stays open in your track until you hand it in."}
+            ? "Later closes the session; the homework waits in your track until then."
+            : `${props.snoozedUntil ? dueWords(props.snoozedUntil, now) : "Open:"} it waits in your track until you hand it in.`}
         </span>
       </div>
       {props.error && (

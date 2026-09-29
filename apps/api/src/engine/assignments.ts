@@ -1,5 +1,6 @@
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
+  answersMarkdown,
   assignmentRecordSchema,
   type AssignmentKind,
   type AssignmentRecord,
@@ -15,7 +16,7 @@ import {
   type Inline,
   type TrackTerm,
 } from "@grounded/content";
-import { and, asc, assignments, eq, type Db } from "@grounded/db";
+import { and, asc, assignments, eq, inArray, isNull, ne, submissions, type Db } from "@grounded/db";
 import { generateText, Output, type Instructions, type ModelMessage } from "ai";
 import { log } from "../log.js";
 import { publish } from "./events.js";
@@ -27,7 +28,8 @@ import { applyEvent, loadSession, RejectedEvent } from "./session-store.js";
  * that outlives the session. Its events go on the log of the session that assigned it, so the chat
  * and the assignment's page both hear them:
  *
- *   assignment  { id, kind, title, messageId, submittedAt }   assigned, or changed (handed in)
+ *   assignment  { id, kind, title, messageId, submittedAt, snoozedUntil, subsumedBy }
+ *               assigned, or changed (handed in, snoozed, folded into a later homework)
  */
 
 export type AssignmentRow = typeof assignments.$inferSelect;
@@ -40,7 +42,107 @@ export function assignmentSummary(row: AssignmentRow) {
     title: row.title,
     messageId: row.messageId,
     submittedAt: row.submittedAt?.toISOString() ?? null,
+    snoozedUntil: row.snoozedUntil?.toISOString() ?? null,
+    subsumedBy: row.subsumedBy,
   };
+}
+
+/**
+ * Why an assignment can't be changed any more, or null while it is open: handed in, or folded into
+ * a later homework.
+ */
+export function closedReason(row: Pick<AssignmentRow, "submittedAt" | "subsumedBy">) {
+  if (row.submittedAt) return "This has been handed in.";
+  if (row.subsumedBy) return "This homework was folded into a later one; do that one instead.";
+  return null;
+}
+
+/**
+ * The track's homework still open, oldest first: neither handed in nor folded into a later one.
+ * The next homework subsumes it (method.md, "Homework").
+ */
+export function openHomeworkOf(db: Db, trackId: string) {
+  return db
+    .select()
+    .from(assignments)
+    .where(
+      and(
+        eq(assignments.trackId, trackId),
+        eq(assignments.kind, "homework"),
+        isNull(assignments.submittedAt),
+        isNull(assignments.subsumedBy),
+      ),
+    )
+    .orderBy(asc(assignments.createdAt), asc(assignments.id));
+}
+
+/** The heading the track's open homework goes under in the homework's prompt. */
+export const OPEN_HOMEWORK = "Homework the learner put off, still open";
+
+/**
+ * The track's open homework, for the homework call (method.md, "Homework": the next homework
+ * subsumes an open one): each one's task as the learner read it, what a good answer demonstrates,
+ * and what they have written so far. The session's own homework isn't among them. Null when none is
+ * open.
+ */
+export async function openHomeworkRecord(
+  db: Db,
+  trackId: string,
+  sessionId: string,
+): Promise<string | null> {
+  const open = (await openHomeworkOf(db, trackId)).filter((row) => row.sessionId !== sessionId);
+  if (open.length === 0) return null;
+  const written = await db
+    .select()
+    .from(submissions)
+    .where(
+      inArray(
+        submissions.assignmentId,
+        open.map((row) => row.id),
+      ),
+    );
+  const parts = open.map((row) => {
+    const answers = written.find((s) => s.assignmentId === row.id)?.answers ?? {};
+    const started = Object.values(answers).some((answer) =>
+      Object.values(answer?.fields ?? {}).some((text) => text.trim() !== ""),
+    );
+    return [
+      `### "${row.title}"`,
+      row.tasks.map((task) => task.source).join("\n\n"),
+      `What a good answer demonstrates:\n${row.checklist.map((item) => `- ${item.text}`).join("\n")}`,
+      started
+        ? `What they have written so far:\n\n${answersMarkdown(row.tasks, answers)}`
+        : "They haven't written anything for it yet.",
+    ].join("\n\n");
+  });
+  return [
+    "The homework you write now takes the place of these: design it so that it also covers their ground, rebuilt on what this session added, not as a second task beside it (they are folded into it and closed once it is kept). Don't mention them by name or point back at them; the task stands alone.",
+    ...parts,
+  ].join("\n\n");
+}
+
+/**
+ * "Later" with a snooze (design §7.4): the homework is due again at `until`. Null when it was
+ * closed meanwhile (handed in, or folded into a later one).
+ */
+export async function snoozeAssignment(
+  db: Db,
+  assignment: AssignmentRow,
+  until: Date,
+): Promise<AssignmentRow | null> {
+  const [row] = await db
+    .update(assignments)
+    .set({ snoozedUntil: until })
+    .where(
+      and(
+        eq(assignments.id, assignment.id),
+        isNull(assignments.submittedAt),
+        isNull(assignments.subsumedBy),
+      ),
+    )
+    .returning();
+  if (row) await publishAssignment(db, row);
+  return row ?? null;
 }
 
 /** The assignments a session made, oldest first. */
@@ -234,5 +336,29 @@ export async function createAssignment(
   const kept = row ?? (await assignmentOf(db, session.id, kind));
   if (!kept) throw new Error("assignment insert returned nothing");
   await publishAssignment(db, kept);
+  if (kind === "homework") await foldOpenHomework(db, kept);
   return kept;
+}
+
+/**
+ * The next homework subsumes an open one (method.md, "Homework"): once it is kept, the track's
+ * homework still open is folded into it, closed without being handed in. Its prompt was shown them
+ * (`openHomeworkOf`); one handed in meanwhile stays handed in. Each one folded is published on the
+ * log of the session that assigned it.
+ */
+async function foldOpenHomework(db: Db, into: AssignmentRow): Promise<void> {
+  const folded = await db
+    .update(assignments)
+    .set({ subsumedBy: into.id })
+    .where(
+      and(
+        eq(assignments.trackId, into.trackId),
+        eq(assignments.kind, "homework"),
+        ne(assignments.id, into.id),
+        isNull(assignments.submittedAt),
+        isNull(assignments.subsumedBy),
+      ),
+    )
+    .returning();
+  for (const row of folded) await publishAssignment(db, row);
 }

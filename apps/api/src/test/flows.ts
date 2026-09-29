@@ -174,7 +174,11 @@ export function createFlows(t: Harness, models: Models) {
   /** Once the homework is assigned, the learner puts it off: the session goes on to its close. */
   const putOffHomework = async (cookie: string, sessionId: string) => {
     const id = await assignedHomework(cookie, sessionId);
-    const later = await t.request(`/api/assignments/${id}/later`, { method: "POST", cookie });
+    const later = await t.request(`/api/assignments/${id}/later`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ snooze: "tomorrow", timeZone: "UTC" }),
+    });
     expect(later.status).toBe(200);
     return id;
   };

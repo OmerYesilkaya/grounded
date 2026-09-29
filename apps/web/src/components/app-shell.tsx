@@ -1,4 +1,5 @@
 import { Outlet } from "@tanstack/react-router";
+import { HomeworkReminder } from "./homework-reminder";
 import { TrackSidebar } from "./track-sidebar";
 
 export function AppShell({ email }: { email: string }) {
@@ -8,6 +9,7 @@ export function AppShell({ email }: { email: string }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <Outlet />
       </div>
+      <HomeworkReminder />
     </div>
   );
 }

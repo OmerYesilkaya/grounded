@@ -521,6 +521,15 @@ export const assignments = pgTable(
     messageId: uuid("message_id").notNull(),
     /** When the learner handed it in; null while it is open. */
     submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    /** "Later" with a snooze (design §7.4): when it is due again; null when it wasn't put off. */
+    snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    /**
+     * The later homework it was folded into (method.md, "Homework"): it is closed then, never
+     * handed in, and that one covers its ground too.
+     */
+    subsumedBy: uuid("subsumed_by").references((): AnyPgColumn => assignments.id, {
+      onDelete: "set null",
+    }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

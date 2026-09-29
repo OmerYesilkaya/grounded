@@ -1,8 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
+import { tagOf, useNow } from "@/lib/snooze";
 import { describeItem } from "@/lib/track-list";
-import type { TrackItem, TrackSummary } from "@/lib/tracks";
+import { isDue, type TrackItem, type TrackSummary } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
 
 /**
@@ -25,7 +26,10 @@ export function TrackGroup(props: {
   actions?: ReactNode;
 }) {
   const { track, current, currentItemId, expanded, onToggle } = props;
+  const now = useNow();
   const waiting = track.items.filter((item) => !item.done).length;
+  // Homework whose snooze ran out is what is waiting most (design §9.2).
+  const due = track.items.filter((item) => isDue(item, now)).length;
   return (
     <li>
       <div className="group/track flex items-center rounded-md hover:bg-accent/60">
@@ -58,8 +62,13 @@ export function TrackGroup(props: {
         </Link>
         {/* What is waiting, while the items aren't shown; the menu takes its place on hover. */}
         {!expanded && waiting > 0 && (
-          <span className="shrink-0 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden group-has-data-[state=open]/track:hidden">
-            {waiting} open
+          <span
+            className={cn(
+              "shrink-0 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden group-has-data-[state=open]/track:hidden",
+              due > 0 && "font-medium text-primary",
+            )}
+          >
+            {due > 0 ? `${String(due)} due` : `${String(waiting)} open`}
           </span>
         )}
         {props.actions}
@@ -156,13 +165,32 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
           item.done && !current && "text-subtle-foreground",
         )}
       >
-        <span className="line-clamp-2 text-[13px] leading-snug" title={title}>
-          {title}
+        <span className="flex items-start gap-1.5">
+          <span className="line-clamp-2 min-w-0 flex-1 text-[13px] leading-snug" title={title}>
+            {title}
+          </span>
+          {item.kind === "homework" && !item.done && item.due && <DueTag due={item.due} />}
         </span>
         <span className="block text-[10px] leading-snug tracking-widest text-subtle-foreground uppercase">
           {meta}
         </span>
       </Link>
     </li>
+  );
+}
+
+/** When homework put off is due (design §9.2): "tonight", "tomorrow"; "due" once it is. */
+function DueTag({ due }: { due: string }) {
+  const now = useNow();
+  const tag = tagOf(due, now);
+  return (
+    <span
+      className={cn(
+        "mt-px shrink-0 rounded-[3px] px-1 py-px text-[10px] leading-snug",
+        tag === "due" ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
+      )}
+    >
+      {tag}
+    </span>
   );
 }

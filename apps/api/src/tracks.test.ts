@@ -510,6 +510,50 @@ describe("the track list", () => {
     ]);
   });
 
+  it("tags homework put off with when it is due, and closes homework folded into a later one", async () => {
+    const cookie = await signedIn();
+    const userId = await learnerId();
+    const trackId = await trackAt(userId, "Put off", 48);
+    const first = await sessionAt(userId, trackId, 40, { closed: true });
+    const second = await sessionAt(userId, trackId, 30, { closed: true });
+    const homework = (sessionId: string, title: string, more: object) =>
+      t.db
+        .insert(assignments)
+        .values({
+          trackId,
+          userId,
+          sessionId,
+          kind: "homework",
+          title,
+          tasks: [{ id: "t1", title: null, form: "explain", blocks: [], source: "" }],
+          checklist: [],
+          messageId: crypto.randomUUID(),
+          createdAt: hoursAgo(30),
+          updatedAt: hoursAgo(30),
+          ...more,
+        })
+        .returning();
+    const [later] = await homework(second, "Two counters", { snoozedUntil: hoursAgo(2) });
+    const [folded] = await homework(first, "A counter", { subsumedBy: later?.id });
+    // Another track, touched more recently than the homework was put off, but before it came due.
+    await trackAt(userId, "Touched three hours ago", 3);
+
+    const [track, other] = await trackList(cookie);
+    expect(track?.title).toBe("Put off");
+    expect(other?.title).toBe("Touched three hours ago");
+    expect(track?.items).toEqual([
+      expect.objectContaining({ kind: "session", id: first }),
+      expect.objectContaining({ id: folded?.id, done: true, due: null, foldedInto: 2 }),
+      expect.objectContaining({ kind: "session", id: second }),
+      expect.objectContaining({
+        id: later?.id,
+        done: false,
+        due: later?.snoozedUntil?.toISOString(),
+        foldedInto: null,
+      }),
+    ]);
+  });
+
   it("puts the most recently active track first, counting activity in its sessions", async () => {
     const cookie = await signedIn();
     const userId = await learnerId();

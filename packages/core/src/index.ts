@@ -109,3 +109,4 @@ export {
   attachmentsProblem,
 } from "./attachments.js";
 export type { AttachmentKind } from "./attachments.js";
+export { dueTag, isTimeZone, snoozeChoices, snoozeUntil, SNOOZES, type Snooze } from "./snooze.js";

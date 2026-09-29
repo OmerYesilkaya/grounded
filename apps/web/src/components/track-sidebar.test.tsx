@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
-import type { SessionItem, TrackSummary } from "@/lib/tracks";
+import type { HomeworkItem, SessionItem, TrackSummary } from "@/lib/tracks";
 import { TrackSidebar } from "./track-sidebar";
 
 const page = vi.hoisted((): { params: { trackId?: string; sessionId?: string } } => ({
@@ -35,7 +35,10 @@ vi.mock("@tanstack/react-router", () => ({
     );
   },
 }));
-vi.mock("@/lib/tracks", () => ({ useTracks: () => tracks }));
+vi.mock("@/lib/tracks", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/tracks")>()),
+  useTracks: () => tracks,
+}));
 vi.mock("@/lib/api", () => ({ api: vi.fn(), ApiError: class ApiError extends Error {} }));
 
 const wrapper = ({ children }: { children: ReactNode }) => (
@@ -137,6 +140,41 @@ describe("the track list", () => {
     expect(
       within(screen.getByRole("list", { name: "In Backend interviews" })).getByRole("link"),
     ).toHaveTextContent("Finding where you startSession 1");
+  });
+
+  it("tags homework put off with when it is due, and counts what is due on a closed track", async () => {
+    const user = userEvent.setup();
+    const homework = (id: string, due: string | null): HomeworkItem => ({
+      kind: "homework",
+      id,
+      session: 1,
+      title: `Homework ${id}`,
+      form: "explain",
+      done: false,
+      activeAt: "2026-09-29T00:00:00.000Z",
+      due,
+      foldedInto: null,
+    });
+    const hour = 60 * 60 * 1000;
+    const later = new Date(Date.now() + 30 * hour).toISOString();
+    const past = new Date(Date.now() - hour).toISOString();
+    tracks.data = [
+      software(),
+      {
+        ...track("t2", "Backend interviews"),
+        items: [homework("h1", past), homework("h2", later)],
+      },
+    ];
+    page.params = { trackId: "t1" };
+    render(<TrackSidebar email="ada@example.com" />, { wrapper });
+
+    expect(trackNamed("Backend interviews")).toHaveTextContent("1 due");
+    await user.click(screen.getByRole("button", { name: "Show what is in Backend interviews" }));
+    const items = within(screen.getByRole("list", { name: "In Backend interviews" }));
+    expect(items.getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "Homework h1dueHomework · session 1",
+      expect.stringMatching(/^Homework h2(tomorrow|\d+ \w+)Homework · session 1$/),
+    ]);
   });
 });
 

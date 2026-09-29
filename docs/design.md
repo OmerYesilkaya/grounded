@@ -521,12 +521,14 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
 | `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
 
+An assignment also holds when it is snoozed until (`snoozed_until`, "Later") and the later homework
+it was folded into (`subsumed_by`), §7.4.
+
 Planned for v1, not built yet:
 
-| Table                   | Holds                                                                        | Issue |
-| ----------------------- | ---------------------------------------------------------------------------- | ----- |
-| `assignments` (columns) | `snoozed_until`, for "Later" with a snooze                                   | #41   |
-| `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing) | #39   |
+| Table     | Holds                                                                        | Issue |
+| --------- | ---------------------------------------------------------------------------- | ----- |
+| `reviews` | margin comments on a submission, checklist outcome (held / leaked / missing) | #39   |
 
 Which session closes each arc isn't recorded yet (#42).
 
@@ -900,7 +902,7 @@ HTML/SVG). To be measured, then adjusted.
   instead of a score**: each "what a good answer demonstrates" item is marked held / leaked / missing.
   Unresolved leaks carry into the next session's review.
 - **Later** with snooze (tonight / tomorrow): in-app only in v1 (sidebar "tonight" badge, reminder on
-  the next visit); email in v2. "Rework" is hidden until v2.
+  the next visit); email in v2 (#30). "Rework" is hidden until v2. How it is built below.
 - **Arc exams** follow the method (transfer problems, cross-session questions, one build, re-tested
   misconceptions — never recall). Never taken halfway; "Later" allowed. Starting the next arc with an
   exam open gives one warning, and its re-tests fold into the next session's probe.
@@ -940,8 +942,8 @@ How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts
 - **The session waits for it.** The homework phase is `writing` until the assignment is kept, then
   `assigned`: the learner's turn, no job awaited. Handing it in (`homework-handed-in`) or **Later**
   (`homework-later`) moves the session to its close. Later keeps what was written and leaves the
-  homework open; #41 adds the snooze to it. An assignment handed in after its session closed
-  changes no session.
+  homework open, snoozed (below). An assignment handed in after its session closed changes no
+  session.
 - **Where it is done**: its own page, `/homework/:assignmentId`: what kind it is, its name and
   session, the task in the lesson's type, the answer boxes of its kind, and **"A good answer
   shows"**, the checklist, to tick off before handing in (the ticks are the learner's own, kept in the
@@ -949,6 +951,39 @@ How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts
   above the answers otherwise. **Hand it in** and, while the session waits, **Later**. The chat
   shows the homework's message with "Open the homework" and "Later" under it, then its state;
   the track list and the track page list it as an item (§9.2).
+- **Later always says when** (#41, decided 2026-09-29; `packages/core/src/snooze.ts`): the button
+  opens "Remind me: Tonight / Tomorrow", each with its time on the learner's clock, and
+  `POST …/later` takes `{ snooze, timeZone }`, the browser's IANA time zone. There is no Later
+  without a time: a snooze is what makes putting off different from skipping silently. The server
+  works the time out (`snoozeUntil`) and keeps it as `assignments.snoozed_until`:
+  - **The learner's day starts at 4 a.m.**, not midnight, so "tomorrow" said at 1 a.m. means after
+    sleeping, and "tonight" at 1 a.m. is over.
+  - **Tonight is 8 p.m.** of the learner's day, offered only while it is still ahead (after 8 p.m.
+    the menu has only Tomorrow, and the server refuses a tonight that has passed). **Tomorrow is
+    9 a.m.** of the next day. Both are wall-clock times in the learner's zone, so a change of clocks
+    doesn't move them.
+  - Open homework can be put off again, from its page or the reminder, whether or not its session
+    still waits for it; that only moves the time.
+  - **Due** is the snooze's time passed. The item's tag (§9.2) says when in the learner's days, from
+    the browser's zone: "tonight" (or "today" for a time before 5 p.m.), "tomorrow", a date, and "due"
+    once it is.
+  - **The reminder on the next visit**: while homework is due, a card at the foot of every page but
+    its own ("Homework due", its name, track and session; Open it, Later, and a close button that
+    hides it for this visit, `sessionStorage`, until it is put off again). It is the only reminder on
+    a phone, where the sidebar is hidden.
+- **The next homework subsumes an open one** (method.md, "Homework"; #41, decided 2026-09-29). The
+  homework call is given the track's homework still open (not handed in, not folded), each with its
+  task as the learner read it, its checklist and what they have written so far, under "Homework the
+  learner put off, still open", told to write one task that also covers their ground, rebuilt on
+  this session's, and standing alone. Once the new homework is kept, every one of them is **folded
+  into it**: `assignments.subsumed_by` names the new one, set in one update on rows still open, so
+  one handed in meanwhile stays handed in. Folding is the app's, not the model's: the method says
+  the next homework subsumes an open one, always, so there is nothing to choose, and a model's
+  record naming what it folded could only be wrong. A folded homework is closed like one handed in
+  (its answers, pictures, Later and handing in refused with "folded into a later one"), is done in
+  the track list ("Homework · session 2 · folded into session 4"), no longer due, and its page shows
+  its answers read-only with a link to the homework that took its place. Only homework is folded; an
+  arc exam (#42) is never subsumed.
 - **The editors** (Tiptap, `apps/web/src/editor`). The answer editor: markdown as it is typed
   (`##`, `-`, `**`, `` ` ``, ` ``` ` for a code block), `$…$` maths rendered once the closing
   dollar is typed (a dollar next to a space doesn't open or close one, so "$5 and $6" stays money)
@@ -1145,7 +1180,8 @@ and marked the current track with bolder text):
 - **The current track** (the page shows it or something in it) is open, its name in the foreground
   colour and its chevron in the accent; other names are muted. **The current item** is where the
   thread turns into the accent colour beside it, its text in the foreground colour.
-- **Other tracks** start closed, one line each with what is waiting ("1 open", later "1 due"); the
+- **Other tracks** start closed, one line each with what is waiting ("1 open", or "1 due" in the
+  accent while homework is due, §7.4); the
   chevron opens them in place. Finished items fold into one line ("3 done ›") above the rest; the
   item on the page is never folded away.
 - **A track's menu** (`⋯`, at the end of its line while the line is hovered or focused, in place of
@@ -1168,8 +1204,9 @@ and marked the current track with bolder text):
   and homework are built (#38): a homework item follows the session that assigned it, says its name
   over "Homework · session 4" ("· handed in" once it is), is done once handed in, and is active when
   it or its answers last changed; its row opens its page. Arc exams (#42) join the same way ("Arc
-  exam · Arc 2"). A snoozed item (#41) adds a `due` (snoozed until, for the "tonight" / "tomorrow"
-  tag, §7.4); a due item counts as "1 due" on a closed track and sorts the track by its due time
+  exam · Arc 2"). Homework put off adds a `due` (snoozed until, for the "tonight" / "tomorrow"
+  tag, §7.4) and homework folded into a later one a `foldedInto` (that one's session); a due item
+  counts as "1 due" on a closed track and sorts the track by its due time once it has come
   too.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
   key, theme, sign out).

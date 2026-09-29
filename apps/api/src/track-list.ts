@@ -17,7 +17,7 @@ import { filesOf } from "./files/track-files.js";
  * Something inside a track, listed under it in the track list (design §9.2). Every kind shares
  * these fields, so the list can order, fold and count items without knowing their kind; each kind
  * adds what its row says: sessions and their homework (arc exams join as a kind of their own, #42;
- * a snoozed item gains a `due` for the "tonight" tag, #41).
+ * homework put off with a snooze has a `due` for its "tonight" tag).
  */
 interface ItemBase {
   kind: string;
@@ -39,7 +39,10 @@ export interface SessionItem extends ItemBase {
   lessonTitle: string | null;
 }
 
-/** A session's homework, listed after it: open until it is handed in. */
+/**
+ * A session's homework, listed after it: open until it is handed in, or folded into a later
+ * homework (method.md, "Homework").
+ */
 export interface HomeworkItem extends ItemBase {
   kind: "homework";
   /** The number of the session that assigned it. */
@@ -47,6 +50,10 @@ export interface HomeworkItem extends ItemBase {
   /** A few words naming it. */
   title: string;
   form: TaskForm;
+  /** Put off with a snooze: when it is due again (ISO time), for its tag; null otherwise or once done. */
+  due: string | null;
+  /** Folded into a later homework: the number of the session that assigned that one. */
+  foldedInto: number | null;
 }
 
 export type TrackItem = SessionItem | HomeworkItem;
@@ -95,6 +102,8 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       title: assignments.title,
       tasks: assignments.tasks,
       submittedAt: assignments.submittedAt,
+      snoozedUntil: assignments.snoozedUntil,
+      subsumedBy: assignments.subsumedBy,
       updatedAt: assignments.updatedAt,
       // Writing the answers is activity on it too.
       answeredAt: submissions.updatedAt,
@@ -104,38 +113,55 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
     .where(eq(assignments.userId, userId))
     .orderBy(asc(assignments.createdAt), asc(assignments.id));
 
+  const now = new Date();
   const list = rows.map((track): TrackSummary => {
-    const items = sessions
-      .filter((s) => s.trackId === track.id)
-      .flatMap((s, index): TrackItem[] => [
-        {
-          kind: "session",
-          id: s.id,
-          number: index + 1,
-          phase: s.state.phase,
-          terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
-          lessonTitle: s.outline?.title ?? null,
-          done: s.closedAt !== null,
-          activeAt: s.updatedAt.toISOString(),
-        },
-        ...homework
-          .filter((h) => h.sessionId === s.id)
-          .map((h): HomeworkItem => ({
-            kind: "homework",
-            id: h.id,
-            session: index + 1,
-            title: h.title,
-            form: h.tasks[0]?.form ?? "explain",
-            done: h.submittedAt !== null,
-            activeAt: (h.answeredAt && h.answeredAt > h.updatedAt
-              ? h.answeredAt
-              : h.updatedAt
-            ).toISOString(),
-          })),
-      ]);
+    const trackSessions = sessions.filter((s) => s.trackId === track.id);
+    /** The number of the session that assigned this homework. */
+    const sessionOf = (assignmentId: string) => {
+      const assigning = homework.find((h) => h.id === assignmentId)?.sessionId;
+      return trackSessions.findIndex((s) => s.id === assigning) + 1 || null;
+    };
+    // A due homework counts as activity once its time comes, so its track rises in the list.
+    const dueTimes = homework
+      .filter((h) => trackSessions.some((s) => s.id === h.sessionId))
+      .flatMap((h) =>
+        h.snoozedUntil && h.snoozedUntil <= now && !h.submittedAt && !h.subsumedBy
+          ? [h.snoozedUntil.toISOString()]
+          : [],
+      );
+    const items = trackSessions.flatMap((s, index): TrackItem[] => [
+      {
+        kind: "session",
+        id: s.id,
+        number: index + 1,
+        phase: s.state.phase,
+        terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
+        lessonTitle: s.outline?.title ?? null,
+        done: s.closedAt !== null,
+        activeAt: s.updatedAt.toISOString(),
+      },
+      ...homework
+        .filter((h) => h.sessionId === s.id)
+        .map((h): HomeworkItem => ({
+          kind: "homework",
+          id: h.id,
+          session: index + 1,
+          title: h.title,
+          form: h.tasks[0]?.form ?? "explain",
+          done: h.submittedAt !== null || h.subsumedBy !== null,
+          due: h.submittedAt || h.subsumedBy ? null : (h.snoozedUntil?.toISOString() ?? null),
+          foldedInto: h.subsumedBy ? sessionOf(h.subsumedBy) : null,
+          activeAt: (h.answeredAt && h.answeredAt > h.updatedAt
+            ? h.answeredAt
+            : h.updatedAt
+          ).toISOString(),
+        })),
+    ]);
     const open = items.find((item): item is SessionItem => item.kind === "session" && !item.done);
     const lesson = imported.find((l) => l.trackId === track.id);
-    const activeAt = [track.updatedAt.toISOString(), ...items.map((i) => i.activeAt)].sort().at(-1);
+    const activeAt = [track.updatedAt.toISOString(), ...items.map((i) => i.activeAt), ...dueTimes]
+      .sort()
+      .at(-1);
     return {
       id: track.id,
       title: track.title,
