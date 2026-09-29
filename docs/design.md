@@ -1126,7 +1126,7 @@ Three structurally different variants were explored
 - **Lesson view:** one continuous scroll; steps stack as they unlock (no pages, no prev/next).
   A **step timeline in the empty left gutter** of the reading column — only in Lesson view — follows
   the scroll; clicking an unlocked step scrolls to it; locked steps show as `·····` (upcoming headings
-  would give away the discovery); it shrinks to dots when the gutter is narrow.
+  would give away the discovery); below 1100px it gives way to a step menu in the bar (§9.4).
 - **Reading column ~68ch, truly centred** when there is room; on tighter screens it slides left only as
   far as the margin cards need (Google Docs behaviour).
 - **Margin cards** (Google Docs-style, a thin accent strip, a dashed connector to the highlighted
@@ -1243,21 +1243,49 @@ and marked the current track with bolder text):
   (`apps/web/src/assets/layers.json`), outlined in the label's colour over the surface behind it, so
   it holds in both themes. It holds still under reduced motion, and goes away with the label.
 
-### 9.4 Phones (requirements; not prototyped)
+### 9.4 Phones (built 2026-09-29, #49)
 
-- Sidebar becomes a drawer.
-- The gutter timeline disappears; a compact "step 2 of 5" jump menu goes in the top bar.
-- Margin cards become highlights you tap, opening a bottom sheet. Built with asides (#37), below
-  1100px, where the margin is gone: a selection shows an "Ask about this passage" button at the
-  bottom of the screen, which opens the sheet with the passage quoted and the question box; tapping
-  a marked passage opens its card as the sheet; a tap outside closes it (and drops an unsent
-  question). The hint is one line above the lesson. Left for the phone pass (#49): the sheet under
-  the on-screen keyboard (iOS `visualViewport`), dragging the sheet down to close, the button's place
-  against the phone's own selection menu, a way to see how many questions a step has without
-  tapping each passage, and trying all of it on real phones.
-- The check card stacks vertically below ~600px, with full-width touch targets (the prototype's check
-  card is not responsive — fix in the real component).
-- Building homework is a desktop activity; reading, checks and asides must be good on a phone.
+Building homework is a desktop activity; reading, checks and asides must be good on a phone, and
+every other page usable (tried at 360–430px wide, in both themes).
+
+- **Every page has a bar** (`PageBar`, `apps/web/src/components/page-bar.tsx`), as tall as the
+  track list's header: what the page puts at its start, centre and end. Pages without one of their
+  own (a track, a new track, usage, teaching notes) get one on a phone only, with the wordmark.
+- **The track list is a drawer** below 768px (`TrackDrawer`, `track-drawer.tsx`): the same list,
+  from the left over the page, opened by ☰ at the start of the page's bar. Following a link or the
+  page changing closes it, as do a tap outside, Escape and ✕; a window grown wide enough for the
+  column closes it too. The column itself isn't mounted on a phone. On a touch screen the list's
+  rows are taller and each track's `⋯` menu always shows (there is no hover).
+- **The gutter timeline gives way to a step menu** wherever the gutter has no room for it (below
+  1100px, as the margin): "Step 2 of 5" at the end of the session's bar in Lesson view, following
+  the scroll (`StepMenu`, `apps/web/src/lesson/step-menu.tsx`). It lists the open steps to jump to,
+  locked ones as dots, and **how many questions each step has** in its margin, so they can be found
+  without tapping every marked passage.
+- **Asides as a sheet** (built with #37, finished here; `aside-sheet.tsx`). Below 1100px a
+  selection shows an "Ask about this passage" button, which opens the sheet with the passage quoted
+  and the question box (focused: the learner just asked for it); tapping a marked passage opens its
+  card as the sheet; a tap outside closes it (and drops an unsent question). The sheet sits on the
+  on-screen keyboard, not under it: iOS lays the keyboard over the page without shrinking it, so
+  the sheet (like the chat's box) is lifted by what `visualViewport` says the keyboard covers
+  (`useVisibleViewport`, `apps/web/src/lib/visible-viewport.ts`); Android shrinks the page itself
+  (`interactive-widget=resizes-content`). Dragging the sheet down by its top (grab bar and quote)
+  closes it past 96px or with a flick, and springs back otherwise. The ask button sits at the foot
+  of the screen, since the phone's own menu for a selection floats beside the selected text; a
+  selection that reaches the foot moves it to the top, under the bar. The hint above the lesson says
+  "Hold any passage" on a touch screen.
+- **The check card stacks** below 640px: the answer box, then "I don't know" and "Answer" full
+  width, 44px tall; the gate's two choices stack the same way, wrapping.
+- **Touch rules for every page:** on a touch screen (`pointer: coarse`) a control's hit area is
+  at least 44px square whatever it looks like (the `touch-target` utility in `index.css`, on every
+  `Button` and the small icon buttons), and default buttons, inputs and selects are drawn 44px tall.
+  Text fields are 16px there, so the phone doesn't zoom into them. A box never takes focus on its
+  own on a touch screen (a new check, the chat), since that brings up the keyboard over what is
+  being read; the learner taps it. Shortcut hints (`/`, ⌘ Enter) are hidden.
+- **The viewport** (`index.html`): `viewport-fit=cover`, with the bars, sheets, toasts, the chat's
+  box and the drawer's foot kept clear of the notch and home bar by `env(safe-area-inset-*)`; and
+  `theme-color` in each theme's background, kept in step by `lib/theme.ts`.
+- Left to try on real phones before inviting people (§14 step 10): the keyboard lift on an iPhone,
+  selection handles near the ask button, and dragging the sheet with a thumb.
 
 ### 9.5 A new track (decided 2026-09-28)
 

@@ -1,4 +1,4 @@
-import { MessageSquarePlus, X } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -9,8 +9,10 @@ import {
   type RefObject,
 } from "react";
 import { LearnerText } from "@/content/learner-text";
+import { isTouchScreen } from "@/lib/media-query";
 import { cn } from "@/lib/utils";
 import { AskDraft, AsideThread, QuotedPassage, Thinking } from "./aside-card";
+import { ASIDE_UI, AskButton, AsideSheet } from "./aside-sheet";
 import { HintCard } from "./aside-hint";
 import { placeCards, type CardSlot } from "./aside-layout";
 import {
@@ -48,9 +50,6 @@ const DRAFT = "draft";
 const CARD_LINE = 21;
 /** A card sits this far above its passage's first line, so their first lines align. */
 const CARD_LIFT = 8;
-
-/** Marks the parts of the page that belong to asides: a click outside them closes the card. */
-const UI = { "data-aside-ui": "" };
 
 export interface AsideLayerProps extends LessonAsides {
   grid: RefObject<HTMLElement | null>;
@@ -225,25 +224,19 @@ export function AsideLayer(props: AsideLayerProps) {
             style={{ left: layout.column.left, width: layout.column.width }}
           >
             <MessageSquarePlus className="size-3.5" aria-hidden />
-            Select any passage to ask about it.
+            {/* On a touch screen, holding a passage is what selects it. */}
+            {isTouchScreen()
+              ? "Hold any passage to ask about it."
+              : "Select any passage to ask about it."}
           </p>
         )}
         {selected && !draft && !sheet && (
-          <button
-            type="button"
-            {...UI}
-            // Keep the selection: the button asks about it.
-            onPointerDown={(event) => {
-              event.preventDefault();
-            }}
-            onClick={() => {
+          <AskButton
+            range={selected.range}
+            onAsk={() => {
               openDraft(selected);
             }}
-            className="fixed bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center whitespace-nowrap gap-2 rounded-full border border-border-strong bg-card px-4 py-2.5 font-sans text-[14px] font-medium text-primary shadow-lg motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-2"
-          >
-            <MessageSquarePlus className="size-4" aria-hidden />
-            Ask about this passage
-          </button>
+          />
         )}
         {sheet && (draft ?? activeAside) && (
           <AsideSheet
@@ -271,7 +264,7 @@ export function AsideLayer(props: AsideLayerProps) {
         {layout?.ask != null && selected && !draft?.sent && (
           <button
             type="button"
-            {...UI}
+            {...ASIDE_UI}
             // Keep the selection: the button asks about it.
             onMouseDown={(event) => {
               event.preventDefault();
@@ -412,7 +405,7 @@ function MarginCard({
 }) {
   return (
     <div
-      {...UI}
+      {...ASIDE_UI}
       data-aside-card={id}
       role="group"
       aria-label={label}
@@ -468,32 +461,6 @@ function SentQuestion({ question }: { question: string }) {
         <LearnerText text={question} />
       </p>
       <Thinking />
-    </div>
-  );
-}
-
-/** A card on a phone: a sheet from the bottom, over the lesson, with the passage it is about. */
-function AsideSheet(props: { quote: string; onClose: () => void; children: ReactNode }) {
-  return (
-    <div
-      {...UI}
-      role="dialog"
-      aria-label="Question in the margin"
-      className="fixed inset-x-0 bottom-0 z-40 max-h-[75dvh] overflow-y-auto rounded-t-xl border-t border-border-strong bg-card px-4 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] font-sans shadow-[0_-10px_40px_rgba(0,0,0,0.3)] [--mark-surface:var(--card)] motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-bottom-8"
-    >
-      <div aria-hidden className="mx-auto mb-3 h-1 w-9 rounded-full bg-border-strong" />
-      <div className="mb-3 flex items-start gap-3">
-        <QuotedPassage quote={props.quote} className="flex-1" />
-        <button
-          type="button"
-          aria-label="Close"
-          onClick={props.onClose}
-          className="-mt-1 -mr-1 rounded-full p-1.5 text-muted-foreground hover:bg-muted"
-        >
-          <X className="size-4" />
-        </button>
-      </div>
-      {props.children}
     </div>
   );
 }

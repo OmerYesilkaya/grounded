@@ -14,6 +14,7 @@ import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
 import { useStickToBottom } from "@/lib/stick-to-bottom";
 import { cn } from "@/lib/utils";
+import { useVisibleViewport } from "@/lib/visible-viewport";
 import { LessonAgain } from "./lesson-again";
 
 const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
@@ -108,6 +109,8 @@ export function ChatView({
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
   const barHeight = useHeight(bar);
+  // The box stays above the on-screen keyboard (design §9.4).
+  const { keyboard } = useVisibleViewport();
   const stick = useStickToBottom({ content, overlay: bar });
 
   const canWrite =
@@ -215,7 +218,7 @@ export function ChatView({
       {!stick.following && (
         <div
           className="pointer-events-none fixed right-0 left-0 flex justify-center md:left-[248px]"
-          style={{ bottom: `${String(barHeight + 12)}px` }}
+          style={{ bottom: `${String(barHeight + keyboard + 12)}px` }}
         >
           <Button
             variant="outline"
@@ -234,7 +237,8 @@ export function ChatView({
       {(phase === "probe" || phase === "plan") && (
         <div
           ref={setBar}
-          className="fixed right-0 bottom-0 left-0 bg-background/90 pt-2 pb-4 backdrop-blur md:left-[248px]"
+          style={{ bottom: keyboard }}
+          className="fixed right-0 left-0 bg-background/90 pt-2 pb-[max(1rem,env(safe-area-inset-bottom))] backdrop-blur md:left-[248px]"
         >
           <div className="mx-auto max-w-[68ch] px-6">
             <Composer
