@@ -17,7 +17,8 @@ export type {
 } from "./prompt.js";
 export { NOTES_PHASES, selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.js";
 export type { TrackView, TrackViewInput } from "./track-view.js";
-export { awaitedJob, initialSession, resolved, transition } from "./session.js";
+export { awaitedJob, initialFinal, initialSession, resolved, transition } from "./session.js";
+export { breakDemotions, finalStanding, type FinalStanding } from "./final.js";
 export type {
   AwaitedJob,
   LessonStepInfo,
@@ -56,12 +57,15 @@ export {
 } from "./review.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
 export {
+  auditDecisionSchema,
   openingReviewDecisionSchema,
   planActionsSchema,
   probeDecisionSchema,
   sweepActionsSchema,
+  teachBackDecisionSchema,
   teachingNotesSchema,
   trackActionsSchema,
+  type TeachBackBreak,
   type TeachingNotesRefresh,
 } from "./decisions.js";
 export {

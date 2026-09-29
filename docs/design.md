@@ -418,6 +418,8 @@ about, test and debug.
   call, its message and the whole arc it covers: ~13,200, budget 16,000. The opening review (#40)
   at its largest (an arc exam's review and a homework's with twelve open comments and their
   threads, two steps left shaky with their check threads, four answers): ~12,300, budget 15,000.
+  The final (#43): an audit or teach-back turn ~16,300 (the final's method sections and the whole
+  plan), budget 20,000; its close ~24,900 (the notes as written too), 30,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -442,7 +444,7 @@ about, test and debug.
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
   it), the opening review's decision (`opening-review-decision`, apart from its messages and from
-  `opening-review-summary`, §7.1), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
+  `opening-review-summary`, §7.1), the final's (`audit-decision`, `teach-back-decision`, §7.4), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
   (`aside-record`, apart from its answer), whether a reply in a review's card found the flaw
   (`review-record`, apart from the answer, §7.4), the wording review (`wording-review`, §3.3), and so do
   the summaries of what is already written ("where
@@ -502,33 +504,33 @@ about, test and debug.
 
 The schema is `packages/db/src/schema.ts`. Tables that exist:
 
-| Table                                            | Holds                                                                                                                                                  |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                                            |
-| `allowlist`                                      | who may sign in                                                                                                                                        |
-| `credentials`                                    | provider, encrypted key, credential source                                                                                                             |
-| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                 |
-| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                           |
-| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                |
-| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                           |
-| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                          |
-| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                            |
-| `learning_sessions`                              | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, older turns summarized              |
-| `session_messages`                               | the chat (opening review, probe, plan, homework, arc exam, recap): the learner's text, the tutor's block trees, a plan's terms                         |
-| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                |
-| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                    |
-| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                  |
-| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                  |
-| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                       |
-| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                       |
-| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                         |
-| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it              |
-| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                |
-| `assignments`                                    | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
-| `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
-| `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
-| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up               |
-| `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads       |
+| Table                                            | Holds                                                                                                                                                                    |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                                                              |
+| `allowlist`                                      | who may sign in                                                                                                                                                          |
+| `credentials`                                    | provider, encrypted key, credential source                                                                                                                               |
+| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                                   |
+| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                                             |
+| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                  |
+| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                             |
+| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                                            |
+| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                                              |
+| `learning_sessions`                              | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, the final's teach-back breaks, older turns summarized |
+| `session_messages`                               | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms         |
+| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
+| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
+| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                                    |
+| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                                    |
+| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
+| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
+| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                           |
+| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                |
+| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                  |
+| `assignments`                                    | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at                   |
+| `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                                             |
+| `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                                   |
+| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up                                 |
+| `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads                         |
 
 An assignment also holds when it is snoozed until (`snoozed_until`, "Later"), the later homework
 it was folded into (`subsumed_by`) and, for an arc exam, when starting a session warned it was
@@ -608,8 +610,8 @@ The plan (`tracks.plan`: arcs `{title, terms}` in order, and notes) changes thro
   spelling.
 - **`set-plan`** `{ arcs, notes }` replaces the arcs, and the notes unless `notes` is null (the
   close changes the arcs this way and keeps the notes as they are). Only a call that saw all of it,
-  every arc's terms and the notes as written, may send one: the close's term sweep (and the final's
-  audit), and an import (`rewritePlan` on `applyActions`). From any other call it is left out,
+  every arc's terms and the notes as written, may send one: the close's term sweep (the final's close
+  included), and an import (`rewritePlan` on `applyActions`). From any other call it is left out,
   logged, and the rest of the batch applies.
 - **`edit-plan-notes`** `{ heading, text }` changes one section of the notes (decided 2026-09-29,
   #18), so the close doesn't write 34 KB of notes again to change a line, or drop one by accident.
@@ -790,7 +792,7 @@ offered videos and link cards to sources from the session, not images or audio.
 ### 7.1 Phases
 
 Server-owned state machine: **review → probe → plan → lesson (inline checks at the point of need) → homework →
-close.** The model _proposes_ transitions through structured actions ("probing done; here is the
+close**; a track's final runs review → audit → teach-back → close (§7.4). The model _proposes_ transitions through structured actions ("probing done; here is the
 plan"); the server checks preconditions (a plan before a lesson; every check resolved before homework);
 the learner approves at the gates (the plan), and moves the homework on (hands it in, or puts it
 off with "Later", §7.4), after which the close runs. The learner can nudge at any time ("skip ahead to the
@@ -967,6 +969,7 @@ HTML/SVG). To be measured, then adjusted.
   below (#42).
 - **The final** is a session kind with no homework: a fresh audit (new fix-list compared with the
   original) and a teach-back where the model plays a skeptical friend asking only "why?" and "what if?".
+  Offered once the plan is taught through and the arc exams are in; how it is built below (#43).
 
 How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts`,
 `apps/api/src/engine/assignments.ts`, `apps/api/src/routes/assignments.ts`, `apps/web/src/homework`,
@@ -1176,6 +1179,73 @@ How arc exams are built (#42, decided 2026-09-29; `packages/core/src/arc-exam.ts
   first, before any homework's, and waits for it if it is still being written. Its summary tells
   the plan whether the arc held (method.md: if not, the next arc waits).
 
+How the final is built (#43, decided 2026-09-29; `packages/core/src/final.ts`,
+`apps/api/src/engine/final.ts`, the `final-turn` job in `session-tasks.ts`,
+`apps/web/src/components/final-*.tsx`, `next-session.tsx`):
+
+- **The app offers it; the learner starts it** (decided). A track's final standing
+  (`finalStanding`) is worked out from the plan, as which session closes an arc is: the plan is
+  **taught through** once it has arcs and no term of any arc is still `planned` (so an arc taught
+  whole in one session, which has no `closedIn`, counts too), and the final is **ready** once
+  every arc exam is also handed in (the last arc's exam is the build the method puts before the
+  final, and the final's review takes it up), **after-exam** while one is open. It is never started
+  on its own: the track page, and the chat of the session that closed last, show "The plan is
+  taught through" with **Start the final** and **Another session first** (a learner who wants to
+  go further plans more; a new arc makes the plan not taught through again). While an exam is open
+  they say the final comes once it is handed in. `POST /api/tracks/:id/sessions` takes
+  `{ kind: "final" }` and refuses (409) a final that isn't ready; the exam warning doesn't apply.
+  The learner can't ask for a final earlier: an audit of a plan half taught measures nothing.
+- **Its own phases beside the normal ones** (`session.ts`): a final is `kind: "final"` in its
+  state (and in `learning_sessions.kind`) and runs review → **audit** → **teach-back** → close. The
+  same `review-done` goes on to the audit in a final and the probe otherwise; `audit-done` and
+  `teach-back-done` move it on; the plan's, lesson's and homework's events are refused ("The final
+  has no plan."). No homework is written, so no exam either.
+- **It opens with the review when something waits** (decided), as any session does: the last
+  arc's exam above all, whose open leaks would otherwise reach nothing. The review's summary goes
+  to the final's close, not to the audit, which is cold.
+- **The audit and the teach-back are conversations shaped like the probe** (one job,
+  `final-turn`, each part's messages of their own kind, `audit` and `teach-back`): each answer
+  gets a structured call first (`audit-decision`, `teach-back-decision`, little reasoning), then
+  the next message. The calls are the `final` phase's (method.md's probe, close and final sections),
+  with the whole plan, "where you left off" and a note of which part it is and how it goes
+  (`FINAL_PART`). The audit's first message follows the review's last answer if there was one; the
+  app has already said what the final is, so it just begins. **The audit is cold**: its calls leave
+  out the fix-list the track kept, so its misconceptions (`add-fix-item`) are a new list recorded
+  on its own. It ends when its decision says so or after 12 answers; the teach-back then opens
+  ("rebuild it from its foundations"), the tutor a skeptical friend who only asks why and what if,
+  and ends the same way, after 20 answers at most, handing over to the close.
+- **What the term statuses do** (decided): in the audit as in a probe, from how the learner used
+  the terms (a term that didn't hold goes back to `taught`, source `audit`). In the teach-back, a
+  term rebuilt from what it rests on is confirmed, and each place the chain broke (the learner had
+  to say "it just is", or gave no reason) is **marked**: the decision returns `breaks`, each the
+  learner's words and the term it is in, kept on the session (`teach_back_breaks`), and the app
+  takes a held term of a break back to `taught` itself (`breakDemotions`, evidence "Couldn't say
+  why in the final's teach-back: “…”", source `teach-back`), so a mark never goes without its term.
+  The close's sweep then settles every status as any close does.
+- **The close compares the lists** (`recap` job, the `final` phase, with the plan's notes as
+  written for its sweep): the recap is told the fix-list kept before the final (each item open or
+  closed now), the one the audit found (the items opened since the final began: a track's sessions
+  never overlap) and the breaks, and says how the lists compare and exactly where the chain broke,
+  and that anything on the new list becomes a session. Its sweep may also close an earlier item
+  the audit found no trace of. Then "where you left off", as always.
+- **What the learner sees at the end** (`GET /api/sessions/:id/final`, `FinalOutcomeCard`): under
+  the recap, a card drawn by the app from the records, "Track finished" with the date, three
+  figures (found along the way, fixed, found in the final), the two lists side by side (stacked on
+  a phone: a fixed item checked, one still open marked so), and "Where the chain broke", each break
+  in the learner's own words with its term, which is back among the ideas still settling; at its
+  foot, "Start a session", which takes up what the final found. In the session's bar, where a
+  normal session has its Chat / Lesson switch, the final's parts: Fresh audit, Teach-back, What it
+  found (only the current one on a phone). The chat opens with a line on what the final is, and a
+  rule marks where each part begins.
+- **A finished track** is one whose latest session is a closed final (`final: "finished"` and
+  `finishedIn` in `GET /api/tracks`): its page leads with the same card; the track list names the
+  session "The final" over "Session 7 · final" and a closed track's line says "finished" with a
+  check when nothing is open ("final ready", in the accent, while the final is offered). A session
+  after it makes the track unfinished again, and once its new arcs are taught through the final is
+  offered again: the loop closes on itself (method.md).
+- Budgets (§4.4): an audit or teach-back turn ~16,300 tokens on the large track, budget 20,000;
+  its close ~24,900 (the notes as written), 30,000.
+
 ### 7.5 Asides
 
 - Select any passage in a lesson → ask. The card appears in the margin beside it, streamed at once.
@@ -1266,7 +1336,8 @@ How it is built (#37, decided 2026-09-29):
   - **Open now**: the track's items not done, each a row as the track list says it (§9.2) that
     goes on with it; it stands in for a "continue" button. It reads the track list's items, not the
     progress endpoint, so homework and arc exams (#38, #42) show here as they join the list as kinds.
-    "Start a session" shows while no session is open.
+    "Start a session" shows while no session is open; once the plan is taught through, the final's
+    offer in its place, and a finished track leads with what its final found (§7.4).
   - Three figures: ideas you own, still settling, sessions done (the done items that are sessions).
   - **Still settling** (taught) first, since that is what the next sessions come back to, then
     **ideas you own** (confirmed, assumed and borrowed; assumed marked "you brought it", borrowed
@@ -1368,7 +1439,7 @@ and marked the current track with bolder text):
   colour and its chevron in the accent; other names are muted. **The current item** is where the
   thread turns into the accent colour beside it, its text in the foreground colour.
 - **Other tracks** start closed, one line each with what is waiting ("1 open", or "1 due" in the
-  accent while homework is due, §7.4); the
+  accent while homework is due, §7.4; with nothing open, "final ready" or "finished"); the
   chevron opens them in place. Finished items fold into one line ("3 done ›") above the rest; the
   item on the page is never folded away.
 - **A track's menu** (`⋯`, at the end of its line while the line is hovered or focused, in place of

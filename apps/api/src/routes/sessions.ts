@@ -1,4 +1,4 @@
-import { initialSession, type SessionEvent } from "@grounded/core";
+import { initialFinal, initialSession, type SessionEvent } from "@grounded/core";
 import {
   and,
   asc,
@@ -16,6 +16,7 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { warnOfOpenExam } from "../engine/arc-exams.js";
+import { finalOutcome, trackFinalStanding } from "../engine/final.js";
 import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
 import { claimForReview, sinceLastSession, takenUpBy } from "../engine/opening-review.js";
 import { assignmentSummary, sessionAssignments } from "../engine/assignments.js";
@@ -34,6 +35,8 @@ interface Env {
 }
 
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });
+/** Starting a session: a normal one, or the track's final (design §7.4). */
+const startInput = z.object({ kind: z.enum(["normal", "final"]).optional() });
 
 /** Sessions (design §7): the session HTTP API. Jobs do the model work. */
 export function registerSessionRoutes(
@@ -78,9 +81,28 @@ export function registerSessionRoutes(
       .where(and(eq(learningSessions.trackId, trackId), isNull(learningSessions.closedAt)));
     if (open)
       return c.json({ error: "This track already has an open session.", sessionId: open.id }, 409);
+    // The final, once the plan is taught through and every arc exam is in (design §7.4).
+    const parsed = startInput.safeParse(await c.req.json().catch(() => ({})));
+    if (!parsed.success) return c.json({ error: "Not a kind of session." }, 400);
+    const final = parsed.data.kind === "final";
+    if (final) {
+      const standing = await trackFinalStanding(db, trackId);
+      if (standing !== "ready")
+        return c.json(
+          {
+            error:
+              standing === "after-exam"
+                ? "The final comes once your arc exam is handed in."
+                : standing === "finished"
+                  ? "This track's final is done."
+                  : "The final comes once the plan is taught through.",
+          },
+          409,
+        );
+    }
     // An arc exam still open: said once, before the next arc starts on top of it (design §7.4).
     // Asked again, the session starts, and its probe takes up the exam's re-tests.
-    const exam = await warnOfOpenExam(db, trackId);
+    const exam = final ? null : await warnOfOpenExam(db, trackId);
     if (exam)
       return c.json(
         {
@@ -95,16 +117,22 @@ export function registerSessionRoutes(
     // the probe (design §7.1). Either way it takes up the reviews of work handed in since: the next
     // session's review won't go over them again.
     const since = await sinceLastSession(db, trackId);
-    const opening = since.waiting ? "review" : "probe";
     const [session] = await db
       .insert(learningSessions)
-      .values({ trackId, userId, state: initialSession(opening) })
+      .values({
+        trackId,
+        userId,
+        kind: final ? "final" : "normal",
+        state: final
+          ? initialFinal(since.waiting)
+          : initialSession(since.waiting ? "review" : "probe"),
+      })
       .returning();
     if (!session) throw new Error("session insert returned nothing");
     addLogContext({ sessionId: session.id });
     await claimForReview(db, session.id, since);
     await publish(db, session.id, "state", session.state);
-    await queue.enqueue(opening === "review" ? "opening-review" : "probe-turn", {
+    await queue.enqueue(since.waiting ? "opening-review" : final ? "final-turn" : "probe-turn", {
       sessionId: session.id,
     });
     return c.json({ id: session.id }, 201);
@@ -187,6 +215,19 @@ export function registerSessionRoutes(
     });
   });
 
+  /**
+   * What a final found (design §7.4): the fix-list kept before it and the one its audit found, and
+   * where the teach-back's chain broke. Shown at its end and on the finished track's page.
+   */
+  app.get("/api/sessions/:id/final", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (session?.kind !== "final") return c.json({ error: "Not found." }, 404);
+    return c.json({
+      ...(await finalOutcome(db, session)),
+      closedAt: session.closedAt?.toISOString() ?? null,
+    });
+  });
+
   /** Queues the job a stalled session waits on again (retry.ts). */
   app.post("/api/sessions/:id/retry", async (c) => {
     const session = await ownSession(c.get("user").id, c.req.param("id"));
@@ -205,8 +246,10 @@ export function registerSessionRoutes(
     const applied = await apply(session.id, { type: "learner-message" });
     if (!applied.ok) return c.json({ error: applied.reason }, 409);
     const { phase } = applied.state;
-    // An answer in the review is the review's: the probe's opening question follows it.
-    const kind = phase === "review" ? "review" : "message";
+    // An answer in the review is the review's (the probe's opening question follows it), and so an
+    // answer in each of the final's parts is that part's.
+    const kind =
+      phase === "review" || phase === "audit" || phase === "teach-back" ? phase : "message";
     const [message] = await db
       .insert(sessionMessages)
       .values({ sessionId: session.id, role: "learner", kind, text: parsed.data.text })
@@ -218,7 +261,14 @@ export function registerSessionRoutes(
       kind,
       text: message.text,
     });
-    const job = phase === "review" ? "opening-review" : phase === "probe" ? "probe-turn" : "plan";
+    const job =
+      phase === "review"
+        ? "opening-review"
+        : phase === "probe"
+          ? "probe-turn"
+          : phase === "plan"
+            ? "plan"
+            : "final-turn";
     await queue.enqueue(job, { sessionId: session.id });
     return c.json({ id: message.id }, 201);
   });

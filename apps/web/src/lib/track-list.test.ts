@@ -10,6 +10,7 @@ const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem
   done: true,
   terms: [],
   lessonTitle: null,
+  final: false,
   activeAt: "2026-09-29T00:00:00.000Z",
   ...fields,
 });
@@ -22,11 +23,22 @@ const track = (id: string, title: string, items: SessionItem[] = []): TrackSumma
   activeAt: "2026-09-29T00:00:00.000Z",
   items,
   openSession: null,
+  final: "not-yet",
+  finishedIn: null,
   importedLesson: null,
   files: [],
 });
 
 describe("an item's row", () => {
+  it("names the final, which has no lesson, and the part it is at while under way", () => {
+    const final = session(7, { final: true, done: false, phase: "teach-back" });
+    expect(describeItem(final)).toEqual({ title: "The final", meta: "Session 7 · teach-back" });
+    expect(describeItem({ ...final, done: true, phase: "closed" })).toEqual({
+      title: "The final",
+      meta: "Session 7 · final",
+    });
+  });
+
   it("says a homework's name over the session that set it, and when it is handed in", () => {
     const homework: HomeworkItem = {
       kind: "homework",

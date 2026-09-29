@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   awaitedJob,
+  initialFinal,
   initialSession,
   transition,
   type SessionEvent,
@@ -315,5 +316,49 @@ describe("the job a session waits on", () => {
     const closing = run(assigned, { type: "homework-later" });
     expect(awaitedJob(closing, "tutor")).toBe("recap");
     expect(awaitedJob(run(closing, { type: "recap-done" }), "tutor")).toBeNull();
+  });
+});
+
+describe("the final", () => {
+  it("opens with the fresh audit, or with the review when something waits for it", () => {
+    expect(initialFinal(false)).toMatchObject({ kind: "final", phase: "audit" });
+    const reviewing = initialFinal(true);
+    expect(reviewing).toMatchObject({ kind: "final", phase: "review" });
+    // The review hands over to the audit, not the probe.
+    expect(run(reviewing, { type: "review-done" }).phase).toBe("audit");
+  });
+
+  it("takes answers in its audit and teach-back, then closes: no plan, lesson or homework", () => {
+    const auditing = initialFinal(false);
+    expect(run(auditing, { type: "learner-message" }).phase).toBe("audit");
+    expect(rejected(auditing, { type: "skip-to-plan" })).toBe("The final has no plan.");
+    expect(rejected(auditing, { type: "probe-done" })).toBe("The final has no plan.");
+    expect(rejected(auditing, { type: "teach-back-done" })).toBe("No teach-back is under way.");
+    expect(rejected(auditing, { type: "recap-done" })).toBe(
+      "The recap comes after the teach-back.",
+    );
+    const teaching = run(auditing, { type: "audit-done" });
+    expect(teaching.phase).toBe("teach-back");
+    expect(run(teaching, { type: "learner-message" }).phase).toBe("teach-back");
+    expect(rejected(teaching, { type: "audit-done" })).toBe("No audit is under way.");
+    expect(rejected(teaching, { type: "checks-complete" })).toBe("There is no lesson to finish.");
+    const closed = run(teaching, { type: "teach-back-done" }, { type: "recap-done" });
+    expect(closed).toMatchObject({ kind: "final", phase: "closed" });
+  });
+
+  it("waits on its turn until the tutor has written, then the learner's, and on the recap", () => {
+    const auditing = initialFinal(false);
+    expect(awaitedJob(auditing, null)).toBe("final-turn");
+    expect(awaitedJob(auditing, "tutor")).toBeNull();
+    const teaching = run(auditing, { type: "audit-done" });
+    expect(awaitedJob(teaching, "learner")).toBe("final-turn");
+    expect(awaitedJob(run(teaching, { type: "teach-back-done" }), "learner")).toBe("recap");
+  });
+
+  it("leaves a normal session's audit and teach-back events rejected", () => {
+    expect(rejected(initialSession(), { type: "audit-done" })).toBe("No audit is under way.");
+    expect(rejected(initialSession(), { type: "teach-back-done" })).toBe(
+      "No teach-back is under way.",
+    );
   });
 });

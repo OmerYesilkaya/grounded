@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import {
+  auditDecisionSchema,
   checkVerdictSchema,
   importReadingSchema,
   lessonOutlineSchema,
   planActionsSchema,
   probeDecisionSchema,
   sweepActionsSchema,
+  teachBackDecisionSchema,
   trackActionsSchema,
 } from "./index.js";
 
@@ -43,6 +45,8 @@ describe("model output schemas", () => {
     ["check verdict", checkVerdictSchema],
     ["lesson outline", lessonOutlineSchema],
     ["probe decision", probeDecisionSchema],
+    ["audit decision", auditDecisionSchema],
+    ["teach-back decision", teachBackDecisionSchema],
     ["plan actions", planActionsSchema],
     ["import reading", importReadingSchema],
   ])("%s are accepted by strict structured outputs", (_, schema) => {

@@ -36,15 +36,18 @@ export function ReviewHeading({ takenUp }: { takenUp: readonly AssignmentSummary
 }
 
 /** Where the review hands over to the probe: this session's own ground begins. */
-export function ReviewDone() {
+export const ReviewDone = () => <ChatRule label="This session" />;
+
+/** A quiet rule across the chat where a new part of the session begins. */
+export function ChatRule({ label }: { label: string }) {
   return (
     <div
       role="separator"
-      aria-label="This session"
+      aria-label={label}
       className="flex items-center gap-3 py-1 text-[11px] tracking-widest text-subtle-foreground uppercase"
     >
       <span className="h-px flex-1 bg-border" aria-hidden />
-      This session
+      {label}
       <span className="h-px flex-1 bg-border" aria-hidden />
     </div>
   );

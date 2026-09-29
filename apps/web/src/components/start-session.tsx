@@ -18,15 +18,20 @@ function openExamOf(error: unknown): OpenExam | null {
 }
 
 /**
- * Starting a track's next session, and going to it. With an arc exam still open the server says so
- * once (design §7.4): `examOpen` is that exam, for the warning, and starting again starts it.
+ * Starting a track's next session, or its final (design §7.4), and going to it. With an arc exam
+ * still open the server says so once: `examOpen` is that exam, for the warning, and starting again
+ * starts it.
  */
 export function useStartSession(trackId: string) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [examOpen, setExamOpen] = useState<OpenExam | null>(null);
   const start = useMutation({
-    mutationFn: () => api<{ id: string }>(`/api/tracks/${trackId}/sessions`, { method: "POST" }),
+    mutationFn: (kind: "normal" | "final") =>
+      api<{ id: string }>(`/api/tracks/${trackId}/sessions`, {
+        method: "POST",
+        body: JSON.stringify({ kind }),
+      }),
     onSuccess: async ({ id }) => {
       setExamOpen(null);
       await queryClient.invalidateQueries({ queryKey: ["tracks"] });
@@ -38,7 +43,10 @@ export function useStartSession(trackId: string) {
   });
   return {
     start: () => {
-      start.mutate();
+      start.mutate("normal");
+    },
+    startFinal: () => {
+      start.mutate("final");
     },
     pending: start.isPending,
     examOpen,

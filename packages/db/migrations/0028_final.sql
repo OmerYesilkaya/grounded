@@ -1,0 +1,1 @@
+ALTER TABLE "learning_sessions" ADD COLUMN "teach_back_breaks" jsonb DEFAULT '[]'::jsonb NOT NULL;

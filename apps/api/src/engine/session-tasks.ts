@@ -1,6 +1,8 @@
 import {
   allowedBlocksLine,
   assembleSystemPrompt,
+  auditDecisionSchema,
+  breakDemotions,
   checkVerdictSchema,
   generateLesson,
   LessonOutlineError,
@@ -9,6 +11,7 @@ import {
   probeDecisionSchema,
   placeChecks,
   sweepActionsSchema,
+  teachBackDecisionSchema,
   trackActionsSchema,
   type AssignmentKind,
   type Method,
@@ -68,6 +71,20 @@ import {
   ORIGINALS_PHASES,
 } from "./brought.js";
 import { publish, startActivity, withActivity, type Activity } from "./events.js";
+import {
+  AUDIT_DECISION_PROMPT,
+  auditOpening,
+  FINAL_ANSWERS,
+  FINAL_FOUND,
+  FINAL_PART,
+  FINAL_RECAP_REQUEST,
+  FINAL_SWEEP_REQUEST,
+  finalOutcome,
+  finalRecord,
+  recordBreaks,
+  TEACH_BACK_DECISION_PROMPT,
+  TEACH_BACK_OPENING_PROMPT,
+} from "./final.js";
 import {
   LEFT_OFF_CATCH_UP,
   LEFT_OFF_CATCH_UP_PROMPT,
@@ -220,9 +237,20 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     phase: Phase,
     /** What this call carries besides its phase's (the arcs an exam covers). */
     more: readonly { heading: string; body: string }[] = [],
+    /**
+     * What of the track it leaves out or adds: the final's audit leaves out the fix-list kept
+     * before it, and the final's close reads the plan's notes as written.
+     */
+    view: { fixList?: false; notes?: true } = {},
   ) => {
     const session = await loadSession(db, sessionId);
-    const loaded = await loadTrackContext(db, session.trackId, { sessionId, phase });
+    const whole = await loadTrackContext(db, session.trackId, {
+      sessionId,
+      phase,
+      ...(view.notes ? { notes: true } : {}),
+    });
+    // What the session added to the fix-list is still shown, among its changes.
+    const loaded = view.fixList === false ? { ...whole, fixList: [] } : whole;
     // The first session's probe and plan read the files themselves, in the opening turn; every
     // other call carries what the learner brought, summarized (design §4.5).
     const originals =
@@ -305,7 +333,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
     }
     // The review's answers are their own kind: the probe's opening question follows them.
-    const answered = (kind: "review" | "message") =>
+    const answered = (kind: "review" | "message" | "audit" | "teach-back") =>
       history.filter((m) => m.role === "learner" && m.kind === kind).length;
     return { session, track, terms, messages, answered, history, system };
   };
@@ -322,6 +350,28 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.kind, kind)))
       .limit(1);
     return row ? { id: row.id, text: row.text ?? "", blocks: row.blocks ?? [] } : null;
+  };
+
+  /**
+   * The close's context and its recap's request. A final's is its own phase's, with what its
+   * review and the final itself found, and the plan's notes as written, which its sweep edits.
+   */
+  const closeContext = async (sessionId: string) => {
+    const session = await loadSession(db, sessionId);
+    if (session.state.kind !== "final")
+      return {
+        final: false,
+        request: "(Close the session: the recap.)",
+        context: await contextFor(sessionId, "close"),
+      };
+    const found = { heading: FINAL_FOUND, body: finalRecord(await finalOutcome(db, session)) };
+    return {
+      final: true,
+      request: FINAL_RECAP_REQUEST,
+      context: await contextFor(sessionId, "final", [...reviewFound(session), found], {
+        notes: true,
+      }),
+    };
   };
 
   /**
@@ -576,9 +626,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       if (session.state.phase !== "review") return;
       // A review it took up is still being written: that review's end queues this job again.
       if (await reviewsUnderWay(db, sessionId)) return;
+      // On to the probe, or in the final its audit.
       const onTo = async () => {
-        await applyEvent(db, sessionId, { type: "review-done" });
-        await queue.enqueue("probe-turn", { sessionId });
+        const next = await applyEvent(db, sessionId, { type: "review-done" });
+        await queue.enqueue(next.phase === "audit" ? "final-turn" : "probe-turn", { sessionId });
       };
       // What waits, labelled as the call reads it, and the call's context with it.
       const load = async () => {
@@ -796,6 +847,107 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             : context.messages,
         terms: context.terms,
         kind: "message",
+      });
+    }),
+
+    // The final's two parts (design §7.4), each a conversation shaped like the probe's: after each
+    // answer a structured call records what it showed (the audit's misconceptions are the new
+    // fix-list, the teach-back's breaks take their terms back to taught) and whether the part is
+    // done. The audit hands over to the teach-back, and the teach-back to the close.
+    "final-turn": guarded(async ({ sessionId }) => {
+      const { state } = await loadSession(db, sessionId);
+      const part = state.phase;
+      if (part !== "audit" && part !== "teach-back") return;
+      const audit = part === "audit";
+      const load = () =>
+        contextFor(sessionId, "final", [FINAL_PART[part]], audit ? { fixList: false } : {});
+      let context = await load();
+      const { session } = context;
+      // Already answered: the job was queued twice ("Try again" as it started, say).
+      if (context.history.at(-1)?.role === "tutor") return;
+      const answers = context.answered(part);
+      const modelFor = (purpose: string) =>
+        models.model({
+          userId: session.userId,
+          trackId: session.trackId,
+          sessionId: session.id,
+          purpose,
+          role: "strong",
+        });
+
+      if (answers > 0) {
+        const decider = await modelFor(`${part}-decision`);
+        const asking: ModelMessage[] = [
+          ...context.messages,
+          { role: "user", content: audit ? AUDIT_DECISION_PROMPT : TEACH_BACK_DECISION_PROMPT },
+        ];
+        const decide = () =>
+          audit
+            ? generateText({
+                model: decider,
+                system: context.system,
+                output: Output.object({ schema: auditDecisionSchema }),
+                messages: asking,
+              }).then(({ output }) => ({ ...output, breaks: [] }))
+            : generateText({
+                model: decider,
+                system: context.system,
+                output: Output.object({ schema: teachBackDecisionSchema }),
+                messages: asking,
+              }).then(({ output }) => output);
+        const output = await withActivity(db, sessionId, "Noting what your answers showed", decide);
+        // A break takes its term back to taught, the app's to derive (final.ts in core).
+        const actions = [...output.actions, ...breakDemotions(output.breaks, context.terms)];
+        if (actions.length)
+          await recordEdits(db, {
+            sessionId,
+            trackId: session.trackId,
+            actions,
+            source: part,
+            label: "Noting what your answers showed",
+            askAgain: async (feedback) =>
+              (
+                await generateText({
+                  model: decider,
+                  system: context.system,
+                  output: Output.object({ schema: trackActionsSchema }),
+                  messages: [
+                    ...asking,
+                    { role: "assistant", content: JSON.stringify(output) },
+                    { role: "user", content: feedback },
+                  ],
+                })
+              ).output.actions,
+          });
+        await recordBreaks(db, sessionId, output.breaks);
+        if (output.finished || answers >= FINAL_ANSWERS[part]) {
+          await applyEvent(db, sessionId, { type: audit ? "audit-done" : "teach-back-done" });
+          await queue.enqueue(audit ? "final-turn" : "recap", { sessionId });
+          return;
+        }
+        // The next question is written with what was just recorded.
+        if (actions.length) context = await load();
+      }
+      // A part's first message opens it: the audit's the final (after the review's last answer,
+      // if there was one), the teach-back's after the audit's.
+      const opening =
+        answers === 0
+          ? audit
+            ? auditOpening(context.answered("review") > 0)
+            : TEACH_BACK_OPENING_PROMPT
+          : null;
+      await writeChatMessage({
+        db,
+        media: deps.media,
+        review: reviewerFor(session),
+        sessionId,
+        model: await modelFor(part),
+        system: context.system,
+        messages: opening
+          ? [...context.messages, { role: "user", content: opening }]
+          : context.messages,
+        terms: context.terms,
+        kind: part,
       });
     }),
 
@@ -1121,8 +1273,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       await applyEvent(db, sessionId, { type: "homework-assigned" });
     }),
 
+    // The close: the recap, the term sweep, "where you left off". A final's close is its own
+    // phase's, with what the final found (the two fix-lists, the teach-back's breaks) and what its
+    // review found, and the plan's notes as written, which its sweep edits (design §7.4).
     recap: guarded(async ({ sessionId }) => {
-      const context = await contextFor(sessionId, "close");
+      const closing = await closeContext(sessionId);
+      const { context, final } = closing;
       const { session, terms, system } = context;
       // Tried again after it failed past the recap (in the sweep, say; retry.ts): the recap the
       // learner has read stands, and the close goes on from it. It is the conversation's last turn.
@@ -1143,7 +1299,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               role: "strong",
             }),
             system,
-            messages: [...messages, { role: "user", content: "(Close the session: the recap.)" }],
+            messages: [...messages, { role: "user", content: closing.request }],
             terms,
             kind: "recap",
           })
@@ -1154,9 +1310,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       // own purpose, a structured record made with little reasoning (call-options.ts). It settles
       // the statuses from the evidence itself: the session's conversation as the recap saw it (a
       // long one's older turns summarized) and, in the system prompt, the check threads.
-      const closing: ModelMessage[] = [
+      const recapped: ModelMessage[] = [
         ...messages,
-        { role: "user", content: "(Close the session: the recap.)" },
+        { role: "user", content: closing.request },
         { role: "assistant", content: recap.text },
       ];
       let feedback = "";
@@ -1174,10 +1330,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             system,
             output: Output.object({ schema: sweepActionsSchema }),
             messages: [
-              ...closing,
+              ...recapped,
               {
                 role: "user",
-                content: `(For the app; the learner doesn't see this.) Now the term sweep: ${SWEEP_REQUEST}${feedback}`,
+                content: `(For the app; the learner doesn't see this.) Now the term sweep: ${SWEEP_REQUEST}${final ? FINAL_SWEEP_REQUEST : ""}${feedback}`,
               },
             ],
           }),
@@ -1208,7 +1364,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       // Then "where you left off", from the notes as the sweep left them and the whole session. A
       // failure leaves none rather than one from before this session: prompts then carry the notes.
       try {
-        const closed = await contextFor(sessionId, "close");
+        const { context: closed } = await closeContext(sessionId);
         await writeLeftOff({
           db,
           sessionId,

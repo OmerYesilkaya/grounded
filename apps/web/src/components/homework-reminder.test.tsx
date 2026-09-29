@@ -48,6 +48,8 @@ const withItems = (items: HomeworkItem[]): TrackSummary[] => [
     activeAt: "2026-09-29T00:00:00.000Z",
     items,
     openSession: null,
+    final: "not-yet",
+    finishedIn: null,
     importedLesson: null,
     files: [],
   },

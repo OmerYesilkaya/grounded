@@ -46,6 +46,60 @@ export const probeDecisionSchema = z.object({
     ),
 });
 
+/**
+ * Before each of the final's audit questions after the opening one (design §7.4): what the answers
+ * showed, the new fix-list among it, and whether the audit is done. When it is, the teach-back
+ * follows.
+ */
+export const auditDecisionSchema = z.object({
+  actions: z
+    .array(trackActionSchema)
+    .describe(
+      "Changes to the track the learner's answers showed: term statuses from how they used the terms (with their own words as evidence; a term that didn't hold goes back to taught), and every misconception found as a new fix-list item. Empty if none.",
+    ),
+  finished: z
+    .boolean()
+    .describe(
+      "True when every strand of the subject has been audited, or the learner asked to move on to the teach-back.",
+    ),
+});
+
+/**
+ * After each of the learner's answers in the final's teach-back: what they showed, where the chain
+ * of reasoning broke, and whether it is done. When it is, the close follows.
+ */
+export const teachBackDecisionSchema = z.object({
+  actions: z
+    .array(trackActionSchema)
+    .describe(
+      "Term statuses the learner's explanation showed, with their own words as evidence: a term they rebuilt from what it rests on, under your why and what if, is confirmed. Empty if none.",
+    ),
+  breaks: z
+    .array(
+      z.object({
+        term: z
+          .string()
+          .nullable()
+          .describe("The term the break is in, as the term list spells it; null if none fits."),
+        quote: z
+          .string()
+          .describe(
+            'The learner\'s own words where they had no reason to give ("it just is"), quoted exactly.',
+          ),
+      }),
+    )
+    .describe(
+      "The places in their latest answer where the chain broke: they had to say it just is, or gave no reason when asked why. Only new ones; empty if none.",
+    ),
+  finished: z
+    .boolean()
+    .describe(
+      "True when the learner has rebuilt the subject from its foundations as far as they can, or asked to finish.",
+    ),
+});
+
+export type TeachBackBreak = z.infer<typeof teachBackDecisionSchema>["breaks"][number];
+
 /** After the plan's message: the plan it presented, as edits to the track. */
 export const planActionsSchema = z.object({
   actions: z

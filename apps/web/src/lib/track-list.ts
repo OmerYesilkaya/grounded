@@ -7,6 +7,8 @@ const UNDER_WAY: Record<SessionItem["phase"], string> = {
   plan: "Choosing what comes next",
   lesson: "The lesson is being written",
   homework: "Homework",
+  audit: "The final",
+  "teach-back": "The final",
   close: "Wrapping up",
   closed: "Finished",
 };
@@ -17,6 +19,8 @@ const PHASE: Record<SessionItem["phase"], string> = {
   plan: "planning",
   lesson: "lesson",
   homework: "homework",
+  audit: "fresh audit",
+  "teach-back": "teach-back",
   close: "wrapping up",
   closed: "done",
 };
@@ -26,7 +30,8 @@ const PHASE: Record<SessionItem["phase"], string> = {
  * lesson's title (or, for a lesson outlined before titles, the terms it introduces) over its number
  * and phase; before there is a lesson, what is under way stands in. Homework shows its name over
  * "Homework · session 4" (and "· handed in", or "· folded into session 6"); an arc exam over
- * "Arc exam · session 4" (and "· handed in").
+ * "Arc exam · session 4" (and "· handed in"). The final, which has no lesson, is "The final" over
+ * "Session 7 · final", or what it is at while under way.
  */
 export function describeItem(item: TrackItem): { title: string; meta: string } {
   if (item.kind === "exam")
@@ -46,6 +51,11 @@ export function describeItem(item: TrackItem): { title: string; meta: string } {
       }`,
     };
   const number = `Session ${String(item.number)}`;
+  if (item.final)
+    return {
+      title: "The final",
+      meta: item.done ? `${number} · final` : `${number} · ${PHASE[item.phase]}`,
+    };
   if (item.lessonTitle === null && item.terms.length === 0)
     return { title: UNDER_WAY[item.phase], meta: number };
   const terms = item.terms.join(", ");

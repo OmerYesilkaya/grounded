@@ -60,6 +60,7 @@ const done = (number: number): SessionItem => ({
   phase: "closed",
   terms: [],
   lessonTitle: null,
+  final: false,
 });
 
 const show = () =>

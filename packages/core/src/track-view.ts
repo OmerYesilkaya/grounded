@@ -2,9 +2,10 @@ import type { Phase, PlanArc, TermRow, TermStatus } from "./prompt.js";
 
 /**
  * The phases whose calls record the plan: they see every arc with its terms. The plan's record
- * places its new terms in the arc they belong to (add-to-arc); the close's sweep and the final's
- * audit may replace the whole plan (set-plan). The others see the current arc's terms and every
- * other arc as a tally (design §4.4).
+ * places its new terms in the arc they belong to (add-to-arc); the close's sweep, a final's
+ * included, may replace the whole plan (set-plan); the final's audit and teach-back go over the
+ * whole subject. The others see the current arc's terms and every other arc as a tally (design
+ * §4.4).
  */
 export const WHOLE_PLAN_PHASES: readonly Phase[] = ["plan", "close", "final"];
 

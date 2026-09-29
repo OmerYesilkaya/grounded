@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ActivityLine } from "@/components/activity-line";
+import { FinalParts } from "@/components/final-chat";
 import { PageBar } from "@/components/page-bar";
 import { ContentProvider } from "@/content/environment";
 import { BuiltPicture } from "@/components/session-pictures";
@@ -87,24 +88,29 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           )
         }
       >
-        <div className="flex gap-0.5 rounded-lg border bg-card p-0.5">
-          {(["chat", "lesson"] as const).map((t) => (
-            <button
-              key={t}
-              type="button"
-              disabled={t === "lesson" && !hasLesson}
-              onClick={() => {
-                setTab(t);
-              }}
-              className={cn(
-                "touch-target relative rounded-md px-4 py-1 text-[13px] text-muted-foreground capitalize disabled:opacity-40 pointer-coarse:py-1.5",
-                tab === t && "bg-muted text-foreground",
-              )}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+        {model.state.kind === "final" ? (
+          // A final has no lesson: its bar shows where it stands instead (design §7.4).
+          <FinalParts phase={model.state.phase} />
+        ) : (
+          <div className="flex gap-0.5 rounded-lg border bg-card p-0.5">
+            {(["chat", "lesson"] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                disabled={t === "lesson" && !hasLesson}
+                onClick={() => {
+                  setTab(t);
+                }}
+                className={cn(
+                  "touch-target relative rounded-md px-4 py-1 text-[13px] text-muted-foreground capitalize disabled:opacity-40 pointer-coarse:py-1.5",
+                  tab === t && "bg-muted text-foreground",
+                )}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+        )}
       </PageBar>
       {tab === "chat" || (!model.lesson && !lessonFailed) ? (
         <ChatView

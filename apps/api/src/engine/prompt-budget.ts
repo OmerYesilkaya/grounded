@@ -1,6 +1,6 @@
 import type { Phase } from "@grounded/core";
 
-/** The phases the session's jobs run today; the final and profile refreshes have none yet. */
+/** The phases the session's jobs run today; profile refreshes have none yet. */
 export type BudgetedPhase = Extract<
   Phase,
   "review" | "probe" | "plan" | "lesson" | "check" | "homework" | "close" | "aside"
@@ -25,8 +25,15 @@ export type BudgetedPhase = Extract<
  * - exam: the arc exam (#42), written in the homework's phase after the homework: its prompt, the
  *   homework's message, and the arc it covers whole, each term with what it rests on and the
  *   sessions that taught it: ~13,200 on the large track, whose arcs have 17 terms.
+ * - final: a turn of the final's audit or teach-back (#43), each with its decision: the final's
+ *   method (the probe's, the close's and the final's own sections), the whole plan and a normal
+ *   chat: ~16,300.
+ * - final-close: the final's recap, sweep and "where you left off": the same, with the notes as
+ *   written and the two fix-lists: ~24,900.
  */
-export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase | "wording-review" | "exam", number>> = {
+export const PROMPT_BUDGETS: Readonly<
+  Record<BudgetedPhase | "wording-review" | "exam" | "final" | "final-close", number>
+> = {
   review: 15_000,
   probe: 12_000,
   plan: 20_000,
@@ -37,6 +44,8 @@ export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase | "wording-review" | 
   aside: 16_000,
   "wording-review": 7_000,
   exam: 16_000,
+  final: 20_000,
+  "final-close": 30_000,
 };
 
 /** A rough count of tokens: about four characters each for English prose and markdown. */

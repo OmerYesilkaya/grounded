@@ -1,5 +1,11 @@
-import type { SessionPhase, TaskForm } from "@grounded/core";
 import {
+  finalStanding,
+  type FinalStanding,
+  type SessionPhase,
+  type TaskForm,
+} from "@grounded/core";
+import {
+  and,
   asc,
   assignments,
   eq,
@@ -8,6 +14,7 @@ import {
   learningSessions,
   lessons,
   submissions,
+  terms,
   tracks,
   type Db,
 } from "@grounded/db";
@@ -37,6 +44,8 @@ export interface SessionItem extends ItemBase {
   terms: string[];
   /** The lesson's title; null before it is outlined (or outlined before lessons had titles). */
   lessonTitle: string | null;
+  /** The track's final (design §7.4): no lesson, so its row names it. */
+  final: boolean;
 }
 
 /**
@@ -85,6 +94,10 @@ export interface TrackSummary {
   activeAt: string;
   items: TrackItem[];
   openSession: { id: string; phase: SessionPhase } | null;
+  /** Where the track stands towards its final (design §7.4): offered, finished… */
+  final: FinalStanding;
+  /** The final that finished the track, while it is finished. */
+  finishedIn: string | null;
   importedLesson: { title: string } | null;
   files: { id: string; name: string; kind: string; sizeBytes: number }[];
 }
@@ -102,6 +115,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       id: learningSessions.id,
       trackId: learningSessions.trackId,
       state: learningSessions.state,
+      kind: learningSessions.kind,
       closedAt: learningSessions.closedAt,
       updatedAt: learningSessions.updatedAt,
       outline: lessons.outline,
@@ -117,6 +131,13 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
         .where(inArray(importedLessons.trackId, ids))
     : [];
   const attached = await filesOf(db, ids);
+  // What keeps each track's plan from being taught through (design §7.4).
+  const planned = ids.length
+    ? await db
+        .select({ trackId: terms.trackId, term: terms.term })
+        .from(terms)
+        .where(and(inArray(terms.trackId, ids), eq(terms.status, "planned")))
+    : [];
   const assigned = await db
     .select({
       id: assignments.id,
@@ -161,6 +182,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
         phase: s.state.phase,
         terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
         lessonTitle: s.outline?.title ?? null,
+        final: s.kind === "final",
         done: s.closedAt !== null,
         activeAt: s.updatedAt.toISOString(),
       },
@@ -193,6 +215,13 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
     ]);
     const open = items.find((item): item is SessionItem => item.kind === "session" && !item.done);
     const lesson = imported.find((l) => l.trackId === track.id);
+    const latest = trackSessions.at(-1);
+    const final = finalStanding({
+      arcs: track.plan.arcs,
+      planned: planned.filter((p) => p.trackId === track.id).map((p) => p.term),
+      examsOpen: items.filter((item) => item.kind === "exam" && !item.done).length,
+      latest: latest ? { final: latest.kind === "final", closed: latest.closedAt !== null } : null,
+    });
     const activeAt = [track.updatedAt.toISOString(), ...items.map((i) => i.activeAt), ...dueTimes]
       .sort()
       .at(-1);
@@ -204,6 +233,8 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       activeAt: activeAt ?? track.updatedAt.toISOString(),
       items,
       openSession: open ? { id: open.id, phase: open.phase } : null,
+      final,
+      finishedIn: final === "finished" ? (latest?.id ?? null) : null,
       importedLesson: lesson ? { title: lesson.title } : null,
       files: attached.get(track.id) ?? [],
     };

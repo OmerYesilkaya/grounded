@@ -11,8 +11,11 @@ import { followSession, type StreamEvent } from "./session-stream";
 export interface ChatMessage {
   id: string;
   role: "learner" | "tutor";
-  /** `review`: the opening review's, the learner's answers included. */
-  kind: "review" | "message" | "plan" | "homework" | "exam" | "recap";
+  /**
+   * `review`: the opening review's, the learner's answers included; `audit` and `teach-back`:
+   * the final's two parts', the same way.
+   */
+  kind: "review" | "message" | "plan" | "homework" | "exam" | "audit" | "teach-back" | "recap";
   text: string | null;
   blocks: Block[] | null;
   /** Still arriving: `text` grows until the message is done. */

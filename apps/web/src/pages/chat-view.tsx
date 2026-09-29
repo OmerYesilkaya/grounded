@@ -5,14 +5,17 @@ import { Fragment, useLayoutEffect, useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
 import { HomeworkFooter } from "@/components/homework-footer";
-import { ReviewDone, ReviewHeading } from "@/components/opening-review";
+import { FinalIntro } from "@/components/final-chat";
+import { FinalOutcomeCard } from "@/components/final-outcome";
+import { NextSession } from "@/components/next-session";
+import { ChatRule, ReviewDone, ReviewHeading } from "@/components/opening-review";
 import { PlanPicture } from "@/components/session-pictures";
-import { ExamOpenWarning, useStartSession } from "@/components/start-session";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
+import { useTracks } from "@/lib/tracks";
 import { useStickToBottom } from "@/lib/stick-to-bottom";
 import { cn } from "@/lib/utils";
 import { useVisibleViewport } from "@/lib/visible-viewport";
@@ -61,7 +64,22 @@ function TutorMessage({ message, footer }: { message: ChatMessage; footer?: Reac
   );
 }
 
-/** The session chat: probe, plan, homework and recap (design §7.1). */
+/** Where each of the final's parts begins in its chat (design §7.4). */
+const PART_RULE: Partial<Record<ChatMessage["kind"], string>> = {
+  audit: "The fresh audit",
+  "teach-back": "The teach-back",
+};
+
+/** The composer's hint in each phase the learner answers in. */
+const PLACEHOLDER: Partial<Record<SessionModel["state"]["phase"], string>> = {
+  review: "Answer in your own words; “I don't know” is fine.",
+  probe: "Answer in your own words; “I don't know” is fine.",
+  audit: "Answer in your own words; “I don't know” is fine.",
+  "teach-back": "In your own words; “I don't know why” is fine too.",
+  plan: "Reply to change the plan…",
+};
+
+/** The session chat: probe, plan, homework and recap; the final's parts (design §7.1, §7.4). */
 export function ChatView({
   model,
   onOpenLesson,
@@ -97,7 +115,8 @@ export function ChatView({
   const approve = useMutation({
     mutationFn: () => api(`/api/sessions/${model.id}/approve-plan`, { method: "POST" }),
   });
-  const next = useStartSession(model.trackId);
+  const track = useTracks().data?.find((t) => t.id === model.trackId);
+  const final = model.state.kind === "final";
 
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
@@ -106,14 +125,12 @@ export function ChatView({
   const { keyboard } = useVisibleViewport();
   const stick = useStickToBottom({ content, overlay: bar });
 
-  // The opening review is answered in the chat like the probe (design §7.1).
-  const talking = phase === "review" || phase === "probe";
+  // The opening review and the final's parts are answered in the chat like the probe (design
+  // §7.1, §7.4).
+  const talking =
+    phase === "review" || phase === "probe" || phase === "audit" || phase === "teach-back";
   const canWrite = (talking || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
-  const placeholder = talking
-    ? "Answer in your own words; “I don't know” is fine."
-    : phase === "plan"
-      ? "Reply to change the plan…"
-      : "";
+  const placeholder = PLACEHOLDER[phase] ?? "";
 
   return (
     <div
@@ -122,6 +139,7 @@ export function ChatView({
       style={{ paddingBottom: `${String(barHeight + 40)}px` }}
     >
       <div className="flex flex-col gap-5">
+        {final && <FinalIntro />}
         {/* The review's first message may wait for the review of work just handed in. */}
         {phase === "review" && model.messages.length === 0 && (
           <ReviewHeading takenUp={model.takenUp} />
@@ -133,7 +151,10 @@ export function ChatView({
               {m.kind === "review" && before?.kind !== "review" && (
                 <ReviewHeading takenUp={model.takenUp} />
               )}
-              {before?.kind === "review" && m.kind !== "review" && <ReviewDone />}
+              {before?.kind === "review" && m.kind !== "review" && !final && <ReviewDone />}
+              {PART_RULE[m.kind] && before?.kind !== m.kind && (
+                <ChatRule label={PART_RULE[m.kind] ?? ""} />
+              )}
               <Message
                 message={m}
                 footer={
@@ -173,23 +194,25 @@ export function ChatView({
             </Button>
           </div>
         )}
-        {phase === "closed" && (
+        {/* The end of the track: what its final found (design §7.4). */}
+        {phase === "closed" && final && (
+          <FinalOutcomeCard
+            sessionId={model.id}
+            footer={
+              track &&
+              !track.openSession && (
+                <NextSession track={track} lead="A next session takes up what the final found." />
+              )
+            }
+          />
+        )}
+        {phase === "closed" && !final && track && !track.openSession && (
           <div className="border-t pt-5">
-            {next.examOpen ? (
-              <ExamOpenWarning
-                exam={next.examOpen}
-                pending={next.pending}
-                onStartAnyway={next.start}
-              />
-            ) : (
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">This session is done.</span>
-                <Button size="sm" disabled={next.pending} onClick={next.start}>
-                  Start the next session
-                </Button>
-              </div>
-            )}
-            {next.error && <p className="mt-3 text-sm text-destructive">{next.error}</p>}
+            <NextSession
+              track={track}
+              lead="This session is done."
+              label="Start the next session"
+            />
           </div>
         )}
         {stuck ? (

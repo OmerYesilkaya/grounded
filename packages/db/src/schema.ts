@@ -25,6 +25,7 @@ import type {
   ReviewAnchor,
   SessionState,
   StoredLessonOutline,
+  TeachBackBreak,
 } from "@grounded/core";
 import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
@@ -357,6 +358,11 @@ export const learningSessions = pgTable(
      */
     reviewSummary: text("review_summary"),
     /**
+     * The final's teach-back (design §7.4): each place the chain of reasoning broke, as its
+     * decisions marked them, in the learner's words. Empty in a normal session.
+     */
+    teachBackBreaks: jsonb("teach_back_breaks").$type<TeachBackBreak[]>().notNull().default([]),
+    /**
      * A long session's older turns, summarized (design §4.4): prompts carry this in place of the
      * session's messages up to and including `summarized_through`, and the rest in full. Null
      * until the conversation first grows past the limit.
@@ -376,8 +382,9 @@ export const learningSessions = pgTable(
 );
 
 /**
- * The session chat: the opening review, probe, plan, homework (and an arc exam) and recap. The
- * review's messages, the learner's answers included, are of kind `review`.
+ * The session chat: the opening review, probe, plan, homework (and an arc exam) and recap; in the
+ * final, the audit and the teach-back. The review's messages, the learner's answers included, are
+ * of kind `review`, and so the audit's and the teach-back's are of theirs.
  */
 export const sessionMessages = pgTable("session_messages", {
   id: id(),
@@ -389,7 +396,7 @@ export const sessionMessages = pgTable("session_messages", {
   text: text("text"),
   blocks: jsonb("blocks").$type<Block[]>(),
   kind: text("kind")
-    .$type<"review" | "message" | "plan" | "homework" | "exam" | "recap">()
+    .$type<"review" | "message" | "plan" | "homework" | "exam" | "audit" | "teach-back" | "recap">()
     .notNull()
     .default("message"),
   /**

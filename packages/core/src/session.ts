@@ -1,4 +1,9 @@
-export type SessionPhase = "review" | "probe" | "plan" | "lesson" | "homework" | "close" | "closed";
+/**
+ * A session's phases (design §7.1): review → probe → plan → lesson → homework → close. The final
+ * (§7.4) has its own two between the review and the close: the fresh audit, then the teach-back.
+ */
+export type SessionPhase =
+  "review" | "probe" | "plan" | "lesson" | "homework" | "audit" | "teach-back" | "close" | "closed";
 
 /**
  * open: waiting for an answer · passed · settling: continued past while shaky · paused ·
@@ -34,6 +39,8 @@ export interface LessonStepInfo {
 }
 
 export interface SessionState {
+  /** The track's final (design §7.4): no plan, lesson or homework. Missing on a normal session. */
+  kind?: "final";
   phase: SessionPhase;
   plan: "none" | "proposed" | "revising" | "approved";
   lesson: { status: "none" | "generating" | "ready" | "failed"; steps: LessonStepInfo[] };
@@ -50,8 +57,15 @@ export interface SessionState {
 
 export type SessionEvent =
   | { type: "learner-message" }
-  /** The opening review has taken up what came up since the last session: the probe follows. */
+  /**
+   * The opening review has taken up what came up since the last session: the probe follows, or in
+   * the final its audit.
+   */
   | { type: "review-done" }
+  /** The final's fresh audit is done: the teach-back follows. */
+  | { type: "audit-done" }
+  /** The final's teach-back is done: its close follows. */
+  | { type: "teach-back-done" }
   | { type: "probe-done" }
   | { type: "skip-to-plan" }
   | { type: "plan-proposed" }
@@ -82,11 +96,13 @@ export type SessionEvent =
 export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
 
 /** The jobs a session can wait on that the learner can't set going again by writing. */
-export type AwaitedJob = "opening-review" | "probe-turn" | "plan" | "homework" | "review" | "recap";
+export type AwaitedJob =
+  "opening-review" | "probe-turn" | "final-turn" | "plan" | "homework" | "review" | "recap";
 
 /**
  * The job the session is waiting on, when the learner can't move it on themselves (design §4.2):
- * the opening review's or the probe's next turn (its first message, or after the learner's answer),
+ * the opening review's, the probe's or the final's next turn (its first message, or after the
+ * learner's answer),
  * a plan being written or revised, the homework being written or reviewed, the recap. Null when it
  * is the learner's turn (an assigned homework is theirs to hand in or put off), and in the lesson,
  * whose jobs are set going again by answering a check or by writing the lesson again.
@@ -100,6 +116,9 @@ export function awaitedJob(
       return lastMessage === "tutor" ? null : "opening-review";
     case "probe":
       return lastMessage === "tutor" ? null : "probe-turn";
+    case "audit":
+    case "teach-back":
+      return lastMessage === "tutor" ? null : "final-turn";
     case "plan":
       return state.plan === "none" || state.plan === "revising" ? "plan" : null;
     case "homework":
@@ -126,6 +145,17 @@ export function initialSession(opening: "review" | "probe" = "probe"): SessionSt
   };
 }
 
+/**
+ * The track's final (design §7.4): it opens with the review when something came up since the last
+ * session, and with the fresh audit otherwise.
+ */
+export function initialFinal(review: boolean): SessionState {
+  return { ...initialSession(), kind: "final", phase: review ? "review" : "audit" };
+}
+
+/** The phases the learner answers in the chat, a message at a time. */
+const TALKING: readonly SessionPhase[] = ["review", "probe", "audit", "teach-back"];
+
 const MISSES_BEFORE_GATE = 2;
 
 /** Whether the lesson can go past this step: its check landed or was continued past, or it has none. */
@@ -146,16 +176,26 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
   switch (event.type) {
     case "learner-message":
-      if (state.phase === "review" || state.phase === "probe") return ok({});
+      if (TALKING.includes(state.phase)) return ok({});
       if (state.phase === "plan") return ok({ plan: state.plan === "none" ? "none" : "revising" });
       if (state.phase === "lesson") return no("Questions during the lesson go in the margin.");
       return no("The session isn't taking messages now.");
 
     case "review-done":
-      return state.phase === "review" ? ok({ phase: "probe" }) : no("No review is under way.");
+      if (state.phase !== "review") return no("No review is under way.");
+      return ok({ phase: state.kind === "final" ? "audit" : "probe" });
+
+    case "audit-done":
+      return state.phase === "audit" ? ok({ phase: "teach-back" }) : no("No audit is under way.");
+
+    case "teach-back-done":
+      return state.phase === "teach-back"
+        ? ok({ phase: "close" })
+        : no("No teach-back is under way.");
 
     case "probe-done":
     case "skip-to-plan":
+      if (state.kind === "final") return no("The final has no plan.");
       if (state.phase === "review") return no("The review comes before the probe.");
       return state.phase === "probe" ? ok({ phase: "plan" }) : no("The probe is already over.");
 
@@ -281,9 +321,12 @@ export function transition(state: SessionState, event: SessionEvent): Transition
         : no("There is no homework to hand in yet.");
 
     case "recap-done":
-      return state.phase === "close"
-        ? ok({ phase: "closed" })
-        : no("The recap comes after the homework.");
+      if (state.phase === "close") return ok({ phase: "closed" });
+      return no(
+        state.kind === "final"
+          ? "The recap comes after the teach-back."
+          : "The recap comes after the homework.",
+      );
   }
 }
 

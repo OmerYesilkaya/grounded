@@ -26,6 +26,9 @@ import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { batcher, publish, startActivity, withActivity, type Activity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
+/** What a chat message is: the review's, the probe's, the plan, the homework, the final's parts… */
+export type MessageKind = (typeof sessionMessages.$inferSelect)["kind"];
+
 /** Attempts at getting a reply with any text in it (the message, or its rewrite). */
 const TEXT_ATTEMPTS = 3;
 
@@ -35,7 +38,7 @@ export interface ChatMessageOptions {
   model: LanguageModelV4;
   system: Instructions;
   messages: ModelMessage[];
-  kind: "review" | "message" | "plan" | "homework" | "exam" | "recap";
+  kind: MessageKind;
   terms: readonly TrackTerm[];
   surface?: Surface;
   /** Where the message's links are verified before it is stored (design §6.4). */
@@ -262,7 +265,7 @@ async function rewritten(
 interface MessageMark {
   id: string;
   role: "learner" | "tutor";
-  kind: "review" | "message" | "plan" | "homework" | "exam" | "recap";
+  kind: MessageKind;
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { LanguageModelV4Prompt } from "@ai-sdk/provider";
-import { initialSession, loadMethod, type SessionState } from "@grounded/core";
+import { initialFinal, initialSession, loadMethod, type SessionState } from "@grounded/core";
 import {
   and,
   assignments,
@@ -9,6 +9,7 @@ import {
   isNotNull,
   learningSessions,
   lessons,
+  notInArray,
   reviewComments,
   reviewMessages,
   reviews,
@@ -494,6 +495,90 @@ describe("prompt budgets on a large track", () => {
     });
     await run("probe-turn", { sessionId });
     expect(withinBudgets()).toEqual(["probe-decision", "probe", "wording-review"]);
+  });
+
+  it("keeps the final's calls within budget: the whole plan, and in its close the notes", async () => {
+    const { sessionId } = await createLargeTrack(t.db, {
+      conversation: CONVERSATION,
+      leftOff: LEFT_OFF,
+    });
+    await t.db
+      .update(learningSessions)
+      .set({ kind: "final" })
+      .where(eq(learningSessions.id, sessionId));
+    const messages = await t.db
+      .select({ id: sessionMessages.id })
+      .from(sessionMessages)
+      .where(eq(sessionMessages.sessionId, sessionId))
+      .orderBy(sessionMessages.createdAt, sessionMessages.id);
+    // A normal chat's length for the final's two parts: the audit's answers, short of its most, then
+    // the teach-back's. Each part's turn is measured on its own, with what the one before wrote gone.
+    const inParts = async (audit: number) => {
+      await t.db.delete(sessionMessages).where(
+        and(
+          eq(sessionMessages.sessionId, sessionId),
+          notInArray(
+            sessionMessages.id,
+            messages.map((m) => m.id),
+          ),
+        ),
+      );
+      for (const [i, { id }] of messages.entries())
+        await t.db
+          .update(sessionMessages)
+          .set({ kind: i < audit ? "audit" : "teach-back" })
+          .where(eq(sessionMessages.id, id));
+    };
+    const final = initialFinal(false);
+    const inPhase = (phase: SessionState["phase"]) =>
+      t.db
+        .update(learningSessions)
+        .set({ state: { ...final, phase } })
+        .where(eq(learningSessions.id, sessionId));
+
+    await inParts(messages.length);
+    // The audit takes at most 12 answers, and the conversation has 12: its last exchange goes.
+    for (const { id } of messages.splice(-2))
+      await t.db.delete(sessionMessages).where(eq(sessionMessages.id, id));
+    await inPhase("audit");
+    models.script("audit-decision", {
+      thenGenerate: [JSON.stringify({ actions: [], finished: false })],
+    });
+    models.script("audit", { text: "What does the read see meanwhile?" });
+    await run("final-turn", { sessionId });
+
+    await inParts(messages.length / 2);
+    await inPhase("teach-back");
+    models.script("teach-back-decision", {
+      thenGenerate: [JSON.stringify({ actions: [], breaks: [], finished: false })],
+    });
+    models.script("teach-back", { text: "Why does it wait?" });
+    await run("final-turn", { sessionId });
+
+    await inPhase("close");
+    models.script("close", { text: "Here is where it held." });
+    models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
+    models.script("left-off", { text: LEFT_OFF });
+    await run("recap", { sessionId });
+
+    const sizes = promptSizes();
+    for (const { purpose, chars } of sizes) {
+      const closing = ["close", "term-sweep", "left-off"].includes(purpose);
+      expect(estimateTokens(chars), purpose).toBeLessThanOrEqual(
+        PROMPT_BUDGETS[closing ? "final-close" : "final"],
+      );
+    }
+    expect(new Set(sizes.map((s) => s.purpose))).toEqual(
+      new Set([
+        "audit-decision",
+        "audit",
+        "teach-back-decision",
+        "teach-back",
+        "close",
+        "term-sweep",
+        "left-off",
+      ]),
+    );
   });
 
   it("keeps a just-imported track's opening within budget, its notes read whole only once", async () => {

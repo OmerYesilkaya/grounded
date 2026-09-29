@@ -54,7 +54,8 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
  * provider's default. Set through the AI SDK's provider-neutral `reasoning` option, which each
  * provider maps to its own: OpenAI's reasoning effort, Anthropic's thinking effort (or a thinking
  * budget on older models), Gemini's thinking level or budget.
- * - probe-decision, opening-review-decision, term-sweep, aside-record, review-record: small
+ * - probe-decision, opening-review-decision, audit-decision, teach-back-decision, term-sweep,
+ *   aside-record, review-record: small
  *   structured records of what the conversation already showed. The thinking happened in the
  *   conversation; a long think here only delays the learner's next message (the probe's decision
  *   spent up to 2,400 tokens reasoning; #13).
@@ -68,6 +69,8 @@ export const REASONING: Readonly<
 > = {
   "opening-review-decision": "low",
   "probe-decision": "low",
+  "audit-decision": "low",
+  "teach-back-decision": "low",
   "term-sweep": "low",
   "aside-record": "low",
   "review-record": "low",

@@ -660,7 +660,12 @@ export interface TrackContext
 export async function loadTrackContext(
   db: Db,
   trackId: string,
-  options: { sessionId?: string; phase?: Phase } = {},
+  options: {
+    sessionId?: string;
+    phase?: Phase;
+    /** The plan's notes as written, whatever the phase: the final's close, whose sweep edits them. */
+    notes?: boolean;
+  } = {},
 ): Promise<TrackContext> {
   const [track] = await db.select().from(tracks).where(eq(tracks.id, trackId));
   if (!track) throw new Error(`track ${trackId} not found`);
@@ -821,7 +826,9 @@ export async function loadTrackContext(
   // Until the first close writes "where you left off", the notes as written (session-tasks.ts
   // writes one first when they are long).
   const notes =
-    (phase !== undefined && NOTES_PHASES.includes(phase)) || track.leftOff === null
+    options.notes === true ||
+    (phase !== undefined && NOTES_PHASES.includes(phase)) ||
+    track.leftOff === null
       ? { notes: track.plan.notes }
       : { leftOff: track.leftOff };
   // The plan may borrow what the learner holds in their other tracks instead of teaching it (#54).

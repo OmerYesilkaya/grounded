@@ -58,6 +58,7 @@ const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem
   done: true,
   terms: [],
   lessonTitle: null,
+  final: false,
   activeAt: "2026-09-29T00:00:00.000Z",
   ...fields,
 });
@@ -72,6 +73,8 @@ const track = (id: string, title: string, items: SessionItem[] = []): TrackSumma
     activeAt: "2026-09-29T00:00:00.000Z",
     items,
     openSession: open ? { id: open.id, phase: open.phase } : null,
+    final: "not-yet",
+    finishedIn: null,
     importedLesson: null,
     files: [],
   };

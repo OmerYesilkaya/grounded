@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { Check, ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { tagOf, useNow } from "@/lib/snooze";
 import { describeItem } from "@/lib/track-list";
@@ -60,15 +60,29 @@ export function TrackGroup(props: {
         >
           {track.title}
         </Link>
-        {/* What is waiting, while the items aren't shown; the menu takes its place on hover. */}
-        {!expanded && waiting > 0 && (
+        {/* What is waiting, while the items aren't shown; the menu takes its place on hover. With
+            nothing open, the final offered, or the track finished (design §9.2). */}
+        {!expanded && (waiting > 0 || track.final === "ready" || track.final === "finished") && (
           <span
             className={cn(
-              "shrink-0 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden group-has-data-[state=open]/track:hidden",
-              due > 0 && "font-medium text-primary",
+              "flex shrink-0 items-center gap-1 pr-2 text-[11px] text-subtle-foreground group-focus-within/track:hidden group-hover/track:hidden group-has-data-[state=open]/track:hidden",
+              (due > 0 || (waiting === 0 && track.final === "ready")) && "font-medium text-primary",
             )}
           >
-            {due > 0 ? `${String(due)} due` : `${String(waiting)} open`}
+            {waiting > 0 ? (
+              due > 0 ? (
+                `${String(due)} due`
+              ) : (
+                `${String(waiting)} open`
+              )
+            ) : track.final === "ready" ? (
+              "final ready"
+            ) : (
+              <>
+                <Check className="size-3 text-success" aria-hidden />
+                finished
+              </>
+            )}
           </span>
         )}
         {props.actions}

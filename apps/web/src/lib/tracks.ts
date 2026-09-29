@@ -1,5 +1,5 @@
 import type { AttachmentKind } from "@grounded/core/attachments";
-import type { SessionPhase, TaskForm } from "@grounded/core";
+import type { FinalStanding, SessionPhase, TaskForm } from "@grounded/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -15,6 +15,10 @@ export interface TrackSummary {
   /** What is inside the track, oldest first (design §9.2). */
   items: TrackItem[];
   openSession: { id: string; phase: SessionPhase } | null;
+  /** Where the track stands towards its final (design §7.4): offered, finished… */
+  final: FinalStanding;
+  /** The final that finished the track, while it is finished. */
+  finishedIn: string | null;
   /** The last lesson imported from the learner's earlier setup, if any. */
   importedLesson: { title: string } | null;
   /** The files attached when the track was created (design §4.5). */
@@ -39,6 +43,8 @@ export interface SessionItem {
   terms: string[];
   /** The lesson's title; null until it is outlined (and for a lesson outlined before titles). */
   lessonTitle: string | null;
+  /** The track's final (design §7.4), which has no lesson. */
+  final: boolean;
 }
 
 /**

@@ -153,10 +153,50 @@ export function createDemoModels(): ModelAccess {
           }),
         ],
       ),
-    close: () =>
+    // The first session's recap; after it, the final's (the demo's plan is one session long).
+    close: (n) =>
       model(
-        "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update.",
+        n === 1
+          ? "We started from memory holding one value at a time, saw that adding one is really three moves, and that two workers' moves can interleave and lose an update."
+          : "When you started, you thought adding one was a single step; that is gone, and you rebuilt the three moves and the lost update from memory holding one value at a time. One new thing came up: you expect a lock to make the work itself faster, when all it does is make one worker wait for the other.\n\nThe chain broke once. You said the arithmetic part needs a copy because *that's how computers work*; what it rests on is that the part doing the arithmetic can only work on values it holds, not on memory where they sit. That link, and the lock, are what a next session would take up.",
       ),
+    // The final (design §7.4): two audit questions, the second answer ending the audit, then a
+    // teach-back of three turns whose second answer breaks the chain.
+    audit: (n) =>
+      model(
+        n === 1
+          ? "To start: a program adds one to a number in memory. In your own words, what actually happens?"
+          : "Two workers share a counter, and someone suggests putting a lock around the addition. What does the lock change, and what does it cost?",
+      ),
+    "audit-decision": (n) =>
+      model("", [
+        JSON.stringify({
+          actions:
+            n === 2
+              ? [{ type: "add-fix-item", text: "Expects a lock to make the work itself faster" }]
+              : [],
+          finished: n % 2 === 0,
+        }),
+      ]),
+    "teach-back": (n) =>
+      model(
+        [
+          "Thanks. Now the teach-back: rebuild the whole thing for me from its foundations, in your own words, as if I wasn't there. Start wherever you think it starts; I'll keep asking why, and what if.",
+          "Why can't the part doing the arithmetic just change the number where it sits?",
+          "And what if the two workers ran on a single core, taking turns: could an update still be lost?",
+        ][(n - 1) % 3] ?? "",
+      ),
+    "teach-back-decision": (n) =>
+      model("", [
+        JSON.stringify({
+          actions: [],
+          breaks:
+            n % 3 === 2
+              ? [{ term: "working copy", quote: "because that's how computers work, it just is" }]
+              : [],
+          finished: n % 3 === 0,
+        }),
+      ]),
     // Every second question in the margin opens a tangent, which the card offers to save.
     aside: (n) =>
       model(
@@ -237,17 +277,22 @@ export function createDemoModels(): ModelAccess {
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
     "wording-review": () => model("", [JSON.stringify({ flagged: [], jargon: [] })]),
-    "term-sweep": () =>
+    // The first session confirms the working copy; the final's closes the fix-list item its audit
+    // found no trace of, and leaves the teach-back's break as it left it.
+    "term-sweep": (n) =>
       model("", [
         JSON.stringify({
-          actions: [
-            {
-              type: "set-term-status",
-              term: "working copy",
-              status: "confirmed",
-              evidence: "memory still holds the old value",
-            },
-          ],
+          actions:
+            n > 1
+              ? [{ type: "close-fix-item", text: "Thinks adding one is a single step" }]
+              : [
+                  {
+                    type: "set-term-status",
+                    term: "working copy",
+                    status: "confirmed",
+                    evidence: "memory still holds the old value",
+                  },
+                ],
         }),
       ]),
   };
