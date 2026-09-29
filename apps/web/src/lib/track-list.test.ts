@@ -9,6 +9,7 @@ const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem
   phase: "closed",
   done: true,
   terms: [],
+  lessonTitle: null,
   activeAt: "2026-09-29T00:00:00.000Z",
   ...fields,
 });
@@ -38,6 +39,19 @@ describe("an item's row", () => {
     });
   });
 
+  it("says the lesson's title where it has one, over its number and phase", () => {
+    expect(
+      describeItem(
+        session(4, {
+          done: false,
+          phase: "lesson",
+          terms: ["working copy", "lost update"],
+          lessonTitle: "Why two writers lose an update",
+        }),
+      ),
+    ).toEqual({ title: "Why two writers lose an update", meta: "Session 4 · lesson" });
+  });
+
   it("says what is under way before there is a lesson", () => {
     expect(describeItem(session(1, { done: false, phase: "probe" }))).toEqual({
       title: "Finding where you start",
@@ -52,7 +66,10 @@ describe("searching the track list", () => {
       session(1, { terms: ["bit", "byte"] }),
       session(2, { terms: ["memory address", "pointer"] }),
     ]),
-    track("sql", "SQL", [session(1, { terms: ["join"] }), session(2, { terms: ["index"] })]),
+    track("sql", "SQL", [
+      session(1, { terms: ["join"], lessonTitle: "Asking two tables at once" }),
+      session(2, { terms: ["index"] }),
+    ]),
     track("eg", "Antik Mısır Tarihi"),
   ];
   const ids = (query: string) =>
@@ -64,6 +81,9 @@ describe("searching the track list", () => {
   it("finds a track whole by its name, and otherwise by the lessons that match", () => {
     expect(ids("software")).toEqual([["sw", "all"]]);
     expect(ids("pointer")).toEqual([["sw", ["s2"]]]);
+    // By its title, and by the terms a titled lesson teaches.
+    expect(ids("two tables")).toEqual([["sql", ["s1"]]]);
+    expect(ids("join")).toEqual([["sql", ["s1"]]]);
     expect(ids("  ")).toEqual([
       ["sw", "all"],
       ["sql", "all"],

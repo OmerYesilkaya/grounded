@@ -14,7 +14,12 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { Block, LessonStep } from "@grounded/content";
-import type { AsideAnchor, AttachmentKind, LessonOutline, SessionState } from "@grounded/core";
+import type {
+  AsideAnchor,
+  AttachmentKind,
+  SessionState,
+  StoredLessonOutline,
+} from "@grounded/core";
 import type { SealedSecret } from "@grounded/crypto";
 import { v7 as uuidv7 } from "uuid";
 
@@ -380,7 +385,7 @@ export const lessons = pgTable("lessons", {
   sessionId: uuid("session_id")
     .primaryKey()
     .references(() => learningSessions.id, { onDelete: "cascade" }),
-  outline: jsonb("outline").$type<LessonOutline>(),
+  outline: jsonb("outline").$type<StoredLessonOutline>(),
   steps: jsonb("steps").$type<LessonStep[]>().notNull().default([]),
   failedSteps: jsonb("failed_steps")
     .$type<{ stepId: string; heading: string }[]>()

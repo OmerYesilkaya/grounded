@@ -18,6 +18,7 @@ beforeEach(() => {
 
 // Each step rests on the one before it, so each ends with a check.
 const OUTLINE = {
+  title: "Why two writers lose an update",
   steps: [
     {
       heading: "Adding one is three moves",
@@ -156,7 +157,7 @@ describe("a lesson that failed", () => {
     const { cookie, sessionId } = await planned();
     // Three outlines that rest on "lost update" before any step introduces it.
     const [first] = OUTLINE.steps;
-    const early = JSON.stringify({ steps: [{ ...first, restsOn: ["lost update"] }] });
+    const early = JSON.stringify({ ...OUTLINE, steps: [{ ...first, restsOn: ["lost update"] }] });
     models.script("lesson", { thenGenerate: [early, early, early] });
     await post(cookie, sessionId, "approve-plan");
     await until(cookie, sessionId, (s) => s.state.lesson.status === "failed");

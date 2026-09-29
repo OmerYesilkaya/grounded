@@ -50,6 +50,7 @@ const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem
   phase: "closed",
   done: true,
   terms: [],
+  lessonTitle: null,
   activeAt: "2026-09-29T00:00:00.000Z",
   ...fields,
 });

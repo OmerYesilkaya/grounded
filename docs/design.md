@@ -727,7 +727,8 @@ given to the plan's calls, research included; when the learner skips ahead to th
 
 ### 7.2 Lesson generation pipeline
 
-1. **Research + outline** (search on): steps, the motivation for each, the terms each introduces and
+1. **Research + outline** (search on): the lesson's title (the idea it builds, as a tutor would name
+   it; the track list shows it, §9.2), steps, the motivation for each, the terms each introduces and
    rests on, the drawings needed. Validated against the term list before any writing (`fitOutline`),
    and written in the term list's spelling. The app then places the checks from what each step rests
    on (`placeChecks`, §7.3), and the writing prompt says which steps end with one and what it covers.
@@ -960,10 +961,11 @@ and marked the current track with bolder text):
   left edge), indented to the name, in sans: session, homework, arc exam, oldest first. So the parent
   and its children differ in typeface, size, indent and the thread, never in weight.
 - **An item row says what the item is about**, over a small-caps line saying what it is: a session
-  shows the terms its lesson introduces ("Working copy, lost update, race condition", up to two
-  lines) over "Session 4 · lesson"; before its lesson is outlined, what is under way stands in
-  ("Finding where you start", "Choosing what comes next") over "Session 4". Due items get a tag
-  ("tonight").
+  shows its lesson's title ("Why two writers lose an update", up to two lines; the outline names
+  it, §7.2) over "Session 4 · lesson"; a lesson outlined before titles shows the terms it
+  introduces instead ("Working copy, lost update, race condition"). Before its lesson is outlined,
+  what is under way stands in ("Finding where you start", "Choosing what comes next") over
+  "Session 4". Search finds a lesson by its terms too. Due items get a tag ("tonight").
 - **The current track** (the page shows it or something in it) is open, its name in the foreground
   colour and its chevron in the accent; other names are muted. **The current item** is where the
   thread turns into the accent colour beside it, its text in the foreground colour.

@@ -12,6 +12,12 @@ import { z } from "zod";
 import type { LessonStepInfo, StepCheck } from "./session.js";
 
 export const lessonOutlineSchema = z.object({
+  title: z
+    .string()
+    .min(1)
+    .describe(
+      "The lesson's title: the idea it builds, in a few words of the learner's language, as a tutor would name it (\"Why two writers lose an update\"). Never a term list.",
+    ),
   steps: z
     .array(
       z.object({
@@ -39,6 +45,9 @@ export const lessonOutlineSchema = z.object({
 });
 
 export type LessonOutline = z.infer<typeof lessonOutlineSchema>;
+
+/** An outline as stored: one written before lessons had titles has none. */
+export type StoredLessonOutline = Omit<LessonOutline, "title"> & { title?: string };
 
 /**
  * A lesson's media (design §6.4): tools the outline may call to find images and recordings, and
@@ -107,13 +116,13 @@ export interface GenerateLessonOptions {
    * Writing the rest of a lesson whose writing stopped: its outline, and the markdown of the steps
    * already written, from the first (the rest are written after them). No outline is asked for.
    */
-  resume?: { outline: LessonOutline; written: readonly string[] };
+  resume?: { outline: StoredLessonOutline; written: readonly string[] };
   /** Finding and verifying media; without it, steps are kept as parsed. */
   media?: LessonMedia;
 }
 
 export interface LessonResult {
-  outline: LessonOutline;
+  outline: StoredLessonOutline;
   /** The steps this call wrote (after the ones it resumed from). */
   steps: LessonStep[];
   /** Every step of the outline, with the check it ends with, if any. */
@@ -143,8 +152,13 @@ type Settled =
 export async function generateLesson(options: GenerateLessonOptions): Promise<LessonResult> {
   const retries = options.maxRetries ?? 2;
   const { resume } = options;
-  const outline = resume?.outline ?? (await writeOutline(options, retries));
-  if (!resume) await options.onOutline?.(outline);
+  let outline: StoredLessonOutline;
+  if (resume) outline = resume.outline;
+  else {
+    const written = await writeOutline(options, retries);
+    await options.onOutline?.(written);
+    outline = written;
+  }
   const planned: Planned = { outline, steps: placeChecks(outline) };
   // The first step this call writes: the stream's pieces start there.
   const first = resume?.written.length ?? 0;
@@ -312,7 +326,7 @@ export function fitOutline(
     for (const term of introduces) introduced.add(norm(term));
     return { ...step, introduces: unique(introduces), restsOn: unique(restsOn) };
   });
-  return { outline: { steps }, problems };
+  return { outline: { ...outline, steps }, problems };
 }
 
 const unique = (names: readonly string[]) => [
@@ -397,11 +411,11 @@ function closest(name: string, candidates: readonly TrackTerm[]): string {
 
 /** The outline, with the checks the app placed on it. */
 interface Planned {
-  outline: LessonOutline;
+  outline: StoredLessonOutline;
   steps: LessonStepInfo[];
 }
 
-function introducedUpTo(outline: LessonOutline, index: number): string[] {
+function introducedUpTo(outline: StoredLessonOutline, index: number): string[] {
   return outline.steps.slice(0, index + 1).flatMap((s) => s.introduces);
 }
 
@@ -562,7 +576,7 @@ function checkBrief(placed: StepCheck): string {
  * everything still unchecked, since the homework rests on the whole lesson. Every other step has
  * none and opens with the step before it.
  */
-export function placeChecks(outline: LessonOutline): LessonStepInfo[] {
+export function placeChecks(outline: StoredLessonOutline): LessonStepInfo[] {
   const id = (index: number) => `s${String(index + 1)}`;
   const checks: (StepCheck | null)[] = outline.steps.map(() => null);
   // Terms taught so far that no check has covered: the term as written, and the step teaching it.

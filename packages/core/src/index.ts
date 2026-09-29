@@ -42,6 +42,7 @@ export type {
   LessonOutline,
   LessonResult,
   OutlineProblem,
+  StoredLessonOutline,
 } from "./lesson.js";
 export { loadMethod } from "./method-file.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";

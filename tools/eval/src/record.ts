@@ -1,4 +1,4 @@
-import type { LessonOutline, SessionState } from "@grounded/core";
+import type { SessionState, StoredLessonOutline } from "@grounded/core";
 import {
   asc,
   checkMessages,
@@ -22,7 +22,7 @@ export interface RunRecord {
   plan: { arcs: { title: string; terms: string[] }[]; notes: string };
   leftOff: string | null;
   lesson: {
-    outline: LessonOutline | null;
+    outline: StoredLessonOutline | null;
     sources: Record<string, string>;
     notes: Record<string, string>;
     alreadyHeld: Record<string, string>;

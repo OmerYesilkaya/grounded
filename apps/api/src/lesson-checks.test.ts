@@ -17,6 +17,7 @@ beforeEach(() => {
 // Each step builds on what the one before it introduces, so every step ends with a check: s1's and
 // s2's gate the next step, s3's is the lesson's last.
 const OUTLINE = {
+  title: "Why two writers lose an update",
   steps: [
     {
       heading: "Adding one is three moves",
@@ -289,6 +290,7 @@ describe("checks", () => {
   it("checks at the point of need: a step nothing rests on yet opens with the next, whose check covers both", async () => {
     const session = await planned();
     const outline = {
+      title: "Why two writers lose an update",
       steps: [
         { ...OUTLINE.steps[0], restsOn: [] },
         { ...OUTLINE.steps[1], restsOn: [] },

@@ -33,6 +33,8 @@ export interface SessionItem extends ItemBase {
   phase: SessionPhase;
   /** What the session's lesson teaches: the terms its outline introduces, in order; none before. */
   terms: string[];
+  /** The lesson's title; null before it is outlined (or outlined before lessons had titles). */
+  lessonTitle: string | null;
 }
 
 export type TrackItem = SessionItem;
@@ -84,6 +86,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
         number: index + 1,
         phase: s.state.phase,
         terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
+        lessonTitle: s.outline?.title ?? null,
         done: s.closedAt !== null,
         activeAt: s.updatedAt.toISOString(),
       }));

@@ -54,6 +54,7 @@ const CHECK_ANSWER = "the wombat still holds five in memory";
 const WORDS = /quokka|wombat/i;
 
 const OUTLINE = {
+  title: "Why two writers lose an update",
   steps: [
     {
       heading: "Adding one is three moves",

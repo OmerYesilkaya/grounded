@@ -42,6 +42,7 @@ const TERMS: TrackTerm[] = [
 // s2 rests on what s1 teaches, so s1 ends with a check; nothing rests on s2, so its idea waits for
 // the last check, at s3.
 const OUTLINE: LessonOutline = {
+  title: "Why two writers lose an update",
   steps: [
     {
       heading: "Adding one is three moves",
@@ -150,7 +151,7 @@ describe("generateLesson", () => {
   it("asks again for an outline that introduces a term outside the plan, saying why", async () => {
     const [first] = OUTLINE.steps;
     if (!first) throw new Error("fixture outline is empty");
-    const bad: LessonOutline = { steps: [{ ...first, introduces: ["mutex"] }] };
+    const bad: LessonOutline = { ...OUTLINE, steps: [{ ...first, introduces: ["mutex"] }] };
     const model = new MockLanguageModelV4({
       doGenerate: [text(JSON.stringify(bad)), text(JSON.stringify(OUTLINE))],
       doStream: streamOf([S1, S2, S3].join("\n\n")),
@@ -173,7 +174,7 @@ describe("generateLesson", () => {
     const [first] = OUTLINE.steps;
     if (!first) throw new Error("fixture outline is empty");
     // Rests on a planned term nothing before it introduces, every time.
-    const bad = JSON.stringify({ steps: [{ ...first, restsOn: ["race condition"] }] });
+    const bad = JSON.stringify({ ...OUTLINE, steps: [{ ...first, restsOn: ["race condition"] }] });
     const model = new MockLanguageModelV4({ doGenerate: [text(bad), text(bad), text(bad)] });
     const rejected: number[] = [];
     const failure = run(model, {
@@ -419,6 +420,7 @@ describe("generateLesson: provider failures", () => {
 
 describe("placeChecks", () => {
   const outline = (...steps: [string[], string[]][]): LessonOutline => ({
+    title: "A lesson",
     steps: steps.map(([introduces, restsOn], i) => ({
       heading: `Step ${String(i + 1)}`,
       establishes: "",
@@ -480,6 +482,7 @@ describe("placeChecks", () => {
 
 describe("fitOutline", () => {
   const outline = (...steps: [string[], string[]][]): LessonOutline => ({
+    title: "A lesson",
     steps: steps.map(([introduces, restsOn], i) => ({
       heading: `Step ${String(i + 1)}`,
       establishes: "",

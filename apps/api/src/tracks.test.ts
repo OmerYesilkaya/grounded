@@ -386,12 +386,15 @@ const trackAt = async (userId: string, title: string, hours: number) => {
   return track?.id ?? "";
 };
 
-/** A session made straight in the database; with `terms`, a lesson whose steps introduce them. */
+/**
+ * A session made straight in the database; with `terms`, a lesson whose steps introduce them (and
+ * with `title`, its title; a lesson outlined before titles has none).
+ */
 const sessionAt = async (
   userId: string,
   trackId: string,
   hours: number,
-  options: { closed?: boolean; terms?: string[][] } = {},
+  options: { closed?: boolean; terms?: string[][]; title?: string } = {},
 ) => {
   const [session] = await t.db
     .insert(learningSessions)
@@ -409,6 +412,7 @@ const sessionAt = async (
     await t.db.insert(lessons).values({
       sessionId: id,
       outline: {
+        ...(options.title ? { title: options.title } : {}),
         steps: options.terms.map((introduces, i) => ({
           heading: `Step ${String(i + 1)}`,
           establishes: "",
@@ -424,7 +428,14 @@ interface ListedTrack {
   id: string;
   title: string;
   openSession: { id: string } | null;
-  items: { kind: string; id: string; number: number; done: boolean; terms: string[] }[];
+  items: {
+    kind: string;
+    id: string;
+    number: number;
+    done: boolean;
+    terms: string[];
+    lessonTitle: string | null;
+  }[];
 }
 const trackList = async (cookie: string) =>
   (await (await t.request("/api/tracks", { cookie })).json()) as ListedTrack[];
@@ -438,7 +449,10 @@ describe("the track list", () => {
       closed: true,
       terms: [["bit"], ["byte", "bit"]],
     });
-    const second = await sessionAt(userId, trackId, 30, { terms: [["working copy"]] });
+    const second = await sessionAt(userId, trackId, 30, {
+      terms: [["working copy"]],
+      title: "Why two writers lose an update",
+    });
     const third = await sessionAt(userId, await trackAt(userId, "Other", 50), 50);
 
     const [track, other] = await trackList(cookie);
@@ -447,6 +461,10 @@ describe("the track list", () => {
       expect.objectContaining({ kind: "session", id: second, number: 2, done: false }),
     ]);
     expect(track?.items.map((item) => item.terms)).toEqual([["bit", "byte"], ["working copy"]]);
+    expect(track?.items.map((item) => item.lessonTitle)).toEqual([
+      null,
+      "Why two writers lose an update",
+    ]);
     expect(track?.openSession?.id).toBe(second);
     expect(other?.items).toEqual([expect.objectContaining({ id: third, number: 1, terms: [] })]);
   });

@@ -29,6 +29,7 @@ beforeEach(() => {
 });
 
 const OUTLINE = {
+  title: "Why two writers lose an update",
   steps: [
     {
       heading: "Adding one is three moves",

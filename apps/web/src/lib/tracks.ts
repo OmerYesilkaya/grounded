@@ -37,6 +37,8 @@ export interface SessionItem {
   phase: SessionPhase;
   /** The terms its lesson introduces, in order; none until the lesson is outlined. */
   terms: string[];
+  /** The lesson's title; null until it is outlined (and for a lesson outlined before titles). */
+  lessonTitle: string | null;
 }
 
 export interface TrackFile {

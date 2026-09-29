@@ -140,6 +140,7 @@ const scenarios: Record<
         text: "## Why the read waits\n\nIt waits.\n\n:::check\nWhy?\n:::",
         thenGenerate: [
           JSON.stringify({
+            title: "Why the read waits",
             steps: [
               {
                 heading: "Why the read waits",

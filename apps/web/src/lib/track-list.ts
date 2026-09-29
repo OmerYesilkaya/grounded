@@ -20,16 +20,18 @@ const PHASE: Record<SessionItem["phase"], string> = {
 };
 
 /**
- * What an item's row says (design §9.2): what it is about, over what it is. A session shows the
- * terms its lesson introduces over its number and phase; before there is a lesson, what is under way
- * stands in for the terms. Homework and arc exams will say theirs here too.
+ * What an item's row says (design §9.2): what it is about, over what it is. A session shows its
+ * lesson's title (or, for a lesson outlined before titles, the terms it introduces) over its number
+ * and phase; before there is a lesson, what is under way stands in. Homework and arc exams will say
+ * theirs here too.
  */
 export function describeItem(item: TrackItem): { title: string; meta: string } {
   const number = `Session ${String(item.number)}`;
-  if (item.terms.length === 0) return { title: UNDER_WAY[item.phase], meta: number };
+  if (item.lessonTitle === null && item.terms.length === 0)
+    return { title: UNDER_WAY[item.phase], meta: number };
   const terms = item.terms.join(", ");
   return {
-    title: terms.charAt(0).toLocaleUpperCase() + terms.slice(1),
+    title: item.lessonTitle ?? terms.charAt(0).toLocaleUpperCase() + terms.slice(1),
     meta: item.done ? number : `${number} · ${PHASE[item.phase]}`,
   };
 }
@@ -84,7 +86,8 @@ export function searchTracks(tracks: readonly TrackSummary[], query: string): Fo
     if (holdsAll(track.title)) return [{ track, items: null }];
     const items = track.items.filter((item) => {
       const { title, meta } = describeItem(item);
-      return holdsAll(`${track.title} ${title} ${meta}`);
+      // A lesson is found by the terms it teaches too, which its title doesn't show.
+      return holdsAll(`${track.title} ${title} ${meta} ${item.terms.join(" ")}`);
     });
     return items.length ? [{ track, items }] : [];
   });
