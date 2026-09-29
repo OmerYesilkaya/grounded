@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useEffect, useReducer } from "react";
 import type { Aside } from "@/lesson/types";
 import { api } from "./api";
+import type { AssignmentSummary } from "./assignments";
 import { ASIDE_EVENT_TYPES, reduceAsides } from "./asides";
 
 export interface ChatMessage {
@@ -37,6 +38,8 @@ export interface SessionModel {
     notes: Record<string, string>;
   } | null;
   checks: CheckEntry[];
+  /** The homework (and arc exam) the session assigned (design §7.4). */
+  assignments: AssignmentSummary[];
   /** Questions asked in the margin of the lesson, oldest first. */
   asides: Aside[];
   /** Whether the learner has ever asked one (until then the lesson shows how). */
@@ -221,6 +224,12 @@ export function reduceSession(model: SessionModel, event: Event): SessionModel {
           a.id === data.id ? { ...a, reasoning: a.reasoning + (data.text as string) } : a,
         ),
       };
+    case "assignment": {
+      // Assigned, or changed (handed in): the latest word on it replaces what was known.
+      const assignment = event.data as AssignmentSummary;
+      const others = model.assignments.filter((a) => a.id !== assignment.id);
+      return { ...next, assignments: [...others, assignment] };
+    }
     case "error":
       return { ...next, error: data.message as string };
     default: {
@@ -246,6 +255,7 @@ const EVENT_TYPES = [
   "note",
   "activity",
   "activity-reasoning",
+  "assignment",
   ...ASIDE_EVENT_TYPES,
   // Also the name of EventSource's own connection error; the listener tells them apart by data.
   "error",

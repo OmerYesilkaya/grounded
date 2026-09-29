@@ -5,7 +5,7 @@ import { MANY_TRACKS, searchTracks, shortList } from "@/lib/track-list";
 import { useTracks } from "@/lib/tracks";
 import { AccountMenu } from "./account-menu";
 import { Brand } from "./brand";
-import { TrackGroup } from "./track-list";
+import { itemLink, TrackGroup } from "./track-list";
 import { TrackMenu } from "./track-menu";
 
 /** The track list: the "typographic index" from the prototype (design §9.2). */
@@ -38,8 +38,10 @@ export function TrackSidebar({ email }: { email: string }) {
   }, []);
 
   const all = tracks.data ?? [];
+  // The item the page shows: a session, or a homework.
+  const pageItemId = params.sessionId ?? params.assignmentId;
   const currentTrackId =
-    params.trackId ?? all.find((t) => t.items.some((item) => item.id === params.sessionId))?.id;
+    params.trackId ?? all.find((t) => t.items.some((item) => item.id === pageItemId))?.id;
   const searching = query.trim() !== "";
   const found = searching ? searchTracks(all, query) : null;
   const { shown, hidden } = shortList(all, currentTrackId, showAll);
@@ -50,7 +52,7 @@ export function TrackSidebar({ email }: { email: string }) {
     const [first] = found ?? [];
     if (!first) return;
     const item = first.items?.[0];
-    if (item) void navigate({ to: "/sessions/$sessionId", params: { sessionId: item.id } });
+    if (item) void navigate(itemLink(item));
     else void navigate({ to: "/tracks/$trackId", params: { trackId: first.track.id } });
     setQuery("");
     search.current?.blur();
@@ -103,7 +105,7 @@ export function TrackSidebar({ email }: { email: string }) {
       <nav aria-label="Tracks" className="flex-1 overflow-auto px-2 pt-1 pb-4">
         <ul className="flex flex-col gap-0.5">
           {rows.map(({ track, items }) => {
-            const currentItem = track.items.find((item) => item.id === params.sessionId);
+            const currentItem = track.items.find((item) => item.id === pageItemId);
             const current = track.id === currentTrackId;
             const expanded = items !== null || (toggled[track.id] ?? current);
             return (

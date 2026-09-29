@@ -31,6 +31,48 @@ export function parseBlocks(markdown: string, options: ParseOptions = {}): Parse
 }
 
 /**
+ * Where the app serves a picture the learner put in an answer: `/api/assignments/<id>/files/<id>`.
+ * Only these become pictures; any other image in an answer is left out.
+ */
+export const ANSWER_PICTURE = /^\/api\/assignments\/[0-9a-f-]{36}\/files\/[0-9a-f-]{36}$/;
+
+/**
+ * Parses what the learner wrote in an answer (design §7.4): the same markdown as the tutor's, and
+ * their own pictures, each a paragraph of its own (`![…](/api/assignments/…/files/…)`). The
+ * learner's words are never validated, only shown; what can't be shown is left out.
+ */
+export function parseAnswer(markdown: string, options: ParseOptions = {}): Block[] {
+  const prefix = options.idPrefix ?? "b";
+  const nodes = parseMarkdown(markdown).children;
+  const blocks: Block[] = [];
+  nodes.forEach((node, index) => {
+    const id = `${prefix}${String(index + 1)}`;
+    const pictures =
+      node.type === "paragraph"
+        ? node.children.filter((child) => child.type === "image" && ANSWER_PICTURE.test(child.url))
+        : [];
+    if (node.type === "paragraph" && pictures.length > 0) {
+      // A paragraph holding pictures is shown as the pictures, then whatever else it says.
+      pictures.forEach((picture, i) => {
+        if (picture.type === "image")
+          blocks.push({
+            id: `${id}.${String(i + 1)}`,
+            type: "picture",
+            url: picture.url,
+            alt: picture.alt ?? "",
+          });
+      });
+      const rest = node.children.filter((child) => child.type !== "image");
+      const text = convertNodes([{ ...node, children: rest }], `${id}.t`, []);
+      if (rest.some((child) => child.type !== "text" || child.value.trim())) blocks.push(...text);
+      return;
+    }
+    blocks.push(...convertNodes([node], prefix, [], index + 1));
+  });
+  return blocks;
+}
+
+/**
  * Ids follow the node's position in the source ("b3", "b3.1" for its first child), so a node that is
  * rejected still uses up its number and the ids of its neighbours don't depend on it.
  */

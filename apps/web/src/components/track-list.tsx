@@ -133,14 +133,19 @@ function ItemList({ track, children }: { track: TrackSummary; children: ReactNod
   );
 }
 
+/** Where an item's row goes: its session, or its homework's page. */
+export const itemLink = (item: TrackItem) =>
+  item.kind === "homework"
+    ? ({ to: "/homework/$assignmentId", params: { assignmentId: item.id } } as const)
+    : ({ to: "/sessions/$sessionId", params: { sessionId: item.id } } as const);
+
 function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: string | undefined }) {
   const current = item.id === currentItemId;
   const { title, meta } = describeItem(item);
   return (
     <li>
       <Link
-        to="/sessions/$sessionId"
-        params={{ sessionId: item.id }}
+        {...itemLink(item)}
         aria-current={current ? "page" : undefined}
         className={cn(
           // The accent segment is drawn over the thread line, beside the item it marks.

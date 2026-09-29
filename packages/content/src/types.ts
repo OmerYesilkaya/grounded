@@ -54,7 +54,9 @@ export type Block =
     }
   | { id: string; type: "image"; ref: string; caption: string | null; file: CommonsFile | null }
   | { id: string; type: "audio"; ref: string; caption: string | null; file: CommonsFile | null }
-  | { id: string; type: "link"; url: string; title: string; why: string };
+  | { id: string; type: "link"; url: string; title: string; why: string }
+  /** A picture the learner put in their answer (a photo of a notebook page): never the tutor's. */
+  | { id: string; type: "picture"; url: string; alt: string };
 
 /**
  * A Wikimedia Commons file as the server resolved it (design §6.4): what the browser loads, and the

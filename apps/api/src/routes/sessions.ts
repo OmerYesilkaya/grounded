@@ -16,6 +16,7 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
+import { assignmentSummary, sessionAssignments } from "../engine/assignments.js";
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import { writeLessonAgain } from "../engine/lesson-again.js";
@@ -149,6 +150,8 @@ export function registerSessionRoutes(
         blocks: m.blocks,
         verdict: m.verdict,
       })),
+      // The homework (and arc exam) it assigned (design §7.4).
+      assignments: (await sessionAssignments(db, session.id)).map(assignmentSummary),
       // Questions asked in the margin (design §7.5), and whether the learner has ever asked one.
       asides: await asidesSnapshot(db, session.id, cursor),
       hasAskedAside: await hasAskedAside(db, session.userId),

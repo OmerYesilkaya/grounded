@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeItem, MANY_TRACKS, searchTracks, shortList } from "./track-list";
-import type { SessionItem, TrackSummary } from "./tracks";
+import type { HomeworkItem, SessionItem, TrackSummary } from "./tracks";
 
 const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem => ({
   kind: "session",
@@ -27,6 +27,23 @@ const track = (id: string, title: string, items: SessionItem[] = []): TrackSumma
 });
 
 describe("an item's row", () => {
+  it("says a homework's name over the session that set it, and when it is handed in", () => {
+    const homework: HomeworkItem = {
+      kind: "homework",
+      id: "h1",
+      session: 4,
+      title: "Two workers, one counter",
+      form: "predict",
+      done: false,
+      activeAt: "2026-09-29T00:00:00.000Z",
+    };
+    expect(describeItem(homework)).toEqual({
+      title: "Two workers, one counter",
+      meta: "Homework · session 4",
+    });
+    expect(describeItem({ ...homework, done: true }).meta).toBe("Homework · session 4 · handed in");
+  });
+
   it("says what the session's lesson teaches, over its number and phase", () => {
     expect(
       describeItem(

@@ -140,7 +140,18 @@ export function createDemoModels(): ModelAccess {
       ]),
     homework: () =>
       model(
-        "**Predict, then check.** Two workers each add one to a counter that starts at 0, a thousand times each. Write down what you expect the counter to show, then run it and explain any difference.\n\nA good answer shows why the three moves can interleave.",
+        "Two workers each add one to a counter that starts at 0, a thousand times each, at the same time. Here is the program:\n\n```python\nimport threading\n\ncounter = 0\n\ndef work():\n    global counter\n    for _ in range(1000):\n        value = counter\n        counter = value + 1\n\nworkers = [threading.Thread(target=work) for _ in range(2)]\nfor w in workers:\n    w.start()\nfor w in workers:\n    w.join()\nprint(counter)\n```\n\n**Predict** what it prints, and why. Then run it a few times and compare.",
+        [
+          JSON.stringify({
+            title: "Two workers, one counter",
+            forms: ["predict"],
+            checklist: [
+              "Says which three moves adding one takes",
+              "Shows how two workers' moves can interleave",
+              "Explains why the result changes from run to run",
+            ],
+          }),
+        ],
       ),
     close: () =>
       model(

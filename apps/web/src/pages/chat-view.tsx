@@ -5,6 +5,7 @@ import { ArrowDown } from "lucide-react";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
+import { HomeworkFooter } from "@/components/homework-footer";
 import { PlanPicture } from "@/components/session-pictures";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
@@ -129,7 +130,13 @@ export function ChatView({
           <Message
             key={m.id}
             message={m}
-            footer={m.kind === "plan" && <PlanPicture model={model} messageId={m.id} />}
+            footer={
+              m.kind === "plan" ? (
+                <PlanPicture model={model} messageId={m.id} />
+              ) : m.kind === "homework" ? (
+                <HomeworkFooter model={model} messageId={m.id} />
+              ) : null
+            }
           />
         ))}
         <ActivityLine

@@ -1,5 +1,6 @@
 import { ATTACHMENT_LIMITS, initialSession } from "@grounded/core";
 import {
+  assignments,
   eq,
   learningSessions,
   lessons,
@@ -467,6 +468,46 @@ describe("the track list", () => {
     ]);
     expect(track?.openSession?.id).toBe(second);
     expect(other?.items).toEqual([expect.objectContaining({ id: third, number: 1, terms: [] })]);
+  });
+
+  it("lists a session's homework after it, open until it is handed in", async () => {
+    const cookie = await signedIn();
+    const userId = await learnerId();
+    const trackId = await trackAt(userId, "How software works", 48);
+    const first = await sessionAt(userId, trackId, 40, { closed: true });
+    const second = await sessionAt(userId, trackId, 30, { closed: true });
+    const homework = (sessionId: string, title: string, submittedAt: Date | null) =>
+      t.db
+        .insert(assignments)
+        .values({
+          trackId,
+          userId,
+          sessionId,
+          kind: "homework",
+          title,
+          tasks: [{ id: "t1", title: null, form: "build", blocks: [], source: "" }],
+          checklist: [],
+          messageId: crypto.randomUUID(),
+          submittedAt,
+        })
+        .returning();
+    const [done] = await homework(first, "A counter", hoursAgo(35));
+    const [open] = await homework(second, "Two counters", null);
+
+    const [track] = await trackList(cookie);
+    expect(track?.items).toEqual([
+      expect.objectContaining({ kind: "session", id: first }),
+      expect.objectContaining({ kind: "homework", id: done?.id, done: true, session: 1 }),
+      expect.objectContaining({ kind: "session", id: second }),
+      expect.objectContaining({
+        kind: "homework",
+        id: open?.id,
+        done: false,
+        session: 2,
+        title: "Two counters",
+        form: "build",
+      }),
+    ]);
   });
 
   it("puts the most recently active track first, counting activity in its sessions", async () => {

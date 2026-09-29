@@ -11,6 +11,7 @@ import type { JobQueue } from "./engine/queue.js";
 import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
 import { registerAsideRoutes } from "./routes/asides.js";
+import { registerAssignmentRoutes } from "./routes/assignments.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerProfileRoutes } from "./routes/profile.js";
 import { registerProgressRoutes } from "./routes/progress.js";
@@ -180,6 +181,7 @@ export function createApp(deps: AppDependencies) {
   registerTrackRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerSessionRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerAsideRoutes(app, { db, queue: deps.queue });
+  registerAssignmentRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerUsageRoutes(app, { db });
   registerProgressRoutes(app, { db });
   registerProfileRoutes(app, { db });

@@ -116,6 +116,18 @@ function BlockView({ block }: { block: Block }) {
           <Blocks blocks={block.children} />
         </AboutCardView>
       );
+    case "picture":
+      // The learner's own picture, served by the app (never a URL from the model).
+      return (
+        <figure data-block={block.id} className="my-4">
+          <img
+            src={block.url}
+            alt={block.alt}
+            loading="lazy"
+            className="max-h-[520px] rounded-md border"
+          />
+        </figure>
+      );
     case "check":
       // Checks are interactive; LessonView renders them with the step's progress.
       return null;

@@ -1,11 +1,13 @@
-import type { SessionPhase } from "@grounded/core";
+import type { SessionPhase, TaskForm } from "@grounded/core";
 import {
   asc,
+  assignments,
   eq,
   importedLessons,
   inArray,
   learningSessions,
   lessons,
+  submissions,
   tracks,
   type Db,
 } from "@grounded/db";
@@ -14,8 +16,8 @@ import { filesOf } from "./files/track-files.js";
 /**
  * Something inside a track, listed under it in the track list (design §9.2). Every kind shares
  * these fields, so the list can order, fold and count items without knowing their kind; each kind
- * adds what its row says. Sessions are the only kind yet: homework and arc exams join as kinds of
- * their own (with a `due` of their own for the "tonight" tag).
+ * adds what its row says: sessions and their homework (arc exams join as a kind of their own, #42;
+ * a snoozed item gains a `due` for the "tonight" tag, #41).
  */
 interface ItemBase {
   kind: string;
@@ -37,7 +39,17 @@ export interface SessionItem extends ItemBase {
   lessonTitle: string | null;
 }
 
-export type TrackItem = SessionItem;
+/** A session's homework, listed after it: open until it is handed in. */
+export interface HomeworkItem extends ItemBase {
+  kind: "homework";
+  /** The number of the session that assigned it. */
+  session: number;
+  /** A few words naming it. */
+  title: string;
+  form: TaskForm;
+}
+
+export type TrackItem = SessionItem | HomeworkItem;
 
 export interface TrackSummary {
   id: string;
@@ -76,21 +88,52 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
         .where(inArray(importedLessons.trackId, ids))
     : [];
   const attached = await filesOf(db, ids);
+  const homework = await db
+    .select({
+      id: assignments.id,
+      sessionId: assignments.sessionId,
+      title: assignments.title,
+      tasks: assignments.tasks,
+      submittedAt: assignments.submittedAt,
+      updatedAt: assignments.updatedAt,
+      // Writing the answers is activity on it too.
+      answeredAt: submissions.updatedAt,
+    })
+    .from(assignments)
+    .leftJoin(submissions, eq(submissions.assignmentId, assignments.id))
+    .where(eq(assignments.userId, userId))
+    .orderBy(asc(assignments.createdAt), asc(assignments.id));
 
   const list = rows.map((track): TrackSummary => {
     const items = sessions
       .filter((s) => s.trackId === track.id)
-      .map((s, index): SessionItem => ({
-        kind: "session",
-        id: s.id,
-        number: index + 1,
-        phase: s.state.phase,
-        terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
-        lessonTitle: s.outline?.title ?? null,
-        done: s.closedAt !== null,
-        activeAt: s.updatedAt.toISOString(),
-      }));
-    const open = items.find((item) => !item.done);
+      .flatMap((s, index): TrackItem[] => [
+        {
+          kind: "session",
+          id: s.id,
+          number: index + 1,
+          phase: s.state.phase,
+          terms: [...new Set(s.outline?.steps.flatMap((step) => step.introduces) ?? [])],
+          lessonTitle: s.outline?.title ?? null,
+          done: s.closedAt !== null,
+          activeAt: s.updatedAt.toISOString(),
+        },
+        ...homework
+          .filter((h) => h.sessionId === s.id)
+          .map((h): HomeworkItem => ({
+            kind: "homework",
+            id: h.id,
+            session: index + 1,
+            title: h.title,
+            form: h.tasks[0]?.form ?? "explain",
+            done: h.submittedAt !== null,
+            activeAt: (h.answeredAt && h.answeredAt > h.updatedAt
+              ? h.answeredAt
+              : h.updatedAt
+            ).toISOString(),
+          })),
+      ]);
+    const open = items.find((item): item is SessionItem => item.kind === "session" && !item.done);
     const lesson = imported.find((l) => l.trackId === track.id);
     const activeAt = [track.updatedAt.toISOString(), ...items.map((i) => i.activeAt)].sort().at(-1);
     return {

@@ -1,6 +1,6 @@
-import { ALLOWED_BLOCKS, type BlockType } from "@grounded/content";
 import { z } from "zod";
 import { ASIDE_LIMITS, type AsideAnchor } from "./aside-anchor.js";
+import { allowedBlocksLine } from "./blocks-line.js";
 
 /*
  * Asides (design §7.5, method.md "Asides — answering in the margin"): a question the learner asks
@@ -67,23 +67,8 @@ export interface AsideThread {
   saved?: string | null;
 }
 
-const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
-  paragraph: "paragraphs",
-  list: "lists",
-  quote: "quotes",
-  code: "code",
-  math: "maths",
-  table: "tables",
-  diagram: "diagrams",
-  stepper: "steppers",
-  about: "preview cards (:::about) for a person, place or work",
-};
-
 /** The blocks an answer in the margin may use (design §6.3), for its prompt. */
-export function asideBlocksLine(): string {
-  const names = ALLOWED_BLOCKS.aside.map((type) => BLOCK_NAMES[type] ?? type);
-  return `Blocks you may use in this answer: ${names.slice(0, -1).join(", ")} and ${names.at(-1) ?? ""}. Nothing else is shown.`;
-}
+export const asideBlocksLine = (): string => allowedBlocksLine("aside", "this answer");
 
 export interface AsideLessonStep {
   id: string;

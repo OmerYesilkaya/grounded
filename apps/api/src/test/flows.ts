@@ -13,6 +13,7 @@ export interface Snapshot {
     phase: string;
     plan: string;
     currentStep: string | null;
+    homework?: string;
     lesson: { status: string; steps: { id: string; check: object | null }[] };
     steps: Record<string, { status: string; misses: number; offerGate: boolean } | undefined>;
   };
@@ -27,6 +28,14 @@ export interface Snapshot {
   lesson: { steps: { id: string }[]; totalSteps: number; notes: Record<string, string> } | null;
   checks: { stepId: string; role: string; text: string | null; verdict: string | null }[];
   activities: ActivityEvent[];
+  /** The homework (and arc exam) the session assigned. */
+  assignments: {
+    id: string;
+    kind: string;
+    title: string;
+    messageId: string;
+    submittedAt: string | null;
+  }[];
   /** Waiting on a job nothing is doing: the learner can try it again. */
   stalled: boolean;
 }
@@ -78,6 +87,18 @@ export function finishProbe(
 export const planAttempt = (text: string, actions: object[] = PLAN_ACTIONS) => ({
   text,
   thenGenerate: [JSON.stringify({ actions })],
+});
+
+export const HOMEWORK_RECORD = {
+  title: "Two workers, one counter",
+  forms: ["explain"],
+  checklist: ["Why adding one is three moves", "How two workers' moves interleave"],
+};
+
+/** The homework: its message, then the record of its kind and what a good answer demonstrates. */
+export const homework = (text: string, record: object = HOMEWORK_RECORD) => ({
+  text,
+  thenGenerate: [JSON.stringify(record)],
 });
 
 /** Common journeys through a session, on the real API with scripted models. */
@@ -141,5 +162,31 @@ export function createFlows(t: Harness, models: Models) {
     return [...latest.values()];
   };
 
-  return { snapshot, until, learner, startedSession, planned, activities };
+  /** Waits for the session's homework to be assigned, and returns its id. */
+  const assignedHomework = async (cookie: string, sessionId: string) => {
+    await until(cookie, sessionId, (s) => s.state.homework === "assigned");
+    const { assignments } = await snapshot(cookie, sessionId);
+    const homework = assignments.find((a) => a.kind === "homework");
+    if (!homework) throw new Error("the session assigned no homework");
+    return homework.id;
+  };
+
+  /** Once the homework is assigned, the learner puts it off: the session goes on to its close. */
+  const putOffHomework = async (cookie: string, sessionId: string) => {
+    const id = await assignedHomework(cookie, sessionId);
+    const later = await t.request(`/api/assignments/${id}/later`, { method: "POST", cookie });
+    expect(later.status).toBe(200);
+    return id;
+  };
+
+  return {
+    snapshot,
+    until,
+    learner,
+    startedSession,
+    planned,
+    activities,
+    assignedHomework,
+    putOffHomework,
+  };
 }

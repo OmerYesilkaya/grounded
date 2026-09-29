@@ -40,6 +40,11 @@ export interface SessionState {
   steps: Record<string, StepState | undefined>;
   /** The first step whose check hasn't been resolved; null when none (or no lesson yet). */
   currentStep: string | null;
+  /**
+   * The homework phase: being written, then assigned and waiting for the learner to hand it in or
+   * put it off (design §7.4). Missing on a session stored before homework could be handed in.
+   */
+  homework?: "writing" | "assigned";
 }
 
 export type SessionEvent =
@@ -63,6 +68,9 @@ export type SessionEvent =
   | { type: "resume" }
   | { type: "checks-complete" }
   | { type: "homework-assigned" }
+  /** The learner handed the homework in, or put it off for later: either way, the close. */
+  | { type: "homework-handed-in" }
+  | { type: "homework-later" }
   | { type: "recap-done" };
 
 export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
@@ -73,7 +81,8 @@ export type AwaitedJob = "probe-turn" | "plan" | "homework" | "recap";
 /**
  * The job the session is waiting on, when the learner can't move it on themselves (design §4.2):
  * the probe's next turn (the opening question, or after the learner's answer), a plan being written
- * or revised, the homework, the recap. Null when it is the learner's turn, and in the lesson, whose
+ * or revised, the homework being written, the recap. Null when it is the learner's turn (an
+ * assigned homework is theirs to hand in or put off), and in the lesson, whose
  * jobs are set going again by answering a check or by writing the lesson again.
  */
 export function awaitedJob(
@@ -86,7 +95,7 @@ export function awaitedJob(
     case "plan":
       return state.plan === "none" || state.plan === "revising" ? "plan" : null;
     case "homework":
-      return "homework";
+      return state.homework === "assigned" ? null : "homework";
     case "close":
       return "recap";
     default:
@@ -232,12 +241,18 @@ export function transition(state: SessionState, event: SessionEvent): Transition
         return no("There is no lesson to finish.");
       if (!state.lesson.steps.every((s) => resolved(state.steps[s.id])))
         return no("Some checks are still open.");
-      return ok({ phase: "homework" });
+      return ok({ phase: "homework", homework: "writing" });
 
     case "homework-assigned":
       return state.phase === "homework"
-        ? ok({ phase: "close" })
+        ? ok({ homework: "assigned" })
         : no("Homework comes after the checks.");
+
+    case "homework-handed-in":
+    case "homework-later":
+      return state.phase === "homework" && state.homework === "assigned"
+        ? ok({ phase: "close" })
+        : no("There is no homework to hand in yet.");
 
     case "recap-done":
       return state.phase === "close"

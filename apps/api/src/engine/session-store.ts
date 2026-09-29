@@ -89,6 +89,8 @@ export function describeState(state: SessionState): string {
       return `plan (${state.plan})`;
     case "lesson":
       return `lesson (${[state.lesson.status, state.currentStep && `at ${state.currentStep}`].filter(Boolean).join(", ")})`;
+    case "homework":
+      return `homework (${state.homework ?? "writing"})`;
     default:
       return state.phase;
   }

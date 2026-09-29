@@ -75,6 +75,29 @@ export {
   stepOfBlock,
 } from "./aside.js";
 export type { AsideAnchor, AsideLessonStep, AsideRecord, AsideThread, AsideTurn } from "./aside.js";
+export {
+  AFTER_THE_LOCK,
+  ANSWER_LIMITS,
+  answerFields,
+  answerProblem,
+  answersMarkdown,
+  assignmentRecordSchema,
+  derivationFields,
+  stepCount,
+  TASK_FORM_SPECS,
+  TASK_FORMS,
+} from "./assignment.js";
+export type {
+  AnswerField,
+  Answers,
+  AssignmentKind,
+  AssignmentRecord,
+  AssignmentTask,
+  ChecklistItem,
+  TaskAnswer,
+  TaskForm,
+} from "./assignment.js";
+export { allowedBlocksLine } from "./blocks-line.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";
 export {

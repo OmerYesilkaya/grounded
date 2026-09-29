@@ -25,6 +25,7 @@ function model(lesson: SessionModel["lesson"], error: string | null = null): Ses
     lesson,
     checks: [],
     asides: [],
+    assignments: [],
     hasAskedAside: false,
     activities: [],
     lastEventId: 0,

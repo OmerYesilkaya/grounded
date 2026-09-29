@@ -1,6 +1,8 @@
 import type { Embedded } from "@grounded/api/embedded";
 import {
+  and,
   asc,
+  assignments,
   checkMessages,
   eq,
   learningSessions,
@@ -166,6 +168,19 @@ export async function driveSession(options: DriveOptions): Promise<string> {
       const text = await learner.reply(await seen(), TASKS.check);
       progress(`${current}: ${text}`);
       await post(`/api/sessions/${sessionId}/steps/${current}/answer`, { text });
+      continue;
+    }
+
+    // The homework is judged as assigned; the learner puts it off, so the session goes on to its
+    // close (handing it in, and its review, aren't part of a run yet).
+    if (state.phase === "homework" && state.homework === "assigned") {
+      const [homework] = await db
+        .select({ id: assignments.id })
+        .from(assignments)
+        .where(and(eq(assignments.sessionId, sessionId), eq(assignments.kind, "homework")));
+      if (!homework) throw new DriveError("the homework was assigned but not kept");
+      progress("homework: later");
+      await post(`/api/assignments/${homework.id}/later`);
       continue;
     }
 

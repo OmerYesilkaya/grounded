@@ -15,8 +15,12 @@ import {
 } from "drizzle-orm/pg-core";
 import type { Block, LessonStep } from "@grounded/content";
 import type {
+  Answers,
   AsideAnchor,
+  AssignmentKind,
+  AssignmentTask,
   AttachmentKind,
+  ChecklistItem,
   SessionState,
   StoredLessonOutline,
 } from "@grounded/core";
@@ -482,6 +486,77 @@ export const asideMessages = pgTable(
     createdAt: createdAt(),
   },
   (table) => [index("aside_messages_aside").on(table.asideId, table.createdAt)],
+);
+
+// ---------------------------------------------------------------------------------------------
+// Homework and arc exams (design §7.4)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Homework, or an arc exam: what the session that assigned it asks, in typed tasks, and what a good
+ * answer demonstrates. It outlives its session: the learner hands it in whenever they have room.
+ * Its events go on the log of the session that assigned it.
+ */
+export const assignments = pgTable(
+  "assignments",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    /** The session that assigned it. */
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => learningSessions.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").$type<AssignmentKind>().notNull(),
+    /** A few words naming it, for the track list. */
+    title: text("title").notNull(),
+    tasks: jsonb("tasks").$type<AssignmentTask[]>().notNull(),
+    /** "What a good answer demonstrates" (method.md, "Homework"). */
+    checklist: jsonb("checklist").$type<ChecklistItem[]>().notNull(),
+    /** The chat message it was written as. */
+    messageId: uuid("message_id").notNull(),
+    /** When the learner handed it in; null while it is open. */
+    submittedAt: timestamp("submitted_at", { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (table) => [
+    index("assignments_track").on(table.trackId, table.createdAt),
+    uniqueIndex("assignments_message").on(table.messageId),
+  ],
+);
+
+/** The learner's answers to an assignment, saved as they write, until they hand it in. */
+export const submissions = pgTable("submissions", {
+  assignmentId: uuid("assignment_id")
+    .primaryKey()
+    .references(() => assignments.id, { onDelete: "cascade" }),
+  answers: jsonb("answers").$type<Answers>().notNull().default({}),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * Pictures the learner put in their answers (a photo of a notebook page). Their bytes are in the
+ * file store under `storage_key`; the answer's markdown links them by id.
+ */
+export const answerFiles = pgTable(
+  "answer_files",
+  {
+    id: id(),
+    assignmentId: uuid("assignment_id")
+      .notNull()
+      .references(() => assignments.id, { onDelete: "cascade" }),
+    mediaType: text("media_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    storageKey: text("storage_key").notNull().unique(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("answer_files_assignment").on(table.assignmentId)],
 );
 
 /** An ordered log of everything that happened in a session; SSE replays it from any point. */

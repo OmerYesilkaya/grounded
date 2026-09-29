@@ -71,7 +71,7 @@ describe("session phases", () => {
     );
   });
 
-  it("assigns homework only once every check is resolved, then closes", () => {
+  it("assigns homework only once every check is resolved, then closes once it is handed in or put off", () => {
     const lesson = inLesson();
     expect(rejected(lesson, { type: "checks-complete" })).toBe("Some checks are still open.");
     const done = run(
@@ -82,8 +82,13 @@ describe("session phases", () => {
       { type: "checks-complete" },
     );
     expect(done.phase).toBe("homework");
-    expect(run(done, { type: "homework-assigned" }).phase).toBe("close");
-    expect(run(done, { type: "homework-assigned" }, { type: "recap-done" }).phase).toBe("closed");
+    expect(rejected(done, { type: "homework-handed-in" })).toBe(
+      "There is no homework to hand in yet.",
+    );
+    const assigned = run(done, { type: "homework-assigned" });
+    expect(assigned).toMatchObject({ phase: "homework", homework: "assigned" });
+    expect(run(assigned, { type: "homework-handed-in" }).phase).toBe("close");
+    expect(run(assigned, { type: "homework-later" }, { type: "recap-done" }).phase).toBe("closed");
   });
 
   it("rejects everything once closed", () => {
@@ -262,7 +267,7 @@ describe("the job a session waits on", () => {
     expect(awaitedJob(run(proposed, { type: "learner-message" }), "learner")).toBe("plan");
   });
 
-  it("is the homework, then the recap, and nothing in the lesson or once closed", () => {
+  it("is the homework being written, then the recap, and nothing in the lesson, while the homework waits for the learner, or once closed", () => {
     expect(awaitedJob(inLesson(), "tutor")).toBeNull();
     const homework = run(
       inLesson(),
@@ -272,7 +277,9 @@ describe("the job a session waits on", () => {
       { type: "checks-complete" },
     );
     expect(awaitedJob(homework, "tutor")).toBe("homework");
-    const closing = run(homework, { type: "homework-assigned" });
+    const assigned = run(homework, { type: "homework-assigned" });
+    expect(awaitedJob(assigned, "tutor")).toBeNull();
+    const closing = run(assigned, { type: "homework-later" });
     expect(awaitedJob(closing, "tutor")).toBe("recap");
     expect(awaitedJob(run(closing, { type: "recap-done" }), "tutor")).toBeNull();
   });

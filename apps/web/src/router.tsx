@@ -112,6 +112,13 @@ const sessionRoute = createRoute({
   component: lazyRouteComponent(() => import("./pages/session"), "SessionRoute"),
 });
 
+// Homework on a page of its own, with the answer editor; it loads on first visit too.
+const homeworkRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/homework/$assignmentId",
+  component: lazyRouteComponent(() => import("./pages/homework"), "HomeworkRoute"),
+});
+
 const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
@@ -137,6 +144,7 @@ export const router = createRouter({
       trackRoute,
       importedLessonRoute,
       sessionRoute,
+      homeworkRoute,
       usageRoute,
       teachingNotesRoute,
     ]),

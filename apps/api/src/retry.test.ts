@@ -3,13 +3,16 @@ import { asc, eq, learningSessions, sessionEvents } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ProviderCallError } from "./engine/model-call.js";
-import { FIRST_QUESTION, createFlows, storedMessages } from "./test/flows.js";
+import { FIRST_QUESTION, createFlows, homework, storedMessages } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access });
-const { snapshot, until, learner, planned, startedSession } = createFlows(t, models);
+const { snapshot, until, learner, planned, startedSession, putOffHomework } = createFlows(
+  t,
+  models,
+);
 
 beforeEach(() => {
   models.reset();
@@ -70,12 +73,13 @@ describe("a job the learner can't set going again by writing", () => {
     await t.waitFor(async () => (await errors(sessionId)).length > 0);
     await until(cookie, sessionId, (s) => s.stalled);
 
-    models.script("homework", { text: HOMEWORK });
+    models.script("homework", homework(HOMEWORK));
     models.script("close", { text: RECAP });
     scriptTheCloseAfterTheRecap();
     const retried = await retry(cookie, sessionId);
     expect(retried.status).toBe(202);
     expect(await retried.json()).toEqual({ job: "homework" });
+    await putOffHomework(cookie, sessionId);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
     const s = await snapshot(cookie, sessionId);
     expect(s.messages.map((m) => m.kind).slice(-2)).toEqual(["homework", "recap"]);

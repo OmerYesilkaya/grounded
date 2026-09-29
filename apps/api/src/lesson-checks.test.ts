@@ -2,13 +2,16 @@ import { and, eq, researchNotes, termEvents, terms, tracks as tracksTable } from
 import { APICallError } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createFlows } from "./test/flows.js";
+import { createFlows, homework } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 
 const models = scriptedModels();
 const t = createTestHarness({ models: models.access });
-const { snapshot, until, planned, activities } = createFlows(t, models);
+const { snapshot, until, planned, activities, assignedHomework, putOffHomework } = createFlows(
+  t,
+  models,
+);
 
 beforeEach(() => {
   models.reset();
@@ -449,9 +452,12 @@ describe("closing the session", () => {
       verdict({ verdict: "landed", reply: "Yes." }),
       verdict({ verdict: "landed", reply: "Yes." }),
     );
-    models.script("homework", {
-      text: "Predict what a counter shows after two workers add one 1000 times each, then run it.",
-    });
+    models.script(
+      "homework",
+      homework(
+        "Predict what a counter shows after two workers add one 1000 times each, then run it.",
+      ),
+    );
     const sweep = (actions: object[]) => ({ thenGenerate: [JSON.stringify({ actions })] });
     const confirmLostUpdate = {
       type: "set-term-status",
@@ -477,10 +483,27 @@ describe("closing the session", () => {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
+    // The session waits for the homework: handed in (or put off), then the close.
+    const homeworkId = await assignedHomework(cookie, sessionId);
+    expect((await snapshot(cookie, sessionId)).state.phase).toBe("homework");
+    const write = await t.request(`/api/assignments/${homeworkId}/answers`, {
+      method: "PUT",
+      cookie,
+      body: JSON.stringify({ taskId: "t1", fields: { text: "Two workers interleave." } }),
+    });
+    expect(write.status).toBe(200);
+    const handIn = await t.request(`/api/assignments/${homeworkId}/submit`, {
+      method: "POST",
+      cookie,
+    });
+    expect(handIn.status).toBe(200);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
 
     const s = await snapshot(cookie, sessionId);
     expect(s.messages.map((m) => m.kind).slice(-2)).toEqual(["homework", "recap"]);
+    // The homework is kept as an assignment of its own, outliving the session.
+    expect(s.assignments).toMatchObject([{ kind: "homework", title: "Two workers, one counter" }]);
+    expect(s.assignments[0]?.submittedAt).not.toBeNull();
     const tracks = (await (await t.request("/api/tracks", { cookie })).json()) as {
       openSession: unknown;
     }[];
@@ -496,6 +519,11 @@ describe("closing the session", () => {
     const sweepPrompt = JSON.stringify(
       models.used.find((u) => u.purpose === "term-sweep")?.model.doGenerateCalls[0]?.prompt,
     );
+    // The homework is told the blocks its surface allows (design §6.3).
+    const homeworkPrompt = JSON.stringify(
+      models.used.find((u) => u.purpose === "homework")?.model.doStreamCalls[0]?.prompt,
+    );
+    expect(homeworkPrompt).toContain("Blocks you may use in the homework: paragraphs");
     expect(sweepPrompt).toContain("it just adds one");
     expect(sweepPrompt).toContain("Learner: an answer");
     expect(sweepPrompt).toContain("We built why a counter can lose an update");
@@ -517,7 +545,7 @@ describe("closing the session", () => {
       verdict({ verdict: "landed", reply: "Yes." }),
       verdict({ verdict: "landed", reply: "Yes." }),
     );
-    models.script("homework", { text: "Explain it to a friend." });
+    models.script("homework", homework("Explain it to a friend."));
     models.script("close", { text: "We built it." });
     models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
     models.script("left-off", { text: LEFT_OFF });
@@ -527,6 +555,7 @@ describe("closing the session", () => {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
+    await putOffHomework(cookie, sessionId);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
 
     const promptOf = (purpose: string) => {
@@ -555,7 +584,7 @@ describe("closing the session", () => {
       "check",
       ...["s1", "s2", "s3"].map(() => verdict({ verdict: "landed", reply: "Yes." })),
     );
-    models.script("homework", { text: "Explain it to a friend." });
+    models.script("homework", homework("Explain it to a friend."));
     models.script("close", { text: "We built it." });
     const sweep = JSON.stringify({
       actions: [
@@ -569,6 +598,7 @@ describe("closing the session", () => {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
+    await putOffHomework(cookie, sessionId);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
 
     const stored = await t.db.select().from(terms);
@@ -583,7 +613,7 @@ describe("closing the session", () => {
       "check",
       ...["s1", "s2", "s3"].map(() => verdict({ verdict: "landed", reply: "Yes." })),
     );
-    models.script("homework", { text: "Explain it to a friend." });
+    models.script("homework", homework("Explain it to a friend."));
     models.script("close", { text: "We built it." });
     models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
     // No "left-off" model: the call fails.
@@ -591,6 +621,7 @@ describe("closing the session", () => {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
+    await putOffHomework(cookie, sessionId);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
     const [track] = await t.db.select().from(tracksTable).where(eq(tracksTable.id, trackId));
     expect(track?.leftOff).toBeNull();

@@ -1,4 +1,14 @@
-import { and, asc, eq, inArray, trackFiles, tracks, type Db } from "@grounded/db";
+import {
+  and,
+  answerFiles,
+  asc,
+  assignments,
+  eq,
+  inArray,
+  trackFiles,
+  tracks,
+  type Db,
+} from "@grounded/db";
 import { v7 as uuidv7 } from "uuid";
 import { log } from "../log.js";
 import type { Attachment } from "./attachments.js";
@@ -60,7 +70,8 @@ export async function createTrack(
 
 /**
  * Deletes a learner's track (design §4.5): the row, and by cascade everything in it (sessions and
- * their lessons, messages and events, terms, the fix-list, file rows, the imported lesson), then its
+ * their lessons, messages and events, terms, the fix-list, file rows, the imported lesson, homework
+ * and its answers), then its
  * files' bytes, which the database can't reach. The rows go first, so no row ever names bytes that
  * are gone; bytes that can't be deleted are logged and left, reachable by nothing. False when the
  * learner has no such track.
@@ -76,6 +87,13 @@ export async function deleteTrack(
       .from(trackFiles)
       .innerJoin(tracks, eq(tracks.id, trackFiles.trackId))
       .where(and(eq(trackFiles.trackId, trackId), eq(tracks.userId, userId)));
+    // And the pictures in the answers to its homework and exams.
+    const pictures = await tx
+      .select({ key: answerFiles.storageKey })
+      .from(answerFiles)
+      .innerJoin(assignments, eq(assignments.id, answerFiles.assignmentId))
+      .where(and(eq(assignments.trackId, trackId), eq(assignments.userId, userId)));
+    files.push(...pictures);
     const deleted = await tx
       .delete(tracks)
       .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)))

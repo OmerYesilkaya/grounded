@@ -132,7 +132,8 @@ function startsWith(bytes: Uint8Array, signature: string, at = 0): boolean {
   return true;
 }
 
-function imageType(bytes: Uint8Array): string | null {
+/** An image's media type from its first bytes (PNG, JPEG, GIF, WebP); null for anything else. */
+export function imageType(bytes: Uint8Array): string | null {
   if (startsWith(bytes, "\u0089PNG\r\n\u001a\n")) return "image/png";
   if (startsWith(bytes, "ÿØÿ")) return "image/jpeg";
   if (startsWith(bytes, "GIF87a") || startsWith(bytes, "GIF89a")) return "image/gif";

@@ -7,6 +7,7 @@ import { describeItem } from "@/lib/track-list";
 import type { TrackItem } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
 import { TermMapPicture } from "./term-map";
+import { itemLink } from "./track-list";
 
 /**
  * What the learner owns and what is still settling, what the tutor will come back to, and the
@@ -34,8 +35,7 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
   const close = () => {
     setOpen(null);
   };
-  // Every item is a session for now; count only sessions once homework and arc exams join.
-  const sessionsDone = items.filter((i) => i.done).length;
+  const sessionsDone = items.filter((i) => i.kind === "session" && i.done).length;
   const started = sessionsDone > 0 || ideas.size > 0;
 
   return (
@@ -96,7 +96,7 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
 
 /**
  * What is open in the track, each a row as the track list says it (design §9.2) that goes on with
- * it: the open session now; homework and arc exams join as kinds of their own.
+ * it: the open session, and homework not handed in yet (arc exams join as a kind, #42).
  */
 export function OpenWork({ items }: { items: readonly TrackItem[] }) {
   return (
@@ -106,8 +106,7 @@ export function OpenWork({ items }: { items: readonly TrackItem[] }) {
         return (
           <li key={item.id}>
             <Link
-              to="/sessions/$sessionId"
-              params={{ sessionId: item.id }}
+              {...itemLink(item)}
               className="group flex items-center gap-4 px-4 py-3 transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted"
             >
               <span className="min-w-0 flex-1">

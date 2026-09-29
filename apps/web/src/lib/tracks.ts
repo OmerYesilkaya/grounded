@@ -1,5 +1,5 @@
 import type { AttachmentKind } from "@grounded/core/attachments";
-import type { SessionPhase } from "@grounded/core";
+import type { SessionPhase, TaskForm } from "@grounded/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
 
@@ -23,9 +23,9 @@ export interface TrackSummary {
 
 /**
  * Something inside a track (api: track-list.ts). Every kind has an id, `done` and `activeAt`; each
- * adds what its row says. Sessions only, for now; homework and arc exams join as kinds.
+ * adds what its row says. Sessions and their homework; arc exams join as a kind (#42).
  */
-export type TrackItem = SessionItem;
+export type TrackItem = SessionItem | HomeworkItem;
 
 export interface SessionItem {
   kind: "session";
@@ -40,6 +40,23 @@ export interface SessionItem {
   /** The lesson's title; null until it is outlined (and for a lesson outlined before titles). */
   lessonTitle: string | null;
 }
+
+/** A session's homework, listed after it: open (not `done`) until it is handed in. */
+export interface HomeworkItem {
+  kind: "homework";
+  id: string;
+  done: boolean;
+  activeAt: string;
+  /** The number of the session that assigned it. */
+  session: number;
+  /** A few words naming it. */
+  title: string;
+  form: TaskForm;
+}
+
+/** How many of a track's homework assignments are still open (not handed in). */
+export const openHomework = (track: TrackSummary): number =>
+  track.items.filter((item) => item.kind === "homework" && !item.done).length;
 
 export interface TrackFile {
   id: string;

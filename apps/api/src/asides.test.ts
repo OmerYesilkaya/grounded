@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { createAside } from "./engine/asides.js";
 import { publish } from "./engine/events.js";
 import { recoverAbandonedWork } from "./engine/recovery.js";
-import { createFlows } from "./test/flows.js";
+import { createFlows, homework } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 
@@ -21,7 +21,7 @@ const t = createTestHarness({
     },
   },
 });
-const { snapshot, until, planned } = createFlows(t, models);
+const { snapshot, until, planned, putOffHomework } = createFlows(t, models);
 
 beforeEach(() => {
   models.reset();
@@ -430,7 +430,7 @@ describe("asides after the lesson", () => {
       actions: [],
     });
     models.script("check", { thenGenerate: [verdict] }, { thenGenerate: [verdict] });
-    models.script("homework", { text: "Explain it to a friend." });
+    models.script("homework", homework("Explain it to a friend."));
     models.script("close", { text: "We built it." });
     models.script("term-sweep", { thenGenerate: [JSON.stringify({ actions: [] })] });
     models.script("left-off", { text: "Owed: the homework." });
@@ -442,6 +442,7 @@ describe("asides after the lesson", () => {
       });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
+    await putOffHomework(cookie, sessionId);
     await until(cookie, sessionId, (s) => s.state.phase === "closed");
 
     const promptOf = (purpose: string, n = 0) => {

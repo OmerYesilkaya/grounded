@@ -201,13 +201,14 @@ about, test and debug.
 - **A job the learner can't set going again by writing can be tried again** (`engine/retry.ts`,
   `awaitedJob` in `packages/core/src/session.ts`; #21). Those are the probe's turn (the opening
   question, or the one after the learner's answer: the composer waits for the tutor), a plan being
-  written or revised, the homework and the recap. When the one the session waits on failed, or died
+  written or revised, the homework being written and the recap (an assigned homework waits for the
+  learner, not a job). When the one the session waits on failed, or died
   with its worker, nothing is queued for it and nothing runs: the session is **stalled** (the
   snapshot says so, and the job's `error` event), and the chat shows the error, or "The tutor
   stopped before finishing" after a reload, with **Try again**, which queues the same job again.
   Like writing a lesson again, it is done only while no job works on the session, so two clicks
   queue it once. The homework and the recap are kept once written: a homework job tried again
-  after its message only assigns it, and a recap job tried again after a failed sweep goes on from
+  after its message only records it (and after its record only assigns it), and a recap job tried again after a failed sweep goes on from
   the recap the learner has read. The lesson's own jobs have their ways back: an answer again for
   a check, and writing the lesson again.
 - **Structured logs, through one logger** (pino, `apps/api/src/log.ts`): JSON lines on stdout in
@@ -494,36 +495,38 @@ about, test and debug.
 
 The schema is `packages/db/src/schema.ts`. Tables that exist:
 
-| Table                                            | Holds                                                                                                                                     |
-| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                               |
-| `allowlist`                                      | who may sign in                                                                                                                           |
-| `credentials`                                    | provider, encrypted key, credential source                                                                                                |
-| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off    |
-| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                              |
-| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                   |
-| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                              |
-| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                             |
-| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                               |
-| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized  |
-| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                              |
-| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                   |
-| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held       |
-| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                     |
-| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                     |
-| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                          |
-| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                          |
-| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                            |
-| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it |
-| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                   |
+| Table                                            | Holds                                                                                                                                                  |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                                            |
+| `allowlist`                                      | who may sign in                                                                                                                                        |
+| `credentials`                                    | provider, encrypted key, credential source                                                                                                             |
+| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                 |
+| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                           |
+| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                |
+| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                           |
+| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                          |
+| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                            |
+| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized               |
+| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                                           |
+| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                |
+| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                    |
+| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                  |
+| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                  |
+| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                       |
+| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                       |
+| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                         |
+| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it              |
+| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                |
+| `assignments`                                    | homework (an arc exam later, #42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
+| `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
+| `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
 
 Planned for v1, not built yet:
 
-| Table         | Holds                                                                                                 | Issue    |
-| ------------- | ----------------------------------------------------------------------------------------------------- | -------- |
-| `assignments` | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
-| `submissions` | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
-| `reviews`     | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
+| Table                   | Holds                                                                        | Issue |
+| ----------------------- | ---------------------------------------------------------------------------- | ----- |
+| `assignments` (columns) | `snoozed_until`, for "Later" with a snooze                                   | #41   |
+| `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing) | #39   |
 
 Which session closes each arc isn't recorded yet (#42).
 
@@ -707,7 +710,10 @@ lessons and asides.
 | Homework prompt            | text-like blocks plus headings, diagram and media                                                     |
 
 Code stays allowed in the chat because a probe question may need to show code in full ("what does
-this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
+this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`). A call that writes for
+a surface is told its blocks (`allowedBlocksLine` in `@grounded/core`: the aside's answer, the
+homework), leaving out what the call can't make: the homework has no tools to find media, so it is
+offered videos and link cards to sources from the session, not images or audio.
 
 "The probe teaches nothing" is then enforced by the renderer and validator, not just requested.
 
@@ -777,7 +783,8 @@ this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).
 Server-owned state machine: **review → probe → plan → lesson (inline checks at the point of need) → homework →
 close.** The model _proposes_ transitions through structured actions ("probing done; here is the
 plan"); the server checks preconditions (a plan before a lesson; every check resolved before homework);
-the learner approves at the gates (the plan). The learner can nudge at any time ("skip ahead to the
+the learner approves at the gates (the plan), and moves the homework on (hands it in, or puts it
+off with "Later", §7.4), after which the close runs. The learner can nudge at any time ("skip ahead to the
 plan"). Sessions stay open indefinitely and resume where they stopped; **one open session per track**.
 
 **Prose first, then structure.** A tutor message is streamed from a call with no tools, so a tool call
@@ -900,6 +907,58 @@ HTML/SVG). To be measured, then adjusted.
 - **The final** is a session kind with no homework: a fresh audit (new fix-list compared with the
   original) and a teach-back where the model plays a skeptical friend asking only "why?" and "what if?".
 
+How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts`,
+`apps/api/src/engine/assignments.ts`, `apps/api/src/routes/assignments.ts`, `apps/web/src/homework`,
+`apps/web/src/editor`):
+
+- **Written, then recorded** (prose first, §7.1). The `homework` job writes the task as a chat
+  message the learner watches, told its kinds and its answer boxes (so it writes no blanks) and its
+  blocks (§6.3). A structured call on the finished message then records a few words naming it, the
+  kind of each task and "what a good answer demonstrates" (two to six items, checked against the term
+  list like anything the learner reads; a broken record is asked for once more, then kept). Both are
+  kept once written, so a job tried again goes on from where it stopped.
+- **An assignment is its own row**, outliving its session: the session that assigned it, a kind
+  (`homework`; `exam` for #42), a name, its **tasks** and the checklist. Homework is one task, the
+  whole message; an exam will be one task per `##` part, each with its title (`tasksOf`), so the
+  answers, the checks on them and the review are the same code for both. A task's kind is one of
+  `predict`, `derivation`, `build`, `explain`, and its answer fields come from the kind
+  (`TASK_FORM_SPECS`): the prediction, what actually happened, reconcile; steps each with a
+  "because…" (as many as the learner adds, up to 30); what you made and what surprised you; one
+  explanation. A build's brief is the task itself.
+- **Answers are markdown**, one string per field, in `submissions`, saved as the learner writes
+  (800 ms after the last keystroke, and at once before a lock or handing in). The prediction **locks**
+  with the server's time (`POST …/tasks/:taskId/lock`); from then on it can't change, and until then
+  what happened and reconciling can't be written. **Handing in** takes every field written and the
+  prediction locked (never half-done, as the method says of exams), and freezes the answers.
+- **Pictures** pasted, dropped or picked go to `POST /api/assignments/:id/files`: an image by its
+  bytes (PNG, JPEG, WebP, GIF), at most 5 MB, 20 per assignment, stored under the track in the file
+  store and linked from the markdown by `/api/assignments/:id/files/:fileId`. They are served to
+  their owner only, inline, as the type their bytes say, with `nosniff` and a `default-src 'none'`
+  policy; deleting the track deletes them with its files (§4.5). `parseAnswer` (`@grounded/content`)
+  turns an answer into a block tree with these as `picture` blocks, which no model can write: what
+  the review's comments (#39) anchor to.
+- **The session waits for it.** The homework phase is `writing` until the assignment is kept, then
+  `assigned`: the learner's turn, no job awaited. Handing it in (`homework-handed-in`) or **Later**
+  (`homework-later`) moves the session to its close. Later keeps what was written and leaves the
+  homework open; #41 adds the snooze to it. An assignment handed in after its session closed
+  changes no session.
+- **Where it is done**: its own page, `/homework/:assignmentId`: what kind it is, its name and
+  session, the task in the lesson's type, the answer boxes of its kind, and **"A good answer
+  shows"**, the checklist, to tick off before handing in (the ticks are the learner's own, kept in the
+  browser; the review marks the items). The checklist sits in the right margin on a wide screen,
+  above the answers otherwise. **Hand it in** and, while the session waits, **Later**. The chat
+  shows the homework's message with "Open the homework" and "Later" under it, then its state;
+  the track list and the track page list it as an item (§9.2).
+- **The editors** (Tiptap, `apps/web/src/editor`). The answer editor: markdown as it is typed
+  (`##`, `-`, `**`, `` ` ``, ` ``` ` for a code block), `$…$` maths rendered once the closing
+  dollar is typed (a dollar next to a space doesn't open or close one, so "$5 and $6" stays money)
+  and `$$…$$` on a line of its own, a click on a formula turning it back into text; pictures. It
+  reads and writes markdown (`@tiptap/markdown`). **The one-line version** for check answers and
+  questions in the margin (`Composer` with `rich`): one paragraph, Shift+Enter breaks the line,
+  `code`, bold, italics and `$…$`; Enter sends what the editor holds at that moment. What the learner
+  wrote there is shown with its code and maths (`LearnerText`). The chat and a new track keep the
+  plain box.
+
 ### 7.5 Asides
 
 - Select any passage in a lesson → ask. The card appears in the margin beside it, streamed at once.
@@ -986,7 +1045,7 @@ How it is built (#37, decided 2026-09-29):
     goes on with it; it stands in for a "continue" button. It reads the track list's items, not the
     progress endpoint, so homework and arc exams (#38, #42) show here as they join the list as kinds.
     "Start a session" shows while no session is open.
-  - Three figures: ideas you own, still settling, sessions done (the done sessions of the items).
+  - Three figures: ideas you own, still settling, sessions done (the done items that are sessions).
   - **Still settling** (taught) first, since that is what the next sessions come back to, then
     **ideas you own** (confirmed, assumed and borrowed; assumed marked "you brought it", borrowed
     "from <track>"). Each idea is a button: it opens where it stands in plain words (how it came
@@ -1105,11 +1164,13 @@ and marked the current track with bolder text):
   ("sql joins"). Enter opens the first find, Escape clears. It runs in the browser on the list it
   already has.
 - **Items are one shape, whatever their kind** (`kind`, `id`, `done`, `activeAt`, plus what the
-  kind's row says), so ordering, folding, counting and search don't depend on the kind. Sessions are
-  the only kind yet. Homework and arc exams (#38, #42) join as kinds: each adds its row's words
-  (what it asks, over "Homework · session 4" or "Arc exam · Arc 2") and a `due` (snoozed until, for
-  the "tonight" / "tomorrow" tag, §7.4); a due item counts as "1 due" on a closed track and sorts
-  the track by its due time too.
+  kind's row says), so ordering, folding, counting and search don't depend on the kind. Sessions
+  and homework are built (#38): a homework item follows the session that assigned it, says its name
+  over "Homework · session 4" ("· handed in" once it is), is done once handed in, and is active when
+  it or its answers last changed; its row opens its page. Arc exams (#42) join the same way ("Arc
+  exam · Arc 2"). A snoozed item (#41) adds a `due` (snoozed until, for the "tonight" / "tomorrow"
+  tag, §7.4); a due item counts as "1 due" on a closed track and sorts the track by its due time
+  too.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
   key, theme, sign out).
 

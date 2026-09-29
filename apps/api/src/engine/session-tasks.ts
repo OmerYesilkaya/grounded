@@ -1,4 +1,5 @@
 import {
+  allowedBlocksLine,
   assembleSystemPrompt,
   checkVerdictSchema,
   generateLesson,
@@ -32,6 +33,7 @@ import { generateText, Output, type ModelMessage } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
+import { assignmentOf, createAssignment, recordAssignment } from "./assignments.js";
 import { alreadyHeldSoFar, loadCheckRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
@@ -110,6 +112,9 @@ const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. An idea the plan leans on that the learner holds in another track (under \"Held in the learner's other tracks\", with the same meaning here) is borrowed with borrow-term instead of planned; planned terms may rest on it. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const SWEEP_REQUEST =
   "settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. Change the plan's notes a section at a time with edit-plan-notes: the section's heading line as the notes write it, and its new text (null removes the section; a heading no section has adds one at the end). Fold what was \"Noted while planning\" into the sections it belongs to, then remove that section. Change the arcs with set-plan, notes null to keep the notes as they are.";
+const HOMEWORK_REQUEST = `(The lesson's checks are done. Assign the homework: one task, of one kind: predict → verify, a derivation, a build, or explain it to a friend. Write the task itself, as the learner will read it on a page of its own: everything it needs restated in full, and for predict → verify what to predict and how to check it. The app gives the task the answer boxes of its kind (predict → verify: the prediction, locked before they check; what actually happened; reconcile. A derivation: its steps, each with its because. A build: what they made, and what surprised them. Explain it to a friend: one box), so don't write blanks or headings for the answers. What a good answer demonstrates is recorded next and shown with the task by the app; don't list it here. ${allowedBlocksLine("homework", "the homework", ["image", "audio"])} (Images and audio need the lesson's tools, which this call doesn't have.) A video or a link card only to a source from this session's research or lesson; the app checks each one opens and leaves out what doesn't.)`;
+const HOMEWORK_RECORD_PROMPT =
+  "(For the app; the learner doesn't see this.) Record the homework you just wrote: the kind of its task, a few words naming it, and what a good answer demonstrates.";
 
 /** What a call hears about its rejected track edits, to send them again corrected. */
 const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
@@ -260,11 +265,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   /** The session's homework or recap, if it has been written. */
   const writtenMessage = async (sessionId: string, kind: "homework" | "recap") => {
     const [row] = await db
-      .select({ text: sessionMessages.text })
+      .select({
+        id: sessionMessages.id,
+        text: sessionMessages.text,
+        blocks: sessionMessages.blocks,
+      })
       .from(sessionMessages)
       .where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.kind, kind)))
       .limit(1);
-    return row ? { text: row.text ?? "" } : null;
+    return row ? { id: row.id, text: row.text ?? "", blocks: row.blocks ?? [] } : null;
   };
 
   const lessonRow = async (sessionId: string) => {
@@ -889,10 +898,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       await recordCheckMessage(db, sessionId, stepId, text, null, deps.media);
     }),
 
+    // The homework is written as a chat message the learner watches, then recorded as an
+    // assignment of its own (its kind and what a good answer demonstrates), which outlives the
+    // session. The session then waits for the learner to hand it in or put it off (design §7.4).
     homework: guarded(async ({ sessionId }) => {
-      // Tried again after it failed past its message (retry.ts): the homework stands as assigned.
-      if (!(await writtenMessage(sessionId, "homework"))) {
-        const { session, terms, messages, system } = await contextFor(sessionId, "homework");
+      // Tried again after it failed past its message or its record (retry.ts): what was written stands.
+      if (!(await assignmentOf(db, sessionId, "homework"))) {
+        const context = await contextFor(sessionId, "homework");
+        const { session, terms, system } = context;
         const model = await models.model({
           userId: session.userId,
           trackId: session.trackId,
@@ -900,24 +913,39 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           purpose: "homework",
           role: "strong",
         });
-        await writeChatMessage({
-          db,
-          media: deps.media,
-          review: reviewerFor(session),
-          sessionId,
-          model,
-          system,
-          messages: [
-            ...messages,
-            { role: "user", content: "(The lesson's checks are done. Assign the homework.)" },
-          ],
-          terms,
-          kind: "homework",
-          surface: "homework",
-        });
+        const written = await writtenMessage(sessionId, "homework");
+        // The message is the conversation's last turn once written.
+        const messages = written ? context.messages.slice(0, -1) : context.messages;
+        const asking: ModelMessage[] = [...messages, { role: "user", content: HOMEWORK_REQUEST }];
+        let message = written;
+        if (!message) {
+          const reply = await writeChatMessage({
+            db,
+            media: deps.media,
+            review: reviewerFor(session),
+            sessionId,
+            model,
+            system,
+            messages: asking,
+            terms,
+            kind: "homework",
+            surface: "homework",
+          });
+          message = { id: reply.messageId, text: reply.text, blocks: reply.blocks };
+        }
+        const record = await withActivity(db, sessionId, "Noting what a good answer shows", () =>
+          recordAssignment({
+            model,
+            system,
+            messages: [...asking, { role: "assistant", content: message.text }],
+            request: HOMEWORK_RECORD_PROMPT,
+            terms,
+          }),
+        );
+        await createAssignment(db, { session, kind: "homework", message, record });
       }
+      // The learner's turn now: the close follows their handing it in or putting it off.
       await applyEvent(db, sessionId, { type: "homework-assigned" });
-      await queue.enqueue("recap", { sessionId });
     }),
 
     recap: guarded(async ({ sessionId }) => {

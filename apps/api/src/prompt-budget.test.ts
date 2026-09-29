@@ -10,7 +10,7 @@ import { createSessionTasks } from "./engine/session-tasks.js";
 import { loadSession } from "./engine/session-store.js";
 import { HELD_ELSEWHERE_LIMIT } from "./engine/track-state.js";
 import { offlineWeb } from "./media/web.js";
-import { planAttempt, probeGoesOn } from "./test/flows.js";
+import { homework, planAttempt, probeGoesOn } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import {
   CONVERSATION,
@@ -187,7 +187,7 @@ const scenarios: Record<
   homework: {
     state: { ...lesson, phase: "homework" },
     script: () => {
-      models.script("homework", { text: "Predict what the second read shows." });
+      models.script("homework", homework("Predict what the second read shows."));
     },
     job: "homework",
   },

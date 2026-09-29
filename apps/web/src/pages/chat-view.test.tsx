@@ -29,6 +29,7 @@ function model(messages: ChatMessage[]): SessionModel {
     lesson: null,
     checks: [],
     asides: [],
+    assignments: [],
     hasAskedAside: false,
     activities: [],
     lastEventId: 0,
