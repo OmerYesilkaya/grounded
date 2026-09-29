@@ -1123,7 +1123,10 @@ How it is built (#37, decided 2026-09-29):
   - **Evidence**: each session closed since the last refresh (all of them for the first), labelled
     S1, S2…: its check record (checks, repairs, where it leaked, what was already held), its
     asides, and its chat from the homework on (the homework, the learner's replies, the recap).
-    Homework reviews and the forms chosen (#38, #39) join here as they are built.
+    And the review of what it assigned (#39, reviewRecord: the marks, the comments and their
+    threads, whether the learner found each flaw). A session closed before the last refresh whose
+    homework was reviewed since (handed in after a "Later") joins with its review alone
+    (`reviewedSinceRefresh`), so late work isn't lost to the notes.
   - **The call**: strong model, the `profile` phase's method; the current notes labelled N1, N2…
     with what they rested on, marked when the learner wrote or edited them. It returns every note
     as it should now stand (`teachingNotesSchema`): a note keeping one of the current ones revises

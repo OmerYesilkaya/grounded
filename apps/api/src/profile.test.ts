@@ -1,15 +1,24 @@
 import { initialSession } from "@grounded/core";
 import {
+  assignments,
   eq,
   learnerProfileNotes,
   learningSessions,
   profileRefreshes,
+  reviews,
   sessionMessages,
   tracks,
 } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import { invite } from "./allowlist.js";
-import { profileDue, settleNotes, type CurrentNote } from "./engine/profile.js";
+import {
+  profileDue,
+  profileEvidence,
+  reviewedSinceRefresh,
+  sessionsSinceRefresh,
+  settleNotes,
+  type CurrentNote,
+} from "./engine/profile.js";
 import { loadTrackContext } from "./engine/track-state.js";
 import type { TeachingNote } from "./routes/profile.js";
 import { createFlows } from "./test/flows.js";
@@ -175,6 +184,54 @@ describe("the learner's teaching notes (#44)", () => {
       "One concrete example before the rule.",
       "Predict what happens, then run it.",
     ]);
+  });
+
+  it("hear the reviews of what was handed in, a session's reviewed after the last refresh too", async () => {
+    const { trackId } = await learner();
+    const userId = await ownerOf(trackId);
+    const [before] = await closedSessions(trackId, 1, Date.now() - 40 * DAY);
+    const [since] = await closedSessions(trackId, 1, Date.now() - 30 * DAY);
+    await t.db
+      .insert(profileRefreshes)
+      .values({ userId, sessionId: before ?? null, createdAt: new Date(Date.now() - 35 * DAY) });
+    for (const [sessionId, title] of [
+      [before, "Put off, handed in later"],
+      [since, "Handed in at once"],
+    ] as const) {
+      const [assignment] = await t.db
+        .insert(assignments)
+        .values({
+          trackId,
+          userId,
+          sessionId: sessionId ?? "",
+          kind: "homework",
+          title,
+          tasks: [{ id: "t1", title: null, form: "explain", blocks: [], source: "Explain it." }],
+          checklist: [{ id: "c1", text: "Why adding one is three moves" }],
+          messageId: crypto.randomUUID(),
+          submittedAt: new Date(),
+        })
+        .returning();
+      await t.db.insert(reviews).values({
+        assignmentId: assignment?.id ?? "",
+        status: "done",
+        checklist: [{ id: "c1", mark: "missing", note: "" }],
+        reviewedAt: new Date(),
+      });
+    }
+
+    const evidence = await profileEvidence(
+      t.db,
+      await sessionsSinceRefresh(t.db, userId),
+      await reviewedSinceRefresh(t.db, userId),
+    );
+    expect([...evidence.labels.values()]).toEqual([since, before]);
+    expect(evidence.text).toContain('### "Handed in at once" (homework)');
+    expect(evidence.text).toContain("(only what was handed in since)");
+    expect(evidence.text).toContain('### "Put off, handed in later" (homework)');
+    expect(evidence.text).toContain("- missing: Why adding one is three moves");
+    // The session from before the refresh brings only its review, not its recap again.
+    expect(evidence.text.split("Recap 1:").length).toBe(2);
   });
 
   it("are the learner's to add, edit and remove, and nobody else's", async () => {

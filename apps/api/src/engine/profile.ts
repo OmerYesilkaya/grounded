@@ -1,5 +1,6 @@
 import {
   and,
+  assignments,
   asc,
   desc,
   eq,
@@ -7,7 +8,9 @@ import {
   inArray,
   learnerProfileNotes,
   learningSessions,
+  lte,
   profileRefreshes,
+  reviews,
   sessionMessages,
   sql,
   tracks,
@@ -29,6 +32,7 @@ import { loadCheckRecord } from "./check-record.js";
 import type { Tx } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { reportHandledFailure } from "./queue.js";
+import { HOMEWORK_REVIEWED, sessionReviewRecord } from "./reviews.js";
 
 /*
  * The learner's teaching notes (design §8): a few lines about how this person learns, in every
@@ -80,37 +84,65 @@ export async function sessionsSinceRefresh(db: Db, userId: string) {
 type ClosedSession = Awaited<ReturnType<typeof sessionsSinceRefresh>>[number];
 
 /**
+ * The learner's sessions closed before the last refresh whose homework (or exam) was reviewed since:
+ * handed in after a "Later", its review is evidence the last refresh didn't have.
+ */
+export async function reviewedSinceRefresh(db: Db, userId: string) {
+  const last = sql`coalesce((select max(${profileRefreshes.createdAt}) from ${profileRefreshes} where ${profileRefreshes.userId} = ${userId}), '-infinity'::timestamptz)`;
+  return db
+    .select()
+    .from(learningSessions)
+    .where(
+      and(
+        eq(learningSessions.userId, userId),
+        lte(learningSessions.closedAt, last),
+        sql`exists (select 1 from ${assignments} join ${reviews} on ${reviews.assignmentId} = ${assignments.id} where ${assignments.sessionId} = ${learningSessions.id} and ${reviews.status} = 'done' and ${reviews.reviewedAt} > ${last})`,
+      ),
+    )
+    .orderBy(asc(learningSessions.closedAt), asc(learningSessions.id));
+}
+
+/**
  * The evidence since the last refresh (method.md, "Refreshing the teaching notes"): for each
- * session, its checks and repairs, its asides, and its homework and recap with the learner's
- * replies. Each session is labelled S1, S2…, for the notes to cite; `labels` maps them back.
+ * session, its checks and repairs, its asides, its homework and recap with the learner's replies,
+ * and the review of what it assigned; for each session closed before but reviewed since
+ * (`reviewedLater`), that review alone. Each session is labelled S1, S2…, for the notes to cite;
+ * `labels` maps them back.
  */
 export async function profileEvidence(
   db: Db,
   sessions: readonly ClosedSession[],
+  reviewedLater: readonly ClosedSession[] = [],
 ): Promise<{ text: string; labels: Map<string, string> }> {
   const labels = new Map<string, string>();
+  const all = [...sessions, ...reviewedLater];
   const titles = new Map(
-    sessions.length
+    all.length
       ? (
           await db
             .select({ id: tracks.id, title: tracks.title })
             .from(tracks)
-            .where(inArray(tracks.id, [...new Set(sessions.map((s) => s.trackId))]))
+            .where(inArray(tracks.id, [...new Set(all.map((s) => s.trackId))]))
         ).map((t) => [t.id, t.title])
       : [],
   );
   const parts: string[] = [];
-  for (const [index, session] of sessions.entries()) {
+  for (const [index, session] of all.entries()) {
     const label = `S${String(index + 1)}`;
     labels.set(label, session.id);
     const day = (session.closedAt ?? session.createdAt).toISOString().slice(0, 10);
-    const sections = [`## ${label}: ${titles.get(session.trackId) ?? "A track"}, ${day}`];
-    const checks = await loadCheckRecord(db, session.id, session.state);
-    if (checks) sections.push(`### What happened at the lesson's checks\n\n${checks}`);
-    const asked = await asidesRecord(db, session.id);
-    if (asked) sections.push(`### ${ASKED_IN_THE_MARGIN}\n\n${asked}`);
-    const after = await afterTheLesson(db, session.id);
-    if (after) sections.push(`### The homework and the recap\n\n${after}`);
+    const later = index >= sessions.length ? " (only what was handed in since)" : "";
+    const sections = [`## ${label}: ${titles.get(session.trackId) ?? "A track"}, ${day}${later}`];
+    if (!later) {
+      const checks = await loadCheckRecord(db, session.id, session.state);
+      if (checks) sections.push(`### What happened at the lesson's checks\n\n${checks}`);
+      const asked = await asidesRecord(db, session.id);
+      if (asked) sections.push(`### ${ASKED_IN_THE_MARGIN}\n\n${asked}`);
+      const after = await afterTheLesson(db, session.id);
+      if (after) sections.push(`### The homework and the recap\n\n${after}`);
+    }
+    const reviewed = await sessionReviewRecord(db, session.id);
+    if (reviewed) sections.push(`### ${HOMEWORK_REVIEWED}\n\n${reviewed}`);
     parts.push(sections.join("\n\n"));
   }
   return { text: parts.join("\n\n"), labels };
@@ -230,7 +262,11 @@ export async function refreshTeachingNotes(options: {
     .from(learnerProfileNotes)
     .where(eq(learnerProfileNotes.userId, userId))
     .orderBy(asc(learnerProfileNotes.createdAt), asc(learnerProfileNotes.id));
-  const evidence = await profileEvidence(db, await sessionsSinceRefresh(db, userId));
+  const evidence = await profileEvidence(
+    db,
+    await sessionsSinceRefresh(db, userId),
+    await reviewedSinceRefresh(db, userId),
+  );
   const system = systemMessages(
     assembleSystemPrompt(method, "profile", {
       extra: [
