@@ -92,7 +92,11 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   reads — a chat message, an answer in the margin, a check's reply with its fresh question, a lesson
   step — made after the exact checks. It is given the ambiguous words flagged in it and the whole
   term list by name (held, and not held yet; a lesson's words given so far count as held), and
-  returns, per flagged word, whether it is machinery where it stands, and any domain term the text
+  what the learner has said, read fresh for each text: the track's goal, the brief of what they
+  brought, and their messages this session (the newest, up to `LEARNER_WORDS_LIMIT`). It judges
+  against this learner, not a newcomer: before the plan the term list is empty, and a senior
+  front-end developer asked about React holds it all the same (a term the learner used, or one
+  their stated background plainly covers, is held). It returns, per flagged word, whether it is machinery where it stands, and any domain term the text
   uses that the learner doesn't hold and the text doesn't explain there. Those come back as errors
   (`scaffolding/judged`, `term/judged`) and are fixed with the exact ones, in the same rewrite:
   a chat message and a check's reply once, a lesson step with its rewrites. A lesson step is judged

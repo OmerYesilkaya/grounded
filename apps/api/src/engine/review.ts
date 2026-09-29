@@ -1,4 +1,5 @@
-import { reviewWording, type Reviewer } from "@grounded/core";
+import { reviewWording, type LearnerWords, type Reviewer } from "@grounded/core";
+import { and, asc, eq, isNotNull, sessionMessages, tracks, type Db } from "@grounded/db";
 import { log } from "../log.js";
 import type { ModelAccess } from "./model-call.js";
 
@@ -9,13 +10,14 @@ import type { ModelAccess } from "./model-call.js";
  * for a rewrite, never stop one.
  */
 export function createReviewer(
+  db: Db,
   models: ModelAccess,
   ids: { userId: string; trackId: string; sessionId: string },
 ): Reviewer {
   return async (unit) => {
     try {
       const model = await models.model({ ...ids, purpose: "wording-review", role: "cheap" });
-      const issues = await reviewWording(model, unit);
+      const issues = await reviewWording(model, unit, await learnerWordsOf(db, ids));
       if (issues.length > 0)
         log.info(
           { flagged: unit.flagged.length, issues: issues.map((i) => i.code) },
@@ -27,4 +29,28 @@ export function createReviewer(
       return [];
     }
   };
+}
+
+/** What the learner has said so far, read fresh for each text: the last answer counts. */
+async function learnerWordsOf(
+  db: Db,
+  ids: { trackId: string; sessionId: string },
+): Promise<LearnerWords | undefined> {
+  const [track] = await db
+    .select({ goal: tracks.goal, brief: tracks.brief })
+    .from(tracks)
+    .where(eq(tracks.id, ids.trackId));
+  if (!track) return undefined;
+  const said = await db
+    .select({ text: sessionMessages.text })
+    .from(sessionMessages)
+    .where(
+      and(
+        eq(sessionMessages.sessionId, ids.sessionId),
+        eq(sessionMessages.role, "learner"),
+        isNotNull(sessionMessages.text),
+      ),
+    )
+    .orderBy(asc(sessionMessages.createdAt));
+  return { ...track, said: said.flatMap((m) => (m.text ? [m.text] : [])) };
 }

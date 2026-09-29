@@ -2,7 +2,7 @@ import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
-import { reviewSystem, reviewWording } from "./review.js";
+import { LEARNER_WORDS_LIMIT, learnerWords, reviewSystem, reviewWording } from "./review.js";
 
 const reply = (value: object): LanguageModelV4GenerateResult => ({
   content: [{ type: "text", text: JSON.stringify(value) }],
@@ -73,6 +73,29 @@ describe("the wording review", () => {
     const model = new MockLanguageModelV4({ doGenerate: [] });
     expect(await reviewWording(model, unit("That's it: memory still holds 5."))).toEqual([]);
     expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
+  it("reads what the learner has said, so a word their background covers isn't jargon", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: [reply({ flagged: [], jargon: [] })] });
+    await reviewWording(model, unit(LONG), {
+      goal: "Prepare for a senior front-end interview",
+      brief: null,
+      said: ["I've shipped React apps for six years."],
+    });
+    const call = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+    expect(call).toContain(
+      "What the learner wrote they want to learn: Prepare for a senior front-end interview",
+    );
+    expect(call).toContain("- I've shipped React apps for six years.");
+    expect(call).toContain("Judge against this learner, not a newcomer.");
+  });
+
+  it("keeps the learner's newest words when they have said a lot", () => {
+    const old = "o".repeat(LEARNER_WORDS_LIMIT);
+    const text = learnerWords({ goal: "Geometry", brief: "A syllabus.", said: [old, "newest"] });
+    expect(text).toContain("What they brought, summarized: A syllabus.");
+    expect(text).toContain("- newest");
+    expect(text).not.toContain(old);
   });
 
   it("counts what the surroundings introduced as held", () => {

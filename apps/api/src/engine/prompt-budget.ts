@@ -19,9 +19,10 @@ export type BudgetedPhase = Extract<
  *   open comments with their threads, two steps left shaky with their sources and check threads,
  *   and four answers: ~12,300 on the large track.
  * - aside: the whole lesson (six steps of a real one's size, about 20 KB) and two earlier asides.
- * - wording-review: the cheap model's review of one text (#52): the whole term list by name, and the
- *   text: ~4,600 measured for a probe question on the large track; a lesson step of about 3 KB adds
- *   some 800 more.
+ * - wording-review: the cheap model's review of one text (#52): the whole term list by name, what
+ *   the learner has said (at most `LEARNER_WORDS_LIMIT` characters, ~1,500), and the text: ~4,600
+ *   measured for a probe question on the large track; a lesson step of about 3 KB adds some 800
+ *   more, and a talkative session's learner words the rest.
  * - exam: the arc exam (#42), written in the homework's phase after the homework: its prompt, the
  *   homework's message, and the arc it covers whole, each term with what it rests on and the
  *   sessions that taught it: ~13,200 on the large track, whose arcs have 17 terms.
@@ -42,7 +43,7 @@ export const PROMPT_BUDGETS: Readonly<
   homework: 12_500,
   close: 25_000,
   aside: 16_000,
-  "wording-review": 7_000,
+  "wording-review": 8_500,
   exam: 16_000,
   final: 20_000,
   "final-close": 30_000,

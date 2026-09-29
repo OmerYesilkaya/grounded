@@ -226,7 +226,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     systemMessages(assembleSystemPrompt(method, phase, context));
   /** The review of what the validators can't match (review.ts), in a session's calls. */
   const reviewerFor = (session: { id: string; userId: string; trackId: string }) =>
-    createReviewer(models, {
+    createReviewer(db, models, {
       userId: session.userId,
       trackId: session.trackId,
       sessionId: session.id,

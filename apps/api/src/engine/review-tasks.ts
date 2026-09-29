@@ -86,7 +86,7 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
         });
         return output;
       });
-    const review = createReviewer(models, ids);
+    const review = createReviewer(db, models, ids);
     const settle = (output: AssignmentReview) =>
       settleReview({ output, assignment, answers, terms, review });
 

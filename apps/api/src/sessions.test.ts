@@ -558,6 +558,11 @@ describe("probe and plan", () => {
       models.used.find((u) => u.purpose === "probe")?.model.doGenerateCalls[0]?.prompt,
     );
     expect(asked).toContain("reads as the tutor's own bookkeeping here");
+    // The review judges against this learner: it reads what they wrote they want to learn.
+    const reviewed = JSON.stringify(
+      models.used.find((u) => u.purpose === "wording-review")?.model.doGenerateCalls[0]?.prompt,
+    );
+    expect(reviewed).toContain("What the learner wrote they want to learn: Concurrency");
   });
 });
 

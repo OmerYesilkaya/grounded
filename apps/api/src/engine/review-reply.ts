@@ -110,7 +110,7 @@ export function createReplyTask(deps: ReviewTaskDependencies): Task {
         },
         logFields: { commentId },
         media: deps.media,
-        review: createReviewer(models, ids),
+        review: createReviewer(db, models, ids),
       });
       await recordReviewMessage(db, assignment, commentId, { role: "tutor", ...answer });
     } catch (error) {

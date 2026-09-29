@@ -143,7 +143,7 @@ export function createAsideTasks(deps: AsideTaskDependencies): TaskList {
         },
         logFields: { asideId },
         media,
-        review: createReviewer(models, { userId, trackId, sessionId }),
+        review: createReviewer(db, models, { userId, trackId, sessionId }),
       });
       await recordAsideMessage(db, sessionId, asideId, { role: "tutor", ...answer });
     } catch (error) {

@@ -47,10 +47,12 @@ export type {
 } from "./lesson.js";
 export { loadMethod } from "./method-file.js";
 export {
+  learnerWords,
   reviewIssues,
   reviewSystem,
   reviewWording,
   wordingReviewSchema,
+  type LearnerWords,
   type Reviewer,
   type ReviewUnit,
   type WordingReview,
