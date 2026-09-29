@@ -97,6 +97,24 @@ export type {
   TaskAnswer,
   TaskForm,
 } from "./assignment.js";
+export {
+  assignmentReviewSchema,
+  fieldLabel,
+  placeQuote,
+  REVIEW_LIMITS,
+  REVIEW_MARKS,
+  REVIEW_REPLY_RECORD_PROMPT,
+  REVIEW_REQUEST,
+  reviewRecord,
+  reviewReplyRecordSchema,
+} from "./assignment-review.js";
+export type {
+  AssignmentReview,
+  ChecklistMark,
+  ReviewAnchor,
+  ReviewedAssignment,
+  ReviewMark,
+} from "./assignment-review.js";
 export { allowedBlocksLine } from "./blocks-line.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";

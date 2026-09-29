@@ -314,7 +314,8 @@ about, test and debug.
   total, a limit on silence before the first part and between outputs (the model may be reasoning or
   searching unseen), and a shorter one mid-output. A call that runs out fails as "taking too long"
   and is logged and recorded. Retries of retryable failures happen in the middleware too, only
-  within the time the call has left, so a learner never waits past the limit.
+  within the time the call has left, so a learner never waits past the limit. A homework's review
+  (`review`, one structured output over the whole answer) has 180 s, as the lesson's outline does.
 - **Usage** (input/output/cached tokens, model, purpose) is recorded for every call from day one and
   shown simply per session and per month. Each attempt also records its duration (`duration_ms`,
   from the request to a stream's finish or the failure), so the effect of caching and reasoning
@@ -437,7 +438,8 @@ about, test and debug.
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
   it), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
-  (`aside-record`, apart from its answer), the wording review (`wording-review`, §3.3), and so do
+  (`aside-record`, apart from its answer), whether a reply in a review's card found the flaw
+  (`review-record`, apart from the answer, §7.4), the wording review (`wording-review`, §3.3), and so do
   the summaries of what is already written ("where
   you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
   keeps the provider's default, above all plans, lessons and check grading.
@@ -520,15 +522,11 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `assignments`                                    | homework (an arc exam later, #42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
 | `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
 | `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
+| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked held / leaked / missing                          |
+| `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads       |
 
 An assignment also holds when it is snoozed until (`snoozed_until`, "Later") and the later homework
 it was folded into (`subsumed_by`), §7.4.
-
-Planned for v1, not built yet:
-
-| Table     | Holds                                                                        | Issue |
-| --------- | ---------------------------------------------------------------------------- | ----- |
-| `reviews` | margin comments on a submission, checklist outcome (held / leaked / missing) | #39   |
 
 Which session closes each arc isn't recorded yet (#42).
 
@@ -940,8 +938,9 @@ How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts
   turns an answer into a block tree with these as `picture` blocks, which no model can write: what
   the review's comments (#39) anchor to.
 - **The session waits for it.** The homework phase is `writing` until the assignment is kept, then
-  `assigned`: the learner's turn, no job awaited. Handing it in (`homework-handed-in`) or **Later**
-  (`homework-later`) moves the session to its close. Later keeps what was written and leaves the
+  `assigned`: the learner's turn, no job awaited. Handing it in (`homework-handed-in`) moves the
+  session to its homework's review (`reviewing`), then to its close (below); **Later**
+  (`homework-later`) moves it to its close. Later keeps what was written and leaves the
   homework open, snoozed (below). An assignment handed in after its session closed changes no
   session.
 - **Where it is done**: its own page, `/homework/:assignmentId`: what kind it is, its name and
@@ -993,6 +992,76 @@ How homework is built (#38, decided 2026-09-29; `packages/core/src/assignment.ts
   `code`, bold, italics and `$…$`; Enter sends what the editor holds at that moment. What the learner
   wrote there is shown with its code and maths (`LearnerText`). The chat and a new track keep the
   plain box.
+
+How the review is built (#39, decided 2026-09-29; `packages/core/src/assignment-review.ts`,
+`apps/api/src/engine/reviews.ts`, `review-call.ts`, `review-tasks.ts`, `review-reply.ts`,
+`review-recovery.ts`, `apps/web/src/homework/review-*.tsx`):
+
+- **It starts on hand-in, as a job of its own** (`review`, payload `{ sessionId, assignmentId }`,
+  the session being the one that set it, whose log carries the review's events). Handing in
+  inserts the `reviews` row (`reviewing`) and queues it; an exam's and a late homework's review
+  run the same way.
+- **The session waits for its homework's review before its close** (decided): handing in while
+  the session waits moves it to `homework: "reviewing"` (the awaited job is `review`, so a review
+  whose job died is "Try again" in the chat, §4.2), and the review job's end, done or failed,
+  applies `homework-reviewed` and queues the recap. So the close's recap, term sweep and "where
+  you left off" hear the review (under "The review of what they handed in"), and the sweep settles
+  statuses with the homework's evidence in hand rather than racing the review's term changes. A
+  failed review never holds the session. Homework handed in after its session closed (after a
+  "Later") is reviewed on its own and moves no session.
+- **One call, the strong model** (purpose `review`, default reasoning, 180 s: §4.4), the `review`
+  phase's method (method.md, "Review"), the track as it is now, the setting session's check
+  record, the tasks with the checklist's ids, and the answers as the opening turn
+  (`answersMarkdown`, each field under `[field: key]`, pictures sent as they are after their link).
+  It returns (`assignmentReviewSchema`): **comments**, each with its task, field, the learner's
+  words quoted, the checklist items it bears on and the comment (Socratic: points at the leak and
+  asks, never the corrected answer; only where the model leaked, at most six, eight kept); **every
+  checklist item marked** held / leaked / missing with a line for the learner (no score); and
+  **track edits** from how the learner used the terms, recorded like a check's (§5, `recordEdits`,
+  source `homework`, `exam` for an exam), so `term_events` has the homework's evidence.
+- **Checked like anything the learner reads** (`settleReview`): the comments' and notes' words
+  against the term list and the wording review (surface `review`, §6.3); each quote placed in its
+  field's text as the page shows it (`answerText` in `@grounded/content`, `placeQuote`: exact, then
+  without markdown's marks and with any run of spaces as one), kept with 64 characters around it,
+  as an aside's anchor; every item marked once. What doesn't hold goes back to the call once, with
+  the problems; what is still broken is kept (logged), and a quote the answer doesn't have hangs
+  the comment on its field as a whole (an empty quote), as does a comment on a picture.
+- **Stored** in `reviews` (status, the marks, a failure's reason), `review_comments` (anchor
+  `{ taskId, field, quote, prefix, suffix }`, items, position in the order of the answer,
+  resolved at / in which session) and `review_messages` (the comment first, then the thread).
+  Events on the setting session's log: `review` (all of it, on start, done and failed),
+  `review-message`, `review-delta` (an answer streaming) and `review-resolved`. `GET
+/api/assignments/:id` carries the review; the page follows the log from its cursor.
+- **Replies in the card are allowed** (decided): the learner answers the comment's question in
+  its card, one reply at a time, while the leak is open (`POST …/review/comments/:id/replies`). The
+  answer is the strong model's (`review-reply`), streamed into the card, validated like a chat
+  message, going on Socratically from the comment; then a small record (`review-record`, strong,
+  little reasoning: `reviewReplyRecordSchema`) says whether the learner has now found the flaw in
+  their own words, which **resolves the leak** and closes the card's box. Replies change no term:
+  a flaw found in the card is re-probed by the next session, as the method asks.
+- **Open leaks carry into the next session's review** (the interface for #40): `openLeaks(db,
+trackId)` gives the track's comments on done reviews not resolved yet, oldest first, each with
+  its assignment, field, quote and thread; `openLeaksRecord` gives them for a prompt, labelled L1,
+  L2…, with the labels mapped back to comment ids, so the review phase's record can name the ones
+  it dealt with; `resolveLeaks(db, ids, sessionId)` marks them resolved in that session
+  (`resolved_in_session`; a card's resolution leaves it null).
+- **Failed, and started again**: a known failure (key, provider) or ours marks the review `failed`
+  with its reason; the page offers "Review it again" (`POST …/review`, only for a failed one). A
+  review whose job died is marked failed by recovery (`recoverReviews`, run with §4.2's recovery
+  for open and closed sessions alike, once it has been quiet 30 s and no job is on it or queued),
+  unless its session waits for it (that one is the chat's "Try again"); a reply left waiting is
+  told in its card that it didn't go through.
+- **The page** (`/homework/:assignmentId`, handed in): the task, then **"What your answer
+  shows"**, each item with its mark (held green with a check, leaked amber with a drop, missing
+  grey with a dash), its line and "See the comment", and how many comments still ask the learner
+  to look again (while reviewing: "Reviewing your answer…"; failed: why, and "Review it again");
+  then **the answer** read only, each field rendered as the lesson's text (`parseAnswer`, one
+  section per field), the comments' words marked as asides' passages are (`::highlight`), the open
+  one stronger. The grid is the lesson's: on a wide screen (1100 px) the comments are margin cards
+  (the aside's `MarginCard`, `placeCards` and connector), level with their words, a whole-field
+  comment level with its field; below it each field's comments are closed cards under it, and
+  one opens in the aside's bottom sheet. Clicking a marked passage opens its comment. The chat's
+  homework footer says "the review is on its way" while the session waits for it.
 
 ### 7.5 Asides
 

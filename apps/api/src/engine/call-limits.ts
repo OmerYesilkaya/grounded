@@ -23,6 +23,9 @@ const SECOND = 1000;
  * - default: chat messages (probe, close, aside, homework) stream a few hundred words, and the
  *   structured decisions and grading after them are small JSON; 90 s is several times a normal call.
  * - plan: the plan's term-and-arc record is the largest structured output outside the lesson.
+ * - review: a handed-in assignment's review (design §7.4) reads the whole answer, pictures too,
+ *   and returns its comments, the checklist's marks and the term changes in one structured output,
+ *   thinking at the default effort first.
  * - lesson: the outline is a large structured output, a step rewrite is a full step of markdown,
  *   and the whole lesson is written in one stream that can run for minutes; the model also plans
  *   the lesson before its first word. The idle limit stays short: a stream that has started
@@ -41,6 +44,12 @@ export const CALL_LIMITS = {
     thinkMs: 60 * SECOND,
     idleMs: 30 * SECOND,
   },
+  review: {
+    generateMs: 180 * SECOND,
+    streamMs: 180 * SECOND,
+    thinkMs: 60 * SECOND,
+    idleMs: 30 * SECOND,
+  },
   lesson: {
     generateMs: 180 * SECOND,
     streamMs: 600 * SECOND,
@@ -50,7 +59,9 @@ export const CALL_LIMITS = {
 } as const satisfies Record<string, CallLimits>;
 
 export function callLimitsFor(purpose: string): CallLimits {
-  return purpose === "plan" || purpose === "lesson" ? CALL_LIMITS[purpose] : CALL_LIMITS.default;
+  return purpose === "plan" || purpose === "lesson" || purpose === "review"
+    ? CALL_LIMITS[purpose]
+    : CALL_LIMITS.default;
 }
 
 /** Retries of a retryable failure (network, 5xx, 429), each only if the call's time allows. */

@@ -4,6 +4,7 @@ import {
   ATTACHMENT_LIMITS,
   answerProblem,
   isTimeZone,
+  REVIEW_LIMITS,
   snoozeUntil,
   SNOOZES,
   type TaskAnswer,
@@ -35,6 +36,8 @@ import {
   type AssignmentRow,
 } from "../engine/assignments.js";
 import type { JobQueue } from "../engine/queue.js";
+import { waitingReply } from "../engine/review-reply.js";
+import { loadReview, recordReviewMessage, startReview } from "../engine/reviews.js";
 import { loadSession } from "../engine/session-store.js";
 import { imageType } from "../files/attachments.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
@@ -48,6 +51,8 @@ const answerInput = z.object({
   taskId: z.string().min(1),
   fields: z.record(z.string(), z.string()),
 });
+
+const replyInput = z.object({ text: z.string().trim().min(1).max(REVIEW_LIMITS.reply) });
 
 const laterInput = z.object({
   snooze: z.enum(SNOOZES),
@@ -187,6 +192,8 @@ export function registerAssignmentRoutes(
               .where(eq(assignments.id, row.subsumedBy))
           )[0] ?? null)
         : null,
+      // Its review, once it is handed in: the page follows it on the log.
+      review: await loadReview(db, row.id),
       lastEventId: last?.id ?? 0,
     });
   });
@@ -324,7 +331,9 @@ export function registerAssignmentRoutes(
       .returning();
     if (!submitted) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
     await publishAssignment(db, submitted);
+    // Its session, if it waits for it, now waits for the review, which starts at once (design §7.4).
     await closeAfterHomework(db, deps.queue, submitted, "homework-handed-in");
+    await startReview(db, deps.queue, submitted);
     return c.json({ submittedAt: submitted.submittedAt?.toISOString() ?? null });
   });
 
@@ -346,5 +355,39 @@ export function registerAssignmentRoutes(
     if (!snoozed) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
     await closeAfterHomework(db, deps.queue, snoozed, "homework-later");
     return c.json({ snoozedUntil: until.toISOString() });
+  });
+
+  // A review that failed, started again (design §7.4).
+  app.post("/api/assignments/:id/review", async (c) => {
+    const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
+    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment.submittedAt) return c.json({ error: "Hand it in first." }, 409);
+    if (!(await startReview(db, deps.queue, assignment)))
+      return c.json({ error: "It is being reviewed already." }, 409);
+    return c.json({ reviewing: true }, 202);
+  });
+
+  // A reply in a comment's card: the tutor answers it there. One at a time, while the leak is open.
+  app.post("/api/assignments/:id/review/comments/:commentId/replies", async (c) => {
+    const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
+    if (!assignment) return c.json({ error: "Not found." }, 404);
+    const review = await loadReview(db, assignment.id);
+    const comment = review?.comments.find((m) => m.id === c.req.param("commentId"));
+    if (review?.status !== "done" || !comment) return c.json({ error: "Not found." }, 404);
+    const parsed = replyInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json({ error: "Write your reply first." }, 400);
+    if (comment.resolvedAt) return c.json({ error: "You've found this one already." }, 409);
+    if (waitingReply(comment.messages))
+      return c.json({ error: "Your last reply is being answered." }, 409);
+    const message = await recordReviewMessage(db, assignment, comment.id, {
+      role: "learner",
+      text: parsed.data.text,
+    });
+    await deps.queue.enqueue("review-reply", {
+      sessionId: assignment.sessionId,
+      assignmentId: assignment.id,
+      commentId: comment.id,
+    });
+    return c.json({ id: message.id }, 201);
   });
 }

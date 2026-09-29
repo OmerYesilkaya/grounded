@@ -171,6 +171,49 @@ export function createDemoModels(): ModelAccess {
           tangent: n % 2 === 1 ? null : "How databases keep updates from getting lost",
         }),
       ]),
+    // The homework's review: a comment on the prediction's "2000" (on the whole prediction if the
+    // answer doesn't say it), one on the reconciling as a whole, and each item marked.
+    review: () =>
+      model("", [
+        JSON.stringify({
+          comments: [
+            {
+              task: "t1",
+              field: "prediction",
+              quote: "2000",
+              items: ["c2"],
+              comment:
+                "You expected every addition to count. Look at the two lines inside the loop: what can the other worker do between `value = counter` and `counter = value + 1`?",
+            },
+            {
+              task: "t1",
+              field: "reconcile",
+              quote: "",
+              items: ["c3"],
+              comment:
+                "You saw the number change from run to run. What decides how often the two workers' moves overlap?",
+            },
+          ],
+          checklist: [
+            { item: "c1", mark: "held", note: "You name copying out, adding and putting back." },
+            { item: "c2", mark: "leaked", note: "Look again at what happens inside the loop." },
+            {
+              item: "c3",
+              mark: "missing",
+              note: "What would make one run lose more than another?",
+            },
+          ],
+          actions: [],
+        }),
+      ]),
+    // A reply in a comment's card: the first one gets another question, the second finds the flaw.
+    "review-reply": (n) =>
+      model(
+        n % 2 === 1
+          ? "Closer. And once both workers have read the same number, what does each of them write back?"
+          : "That's the flaw: both read the same value, so one addition is written over the other.",
+      ),
+    "review-record": (n) => model("", [JSON.stringify({ resolved: n % 2 === 0 })]),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
     "wording-review": () => model("", [JSON.stringify({ flagged: [], jargon: [] })]),

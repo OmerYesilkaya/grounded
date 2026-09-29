@@ -71,7 +71,7 @@ describe("session phases", () => {
     );
   });
 
-  it("assigns homework only once every check is resolved, then closes once it is handed in or put off", () => {
+  it("assigns homework only once every check is resolved, then closes once it is reviewed or put off", () => {
     const lesson = inLesson();
     expect(rejected(lesson, { type: "checks-complete" })).toBe("Some checks are still open.");
     const done = run(
@@ -87,7 +87,16 @@ describe("session phases", () => {
     );
     const assigned = run(done, { type: "homework-assigned" });
     expect(assigned).toMatchObject({ phase: "homework", homework: "assigned" });
-    expect(run(assigned, { type: "homework-handed-in" }).phase).toBe("close");
+    // Handed in, the close waits for its review.
+    const reviewing = run(assigned, { type: "homework-handed-in" });
+    expect(reviewing).toMatchObject({ phase: "homework", homework: "reviewing" });
+    expect(rejected(reviewing, { type: "homework-later" })).toBe(
+      "There is no homework to hand in yet.",
+    );
+    expect(run(reviewing, { type: "homework-reviewed" }).phase).toBe("close");
+    expect(rejected(assigned, { type: "homework-reviewed" })).toBe(
+      "There is no homework being reviewed.",
+    );
     expect(run(assigned, { type: "homework-later" }, { type: "recap-done" }).phase).toBe("closed");
   });
 
@@ -279,6 +288,7 @@ describe("the job a session waits on", () => {
     expect(awaitedJob(homework, "tutor")).toBe("homework");
     const assigned = run(homework, { type: "homework-assigned" });
     expect(awaitedJob(assigned, "tutor")).toBeNull();
+    expect(awaitedJob(run(assigned, { type: "homework-handed-in" }), "tutor")).toBe("review");
     const closing = run(assigned, { type: "homework-later" });
     expect(awaitedJob(closing, "tutor")).toBe("recap");
     expect(awaitedJob(run(closing, { type: "recap-done" }), "tutor")).toBeNull();

@@ -1,5 +1,6 @@
 import type { Block } from "@grounded/content";
 import type { Answers, ChecklistItem, TaskAnswer, TaskForm } from "@grounded/core/assignment";
+import type { ChecklistMark, ReviewAnchor } from "@grounded/core/assignment-review";
 import type { Snooze } from "@grounded/core/snooze";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "./api";
@@ -38,7 +39,39 @@ export interface Assignment {
   snoozedUntil: string | null;
   /** The later homework it was folded into (method.md, "Homework"): closed, and that one covers it. */
   subsumedBy: { id: string; title: string } | null;
+  /** Its review, once it is handed in. */
+  review: Review | null;
   lastEventId: number;
+}
+
+/** A message of a margin comment's thread: the tutor's validated blocks, or the learner's words. */
+export interface ReviewMessage {
+  id: string;
+  role: "learner" | "tutor";
+  text: string;
+  blocks: Block[] | null;
+}
+
+/** A comment in the margin of a reviewed answer, where the learner's model leaked (design §7.4). */
+export interface ReviewComment {
+  id: string;
+  anchor: ReviewAnchor;
+  /** The checklist items it bears on. */
+  items: string[];
+  /** When the learner found the flaw (or a later session's review settled it); null while open. */
+  resolvedAt: string | null;
+  /** The comment, then the replies and the tutor's answers. */
+  messages: ReviewMessage[];
+}
+
+/** The review of a handed-in assignment (api: engine/reviews.ts). */
+export interface Review {
+  id: string;
+  status: "reviewing" | "done" | "failed";
+  /** Why it failed, for the learner. */
+  failure: string | null;
+  checklist: ChecklistMark[];
+  comments: ReviewComment[];
 }
 
 export const assignmentQuery = (id: string) =>
@@ -73,6 +106,11 @@ export const assignmentApi = {
       snooze,
       timeZone: browserTimeZone(),
     }),
+  /** Starts a review that failed again. */
+  reviewAgain: (id: string) => post<{ reviewing: true }>(`/api/assignments/${id}/review`),
+  /** A reply in a comment's card; the tutor answers it there. */
+  reply: (id: string, commentId: string, text: string) =>
+    post<{ id: string }>(`/api/assignments/${id}/review/comments/${commentId}/replies`, { text }),
   /** Stores a picture for an answer; the markdown links it by the URL it comes back with. */
   picture: (id: string, file: File) => {
     const form = new FormData();

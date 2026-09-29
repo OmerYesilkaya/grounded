@@ -169,6 +169,13 @@
       "when": 1790670492538,
       "tag": "0023_homework_snooze",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790672778130,
+      "tag": "0024_homework_reviews",
+      "breakpoints": true
     }
   ]
 }

@@ -32,14 +32,16 @@ export function HomeworkFooter({ model, messageId }: { model: SessionModel; mess
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-3.5">
       <Button asChild size="sm" variant={handedIn ? "outline" : "default"}>
         <Link to="/homework/$assignmentId" params={{ assignmentId: assignment.id }}>
-          {handedIn ? "See what you handed in" : folded ? "See it" : "Open the homework"}
+          {handedIn ? "See the review" : folded ? "See it" : "Open the homework"}
           <ArrowRight aria-hidden />
         </Link>
       </Button>
       {handedIn ? (
         <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <Check className="size-3.5 text-success" strokeWidth={3} aria-hidden />
-          Handed in
+          {state.phase === "homework" && state.homework === "reviewing"
+            ? "Handed in: the review is on its way, beside your answer"
+            : "Handed in"}
         </span>
       ) : folded ? (
         <span className="text-[12.5px] text-subtle-foreground">

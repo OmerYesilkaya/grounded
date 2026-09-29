@@ -42,9 +42,10 @@ export interface SessionState {
   currentStep: string | null;
   /**
    * The homework phase: being written, then assigned and waiting for the learner to hand it in or
-   * put it off (design §7.4). Missing on a session stored before homework could be handed in.
+   * put it off, then (handed in) being reviewed, which the close waits for (design §7.4). Missing
+   * on a session stored before homework could be handed in.
    */
-  homework?: "writing" | "assigned";
+  homework?: "writing" | "assigned" | "reviewing";
 }
 
 export type SessionEvent =
@@ -68,20 +69,23 @@ export type SessionEvent =
   | { type: "resume" }
   | { type: "checks-complete" }
   | { type: "homework-assigned" }
-  /** The learner handed the homework in, or put it off for later: either way, the close. */
+  /** The learner handed the homework in: its review, then the close. */
   | { type: "homework-handed-in" }
+  /** The homework's review is done, or failed: the close goes on either way. */
+  | { type: "homework-reviewed" }
+  /** The learner put the homework off for later: the close. */
   | { type: "homework-later" }
   | { type: "recap-done" };
 
 export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
 
 /** The jobs a session can wait on that the learner can't set going again by writing. */
-export type AwaitedJob = "probe-turn" | "plan" | "homework" | "recap";
+export type AwaitedJob = "probe-turn" | "plan" | "homework" | "review" | "recap";
 
 /**
  * The job the session is waiting on, when the learner can't move it on themselves (design §4.2):
  * the probe's next turn (the opening question, or after the learner's answer), a plan being written
- * or revised, the homework being written, the recap. Null when it is the learner's turn (an
+ * or revised, the homework being written or reviewed, the recap. Null when it is the learner's turn (an
  * assigned homework is theirs to hand in or put off), and in the lesson, whose
  * jobs are set going again by answering a check or by writing the lesson again.
  */
@@ -95,6 +99,7 @@ export function awaitedJob(
     case "plan":
       return state.plan === "none" || state.plan === "revising" ? "plan" : null;
     case "homework":
+      if (state.homework === "reviewing") return "review";
       return state.homework === "assigned" ? null : "homework";
     case "close":
       return "recap";
@@ -249,6 +254,15 @@ export function transition(state: SessionState, event: SessionEvent): Transition
         : no("Homework comes after the checks.");
 
     case "homework-handed-in":
+      return state.phase === "homework" && state.homework === "assigned"
+        ? ok({ homework: "reviewing" })
+        : no("There is no homework to hand in yet.");
+
+    case "homework-reviewed":
+      return state.phase === "homework" && state.homework === "reviewing"
+        ? ok({ phase: "close" })
+        : no("There is no homework being reviewed.");
+
     case "homework-later":
       return state.phase === "homework" && state.homework === "assigned"
         ? ok({ phase: "close" })

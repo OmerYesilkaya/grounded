@@ -1,20 +1,30 @@
 import { answerProblem, TASK_FORM_SPECS } from "@grounded/core/assignment";
+import { fieldLabel } from "@grounded/core/assignment-review";
 import type { Snooze } from "@grounded/core/snooze";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Check } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { PageBar } from "@/components/page-bar";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { ContentProvider } from "@/content/environment";
+import { AnswerView, fieldScope } from "@/homework/answer-view";
 import { SelfCheck, useSelfCheck } from "@/homework/checklist";
 import { LaterMenu } from "@/homework/later-menu";
+import { ReviewCards, ReviewLayer } from "@/homework/review-layer";
+import { ReviewSummary } from "@/homework/review-summary";
 import { TaskFields } from "@/homework/task-fields";
 import { useAnswers, type SaveStatus } from "@/homework/use-answers";
+import { useReview } from "@/homework/use-review";
 import { assignmentApi, useAssignment, type Assignment } from "@/lib/assignments";
+import { useMediaQuery } from "@/lib/media-query";
+import { scrollBehavior } from "@/lib/motion";
 import { dueWords, useNow } from "@/lib/snooze";
 import { cn } from "@/lib/utils";
+
+/** Wide enough for the margin's comments, as the lesson's (design §9.1); below, under each field. */
+const WIDE = "(min-width: 1100px)";
 
 /** The homework page, at /homework/:assignmentId. */
 export function HomeworkRoute() {
@@ -52,6 +62,35 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   // Folded into a later homework: closed, read only, and that one is the one to do.
   const closed = handedIn || assignment.subsumedBy !== null;
   const [task] = assignment.tasks;
+
+  // The review, once handed in: comments beside the answer, in the margin where there is room.
+  const review = useReview(assignment);
+  const comments = review?.status === "done" ? review.comments : [];
+  const [active, setActive] = useState<string | null>(null);
+  const wide = useMediaQuery(WIDE, true);
+  const grid = useRef<HTMLDivElement>(null);
+  const answer = useRef<HTMLElement>(null);
+  const margin = useRef<HTMLElement>(null);
+  const cards = {
+    comments,
+    checklist: assignment.checklist,
+    active,
+    onActivate: setActive,
+    onReply: async (commentId: string, text: string) => {
+      await assignmentApi.reply(assignment.id, commentId, text);
+    },
+  };
+  /** A checklist item's comment, opened and brought into view. */
+  const showComment = (itemId: string) => {
+    const comment = comments.find((c) => c.items.includes(itemId));
+    if (!comment) return;
+    setActive(comment.id);
+    const { taskId, field } = comment.anchor;
+    const target = wide
+      ? document.querySelector(`[data-step="${fieldScope(taskId, field)}"]`)
+      : document.querySelector(`[data-review-card="${comment.id}"]`);
+    target?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+  };
 
   const refresh = async () => {
     await Promise.all([
@@ -103,7 +142,10 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   return (
     <ContentProvider>
       <TopBar assignment={assignment} status={closed ? null : status} />
-      <div className="grid grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)] pt-12 pb-28 lg:grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(280px,1fr)]">
+      <div
+        ref={grid}
+        className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(340px,1fr)] pt-12 pb-28 max-[1100px]:grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)]"
+      >
         <main className="col-start-2 min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
             Homework · {TASK_FORM_SPECS[task.form].label}
@@ -120,27 +162,58 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             <Blocks blocks={task.blocks} />
           </article>
 
-          <div className="mt-6 lg:hidden">
-            <SelfCheck
-              items={assignment.checklist}
-              ticked={selfCheck.ticked}
-              onToggle={selfCheck.toggle}
-              readOnly={closed}
-            />
-          </div>
+          {review ? (
+            <div className="mt-8">
+              <ReviewSummary
+                review={review}
+                checklist={assignment.checklist}
+                onShowComment={showComment}
+                onAgain={async () => {
+                  await assignmentApi.reviewAgain(assignment.id);
+                }}
+              />
+            </div>
+          ) : (
+            <div className="mt-6 min-[1100px]:hidden">
+              <SelfCheck
+                items={assignment.checklist}
+                ticked={selfCheck.ticked}
+                onToggle={selfCheck.toggle}
+                readOnly={closed}
+              />
+            </div>
+          )}
 
-          <section aria-label="Your answer" className="mt-10 border-t pt-8">
-            <TaskFields
-              form={task.form}
-              answer={answers[task.id]}
-              readOnly={closed}
-              onChange={(key, value) => {
-                change(task.id, key, value);
-              }}
-              onLock={() => lock(task.id)}
-              upload={(file) => assignmentApi.picture(assignment.id, file)}
-              onError={setError}
-            />
+          <section ref={answer} aria-label="Your answer" className="mt-10 border-t pt-8">
+            {handedIn ? (
+              <>
+                <h2 className="mb-5 text-[11px] font-semibold tracking-[0.12em] text-subtle-foreground uppercase">
+                  Your answer
+                </h2>
+                <AnswerView
+                  taskId={task.id}
+                  form={task.form}
+                  answer={answers[task.id]}
+                  after={
+                    comments.length && !wide
+                      ? (scope) => <ReviewCards {...cards} scope={scope} />
+                      : undefined
+                  }
+                />
+              </>
+            ) : (
+              <TaskFields
+                form={task.form}
+                answer={answers[task.id]}
+                readOnly={closed}
+                onChange={(key, value) => {
+                  change(task.id, key, value);
+                }}
+                onLock={() => lock(task.id)}
+                upload={(file) => assignmentApi.picture(assignment.id, file)}
+                onError={setError}
+              />
+            )}
           </section>
 
           {assignment.subsumedBy ? (
@@ -157,16 +230,33 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             />
           )}
         </main>
-        <aside className="col-start-3 ml-10 hidden max-w-[280px] lg:block">
-          <div className="sticky top-24">
-            <SelfCheck
-              items={assignment.checklist}
-              ticked={selfCheck.ticked}
-              onToggle={selfCheck.toggle}
-              readOnly={closed}
-            />
-          </div>
+        {/* The right margin: what a good answer shows, then (reviewed) the review's comments. */}
+        <aside
+          ref={margin}
+          aria-label={review?.status === "done" ? "Comments" : "A good answer shows"}
+          className="col-start-3 mr-5 ml-10 max-w-[300px] max-[1100px]:hidden"
+        >
+          {review?.status !== "done" && (
+            <div className="sticky top-24">
+              <SelfCheck
+                items={assignment.checklist}
+                ticked={selfCheck.ticked}
+                onToggle={selfCheck.toggle}
+                readOnly={closed}
+              />
+            </div>
+          )}
         </aside>
+        {comments.length > 0 && (
+          <ReviewLayer
+            {...cards}
+            grid={grid}
+            answer={answer}
+            margin={margin}
+            wide={wide}
+            fieldLabel={(comment) => fieldLabel(task.form, comment.anchor.field)}
+          />
+        )}
       </div>
     </ContentProvider>
   );

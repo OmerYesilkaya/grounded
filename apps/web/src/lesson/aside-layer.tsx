@@ -388,7 +388,7 @@ function measureLayout(input: {
 }
 
 /** A card in the margin: a thin accent strip, lifted a little on hover, raised when active. */
-function MarginCard({
+export function MarginCard({
   id,
   top,
   active,
@@ -436,7 +436,7 @@ function MarginCard({
 }
 
 /** The dashed line from the active passage to its card, through the gap between them. */
-function Connector({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
+export function Connector({ x1, y1, x2, y2 }: { x1: number; y1: number; x2: number; y2: number }) {
   const bend = x1 + (x2 - x1) / 2;
   return (
     <svg aria-hidden className="absolute inset-0 h-full w-full overflow-visible text-primary">

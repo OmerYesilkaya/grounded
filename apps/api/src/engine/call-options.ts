@@ -68,6 +68,7 @@ export const REASONING: Readonly<
   "probe-decision": "low",
   "term-sweep": "low",
   "aside-record": "low",
+  "review-record": "low",
   "left-off": "low",
   "conversation-summary": "low",
   "track-brief": "low",

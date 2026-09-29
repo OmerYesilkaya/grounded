@@ -1,3 +1,4 @@
+export { answerText } from "./answer-text.js";
 export { ANSWER_PICTURE, parseAnswer, parseBlocks } from "./parse-blocks.js";
 export { parseLesson, splitLessonSteps, type ParseLessonOptions } from "./parse-lesson.js";
 export { createStreamParser } from "./stream-parser.js";

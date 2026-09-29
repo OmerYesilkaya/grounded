@@ -61,14 +61,15 @@ export function createJobQueue(connectionString: string): JobQueue {
 }
 
 /**
- * Whether a job for the session (and the step or aside its payload names) is waiting to run. A job
- * whose worker died is not: it was attempted, and jobs are attempted once (createJobQueue).
+ * Whether a job for the session (and the step, aside or comment its payload names) is waiting to
+ * run. A job whose worker died is not: it was attempted, and jobs are attempted once
+ * (createJobQueue).
  */
 export async function jobWaiting(
   db: Db,
   task: string,
   sessionId: string,
-  match: { stepId?: string; asideId?: string } = {},
+  match: { stepId?: string; asideId?: string; commentId?: string } = {},
 ): Promise<boolean> {
   const also = Object.entries(match).map(
     ([key, value]) => sql`and jobs.payload->>${key} = ${value}`,

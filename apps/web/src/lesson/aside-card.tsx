@@ -36,7 +36,7 @@ export function Thinking() {
 }
 
 /** An answer: revealed as it streams, then its blocks once all of it is shown. */
-function Answer({
+export function Answer({
   text,
   blocks,
   streaming,

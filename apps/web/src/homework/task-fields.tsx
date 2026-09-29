@@ -136,7 +136,7 @@ const stepAnswer = (steps: number): TaskAnswer => ({
   lockedAt: null,
 });
 
-function FieldLabel(props: { number: number | null; label: string; aside?: ReactNode }) {
+export function FieldLabel(props: { number: number | null; label: string; aside?: ReactNode }) {
   return (
     <div className="flex items-baseline gap-2.5">
       {props.number !== null && (
@@ -148,7 +148,7 @@ function FieldLabel(props: { number: number | null; label: string; aside?: React
   );
 }
 
-function LockedBadge({ at }: { at: string }) {
+export function LockedBadge({ at }: { at: string }) {
   return (
     <span className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground">
       <Lock className="size-3" aria-hidden />

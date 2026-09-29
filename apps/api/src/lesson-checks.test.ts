@@ -490,11 +490,18 @@ describe("closing the session", () => {
       sweep([confirmLostUpdate, { type: "set-plan", ...REWRITTEN_PLAN }]),
     );
     models.script("left-off", { text: LEFT_OFF });
+    // Handed in, the homework is reviewed before the close: nothing leaked.
+    const held = (item: string) => ({ item, mark: "held", note: "" });
+    models.script("review", {
+      thenGenerate: [
+        JSON.stringify({ comments: [], checklist: [held("c1"), held("c2")], actions: [] }),
+      ],
+    });
     for (const id of ["s1", "s2", "s3"]) {
       await answer(cookie, sessionId, id, { text: "an answer" });
       await until(cookie, sessionId, (s) => s.state.steps[id]?.status === "passed");
     }
-    // The session waits for the homework: handed in (or put off), then the close.
+    // The session waits for the homework: handed in and reviewed (or put off), then the close.
     const homeworkId = await assignedHomework(cookie, sessionId);
     expect((await snapshot(cookie, sessionId)).state.phase).toBe("homework");
     const write = await t.request(`/api/assignments/${homeworkId}/answers`, {

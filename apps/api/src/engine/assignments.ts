@@ -283,9 +283,11 @@ export async function recordAssignment(options: {
 }
 
 /**
- * The session that assigned this homework goes on to its close once the learner hands it in or
- * puts it off (design §7.4): true when it did. A session already past its homework (closed, say,
- * after an earlier "Later") stays as it is; an exam never holds its session.
+ * The session that assigned this homework goes on once the learner hands it in or puts it off
+ * (design §7.4): handed in, to the homework's review, which the close waits for (the review job
+ * then moves it on, closeAfterReview); put off, to its close. True when it went on. A session
+ * already past its homework (closed, say, after an earlier "Later") stays as it is; an exam never
+ * holds its session.
  */
 export async function closeAfterHomework(
   db: Db,
@@ -293,9 +295,37 @@ export async function closeAfterHomework(
   assignment: AssignmentRow,
   event: "homework-handed-in" | "homework-later",
 ): Promise<boolean> {
+  const moved = await moveOn(db, assignment, "assigned", event);
+  if (moved && event === "homework-later")
+    await queue.enqueue("recap", { sessionId: assignment.sessionId });
+  return moved;
+}
+
+/**
+ * Once the homework's review is done, or has failed, the session that waited for it goes on to its
+ * close (design §7.4): true when it did. A review of homework handed in after its session closed
+ * moves nothing.
+ */
+export async function closeAfterReview(
+  db: Db,
+  queue: JobQueue,
+  assignment: AssignmentRow,
+): Promise<boolean> {
+  const moved = await moveOn(db, assignment, "reviewing", "homework-reviewed");
+  if (moved) await queue.enqueue("recap", { sessionId: assignment.sessionId });
+  return moved;
+}
+
+/** Applies the event to the homework's session if it is waiting on the homework as `from` says. */
+async function moveOn(
+  db: Db,
+  assignment: AssignmentRow,
+  from: "assigned" | "reviewing",
+  event: "homework-handed-in" | "homework-later" | "homework-reviewed",
+): Promise<boolean> {
   if (assignment.kind !== "homework") return false;
   const { state } = await loadSession(db, assignment.sessionId);
-  if (state.phase !== "homework" || state.homework !== "assigned") return false;
+  if (state.phase !== "homework" || state.homework !== from) return false;
   try {
     await applyEvent(db, assignment.sessionId, { type: event });
   } catch (error) {
@@ -303,7 +333,6 @@ export async function closeAfterHomework(
     if (error instanceof RejectedEvent) return false;
     throw error;
   }
-  await queue.enqueue("recap", { sessionId: assignment.sessionId });
   return true;
 }
 

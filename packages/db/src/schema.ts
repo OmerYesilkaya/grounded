@@ -21,6 +21,8 @@ import type {
   AssignmentTask,
   AttachmentKind,
   ChecklistItem,
+  ChecklistMark,
+  ReviewAnchor,
   SessionState,
   StoredLessonOutline,
 } from "@grounded/core";
@@ -566,6 +568,74 @@ export const answerFiles = pgTable(
     createdAt: createdAt(),
   },
   (table) => [index("answer_files_assignment").on(table.assignmentId)],
+);
+
+/**
+ * The review of a handed-in assignment (design §7.4): one per assignment, started when it is handed
+ * in. Its comments are in `review_comments`; the checklist's marks are here.
+ */
+export const reviews = pgTable("reviews", {
+  id: id(),
+  assignmentId: uuid("assignment_id")
+    .notNull()
+    .unique()
+    .references(() => assignments.id, { onDelete: "cascade" }),
+  /** reviewing: its job is on it · done · failed: it can be started again. */
+  status: text("status").$type<"reviewing" | "done" | "failed">().notNull().default("reviewing"),
+  /** Each item of "what a good answer demonstrates", marked held, leaked or missing. */
+  checklist: jsonb("checklist").$type<ChecklistMark[]>().notNull().default([]),
+  /** Why a failed review failed, for the learner (their key, their provider); null otherwise. */
+  failure: text("failure"),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt(),
+});
+
+/**
+ * A comment in the margin of a reviewed answer: where the learner's model leaked, anchored to the
+ * part of the answer it is about. Its thread (the comment, then the learner's replies and the
+ * tutor's answers) is in `review_messages`. Until it is resolved it is an open leak, which the next
+ * session's review carries on (design §7.4).
+ */
+export const reviewComments = pgTable(
+  "review_comments",
+  {
+    id: id(),
+    reviewId: uuid("review_id")
+      .notNull()
+      .references(() => reviews.id, { onDelete: "cascade" }),
+    /** Its place among the review's comments, in the order of the answer. */
+    position: integer("position").notNull(),
+    anchor: jsonb("anchor").$type<ReviewAnchor>().notNull(),
+    /** The checklist items it bears on (c1, c2…). */
+    items: jsonb("items").$type<string[]>().notNull().default([]),
+    /** When the leak was resolved; null while it is open. */
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    /** The later session whose review resolved it; null while open, or when its card did. */
+    resolvedInSession: uuid("resolved_in_session").references(() => learningSessions.id, {
+      onDelete: "set null",
+    }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("review_comments_review").on(table.reviewId, table.position)],
+);
+
+/** A comment's thread: the tutor's comment first, then the learner's replies and the answers. */
+export const reviewMessages = pgTable(
+  "review_messages",
+  {
+    id: id(),
+    commentId: uuid("comment_id")
+      .notNull()
+      .references(() => reviewComments.id, { onDelete: "cascade" }),
+    role: text("role").$type<"learner" | "tutor">().notNull(),
+    /** The learner's words as typed; the tutor's markdown as written. */
+    text: text("text").notNull(),
+    /** The tutor's words as validated blocks; null for the learner's. */
+    blocks: jsonb("blocks").$type<Block[]>(),
+    createdAt: createdAt(),
+  },
+  (table) => [index("review_messages_comment").on(table.commentId, table.createdAt)],
 );
 
 /** An ordered log of everything that happened in a session; SSE replays it from any point. */

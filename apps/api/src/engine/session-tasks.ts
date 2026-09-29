@@ -14,7 +14,6 @@ import {
   type Phase,
   type PromptContext,
   type SessionState,
-  type TrackAction,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import {
@@ -71,6 +70,8 @@ import { profileDue } from "./profile.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
+import { HOMEWORK_REVIEWED, sessionReviewRecord } from "./reviews.js";
+import { recordEdits } from "./track-edits.js";
 import { markCardsTaught } from "./word-cards.js";
 import { createReviewer } from "./review.js";
 import {
@@ -84,7 +85,6 @@ import {
   applyActions,
   applyValidActions,
   loadTrackContext,
-  type RejectedAction,
   type TrackContext,
 } from "./track-state.js";
 
@@ -121,14 +121,6 @@ const SWEEP_REQUEST =
 const HOMEWORK_REQUEST = `(The lesson's checks are done. Assign the homework: one task, of one kind: predict → verify, a derivation, a build, or explain it to a friend. Write the task itself, as the learner will read it on a page of its own: everything it needs restated in full, and for predict → verify what to predict and how to check it. The app gives the task the answer boxes of its kind (predict → verify: the prediction, locked before they check; what actually happened; reconcile. A derivation: its steps, each with its because. A build: what they made, and what surprised them. Explain it to a friend: one box), so don't write blanks or headings for the answers. What a good answer demonstrates is recorded next and shown with the task by the app; don't list it here. ${allowedBlocksLine("homework", "the homework", ["image", "audio"])} (Images and audio need the lesson's tools, which this call doesn't have.) A video or a link card only to a source from this session's research or lesson; the app checks each one opens and leaves out what doesn't.)`;
 const HOMEWORK_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the homework you just wrote: the kind of its task, a few words naming it, and what a good answer demonstrates.";
-
-/** What a call hears about its rejected track edits, to send them again corrected. */
-const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
-  [
-    "(For the app; the learner doesn't see this.) Some of your track edits were rejected and not recorded; the others were recorded:",
-    ...rejected.map((r) => `- ${JSON.stringify(r.action)}: ${r.reason}`),
-    "Send these edits again, corrected, and only these. Leave out any that shouldn't be made after all.",
-  ].join("\n");
 
 /** What the learner is told when no outline fitted the term list: the lesson can be written again. */
 export const OUTLINE_FAILED =
@@ -216,9 +208,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // The homework hears the track's homework still open, which it subsumes (method.md, "Homework").
     const putOff =
       phase === "homework" ? await openHomeworkRecord(db, session.trackId, sessionId) : null;
+    // The close hears the review of the homework handed in, which it waited for (design §7.4).
+    const reviewed = phase === "close" ? await sessionReviewRecord(db, sessionId) : null;
     const extra = [
       ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
       ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
+      ...(reviewed ? [{ heading: HOMEWORK_REVIEWED, body: reviewed }] : []),
       ...(putOff ? [{ heading: OPEN_HOMEWORK, body: putOff }] : []),
     ];
     const track = extra.length ? { ...brought, extra } : brought;
@@ -440,43 +435,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }
   };
 
-  /**
-   * Records the track edits a call made alongside its real work (the probe's decision, a check's
-   * verdict; design §5): what validates is applied, and what doesn't goes back to the call once,
-   * with the reasons, and what validates of its answer is applied too. Asking again is best-effort:
-   * if it fails, what was applied stands and the rest is left out (logged).
-   */
-  const recordEdits = async (options: {
-    sessionId: string;
-    trackId: string;
-    actions: readonly TrackAction[];
-    source: string;
-    /** The activity the call's own work showed. */
-    label: string;
-    /** Asks the call again, with the rejected edits and why; returns the edits it sends instead. */
-    askAgain: (feedback: string) => Promise<readonly TrackAction[]>;
-  }) => {
-    const { trackId, source } = options;
-    const { rejected } = await applyValidActions(db, trackId, options.actions, { source });
-    if (rejected.length === 0) return;
-    log.info({ source, rejected: rejected.length }, "track edits rejected; asking again");
-    try {
-      const again = await withActivity(db, options.sessionId, options.label, () =>
-        options.askAgain(rejectedFeedback(rejected)),
-      );
-      const still = again.length
-        ? (await applyValidActions(db, trackId, again, { source })).rejected
-        : [];
-      if (still.length > 0)
-        log.warn(
-          { source, codes: still.map((r) => r.code) },
-          "track edits rejected again; left out",
-        );
-    } catch (error) {
-      log.warn({ source, err: error }, "asking again for rejected track edits failed; left out");
-    }
-  };
-
   /** Runs a job; `onFailure` settles what it leaves behind before the error is reported. */
   const guarded =
     (
@@ -550,7 +508,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             }),
         );
         if (output.actions.length) {
-          await recordEdits({
+          await recordEdits(db, {
             sessionId,
             trackId: session.trackId,
             actions: output.actions,
@@ -812,7 +770,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
         const graded = verdict;
         if (graded.actions.length)
-          await recordEdits({
+          await recordEdits(db, {
             sessionId,
             trackId: session.trackId,
             actions: graded.actions,

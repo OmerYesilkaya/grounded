@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./assignment": "./src/assignment.ts",
+    "./assignment-review": "./src/assignment-review.ts",
     "./attachments": "./src/attachments.ts",
     "./aside-anchor": "./src/aside-anchor.ts",
     "./session": "./src/session.ts",
