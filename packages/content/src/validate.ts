@@ -255,6 +255,7 @@ function scaffolding(text: string, blockId: string, usable: Set<string>): Issue[
         : {
             code: "scaffolding/maybe",
             severity: "review",
+            word: hit.word,
             message: `"${hit.word}" may refer to the method's machinery; check it is meant in its everyday or domain sense.`,
             blockId,
           },

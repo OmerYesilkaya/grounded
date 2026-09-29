@@ -30,6 +30,7 @@ import { composeReply } from "./chat.js";
 import { publish } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { reportHandledFailure } from "./queue.js";
+import { createReviewer } from "./review.js";
 import { loadSession } from "./session-store.js";
 import { loadTrackContext } from "./track-state.js";
 
@@ -142,6 +143,7 @@ export function createAsideTasks(deps: AsideTaskDependencies): TaskList {
         },
         logFields: { asideId },
         media,
+        review: createReviewer(models, { userId, trackId, sessionId }),
       });
       await recordAsideMessage(db, sessionId, asideId, { role: "tutor", ...answer });
     } catch (error) {

@@ -18,6 +18,7 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
+import type { Reviewer } from "@grounded/core";
 import { generateText, streamText, type Instructions, type ModelMessage } from "ai";
 import { v7 as uuidv7 } from "uuid";
 import { content, log } from "../log.js";
@@ -39,6 +40,8 @@ export interface ChatMessageOptions {
   surface?: Surface;
   /** Where the message's links are verified before it is stored (design §6.4). */
   media: VerifierOptions;
+  /** Judges what the validators can't decide by matching (design §3.3). */
+  review: Reviewer;
 }
 
 export interface ChatMessageResult {
@@ -69,6 +72,8 @@ export interface ReplyOptions {
   logFields: Record<string, unknown>;
   /** Where the reply's links are verified before it is stored (design §6.4). */
   media: VerifierOptions;
+  /** Judges what the validators can't decide by matching (design §3.3). */
+  review: Reviewer;
 }
 
 function chatIssues(
@@ -76,13 +81,14 @@ function chatIssues(
   surface: Surface,
   terms: readonly TrackTerm[],
   introduced: readonly string[] = [],
-): { blocks: Block[]; errors: Issue[] } {
+): { blocks: Block[]; errors: Issue[]; flagged: Issue[] } {
   const parsed = parseBlocks(text);
-  const errors = [
-    ...parsed.issues,
-    ...validate(parsed.blocks, { surface, terms, introduced }),
-  ].filter((i) => i.severity !== "review");
-  return { blocks: parsed.blocks, errors };
+  const issues = [...parsed.issues, ...validate(parsed.blocks, { surface, terms, introduced })];
+  return {
+    blocks: parsed.blocks,
+    errors: issues.filter((i) => i.severity !== "review"),
+    flagged: issues.filter((i) => i.severity === "review"),
+  };
 }
 
 const isBlank = (text: string) => text.trim() === "";
@@ -190,6 +196,15 @@ export async function composeReply(
 
   const first = chatIssues(text, surface, options.terms, options.introduced);
   let { blocks } = first;
+  // What matching can't decide, judged by the cheap model; one rewrite fixes both kinds.
+  first.errors.push(
+    ...(await options.review({
+      markdown: text,
+      flagged: first.flagged,
+      terms: options.terms,
+      introduced: options.introduced ?? [],
+    })),
+  );
   if (first.errors.length > 0) {
     log.info(
       {

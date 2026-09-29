@@ -147,6 +147,33 @@ describe("generateLesson", () => {
     );
   });
 
+  it("rewrites a sound step the review objects to, and keeps it as written if it still does", async () => {
+    const JARGON: Issue = {
+      code: "term/judged",
+      message: '"mutex" is used as if the learner knew it.',
+    };
+    const reviewed: string[] = [];
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(OUTLINE)), text(S1), text(S1)],
+      doStream: streamOf([S1, S2, S3].join("\n\n")),
+    });
+    const { result, emitted } = await run(model, {
+      // Step 1 is always judged; the others never are.
+      review: (unit) => {
+        reviewed.push(unit.introduced?.join(" · ") ?? "");
+        return Promise.resolve(unit.markdown.startsWith("## Adding one") ? [JARGON] : []);
+      },
+    });
+    expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    expect(result.failed).toEqual([]);
+    expect(result.degraded).toEqual([{ stepId: "s1", issues: [JARGON] }]);
+    expect(promptText(model.doGenerateCalls[1])).toContain(
+      '"mutex" is used as if the learner knew it.',
+    );
+    // Each step is judged with the words given so far, its own cards included.
+    expect(reviewed).toContain("working copy · race condition");
+  });
+
   it("reports each step as its writing starts, and each rewrite", async () => {
     const starts: [number, number, string[]][] = [];
     await generateLesson({

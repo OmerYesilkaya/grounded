@@ -87,6 +87,21 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   regenerates; the ambiguous words are sent to **review**, where the cheap model judges them in context.
   A word that is a usable domain term of the track (a graph-theory track's "graph") is never flagged.
   Code, inline code and maths are not checked; diagram captions and labels are.
+- **The review** (decided 2026-09-29, #52; `packages/core/src/review.ts`, `engine/review.ts`): one
+  structured call to the cheap model (purpose `wording-review`, little reasoning) per text a learner
+  reads — a chat message, an answer in the margin, a check's reply with its fresh question, a lesson
+  step — made after the exact checks. It is given the ambiguous words flagged in it and the whole
+  term list by name (held, and not held yet; a lesson's words given so far count as held), and
+  returns, per flagged word, whether it is machinery where it stands, and any domain term the text
+  uses that the learner doesn't hold and the text doesn't explain there. Those come back as errors
+  (`scaffolding/judged`, `term/judged`) and are fixed with the exact ones, in the same rewrite:
+  a chat message and a check's reply once, a lesson step with its rewrites. A lesson step is judged
+  only once it is otherwise sound, and one the review still objects to after its rewrites is kept as
+  written (logged with the judged codes): the review can hold a text back for a rewrite, never fail
+  a lesson. A review that fails finds nothing. A text under 25 words with no flagged word isn't
+  reviewed (`REVIEW_MIN_WORDS`): "That's it." has no room for jargon, and the learner is waiting.
+  Cost: ~4,600 input tokens on the imported track's 204 terms (§4.4, the budgets), about half a
+  cent on Haiku; latency: one cheap call before a text is stored or a step is released.
 - **The same validators are the eval harness's scorers** (§11), so "which models are allowed" is
   measured by the checks that protect learners every day.
 
@@ -380,7 +395,8 @@ about, test and debug.
   homework 12,500, check 10,000, close 25,000. The method's sections are now the largest part
   (18–24 KB per phase), and they are the part every call reuses from the cache. An aside (#37)
   carries the whole lesson: ~13,300 with six steps of a real one's size (about 20 KB) and two
-  earlier asides, budget 16,000.
+  earlier asides, budget 16,000. The wording review (#52, §3.3) carries the whole term list by name
+  and one text: ~4,600 for a probe question, budget 7,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -405,7 +421,8 @@ about, test and debug.
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
   it), the close's term sweep (`term-sweep`, apart from the recap) and an aside's record
-  (`aside-record`, apart from its answer), and so do the summaries of what is already written ("where
+  (`aside-record`, apart from its answer), the wording review (`wording-review`, §3.3), and so do
+  the summaries of what is already written ("where
   you left off", `left-off`; a long session's older turns, `conversation-summary`). Everything else
   keeps the provider's default, above all plans, lessons and check grading.
 
@@ -1210,8 +1227,8 @@ progress, so a step is done when its issues are closed.
    changes, what the app provides in context and what the model returns).
 2. Repo setup: git, pnpm workspaces, lint/format/test tooling, CI, Docker, Postgres locally.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
-   components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict. Owed:
-   the cheap model's review (#52).
+   components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict; the
+   cheap model's review (#52).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),

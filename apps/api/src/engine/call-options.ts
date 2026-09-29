@@ -71,6 +71,7 @@ export const REASONING: Readonly<
   "left-off": "low",
   "conversation-summary": "low",
   "track-brief": "low",
+  "wording-review": "low",
 };
 
 /** What a call is for and about, as the middleware sees it (ModelRequest). */

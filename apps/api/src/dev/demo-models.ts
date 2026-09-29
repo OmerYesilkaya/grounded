@@ -162,6 +162,7 @@ export function createDemoModels(): ModelAccess {
       ]),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
+    "wording-review": () => model("", [JSON.stringify({ flagged: [], jargon: [] })]),
     "term-sweep": () =>
       model("", [
         JSON.stringify({

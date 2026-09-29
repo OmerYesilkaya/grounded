@@ -248,7 +248,7 @@ const PHASE_OF: Record<string, BudgetedPhase> = {
 const withinBudgets = () => {
   const sizes = promptSizes();
   for (const { purpose, chars } of sizes) {
-    const phase = PHASE_OF[purpose] ?? (purpose as BudgetedPhase);
+    const phase = PHASE_OF[purpose] ?? (purpose as BudgetedPhase | "wording-review");
     expect(estimateTokens(chars), purpose).toBeLessThanOrEqual(PROMPT_BUDGETS[phase]);
   }
   return [...new Set(sizes.map((s) => s.purpose))];
@@ -281,6 +281,23 @@ describe("prompt budgets on a large track", () => {
       expect(withinBudgets()).toEqual(purposes[phase as BudgetedPhase]);
     });
   }
+
+  it("keeps the wording review of a message within budget: the whole term list, and the text", async () => {
+    const { sessionId } = await createLargeTrack(t.db, {
+      conversation: CONVERSATION,
+      leftOff: LEFT_OFF,
+    });
+    await t.db
+      .update(learningSessions)
+      .set({ state: initialSession() })
+      .where(eq(learningSessions.id, sessionId));
+    models.script("probe-decision", probeGoesOn());
+    models.script("probe", {
+      text: "Picture two people reading the same row while a third changes it. In your own words: what does each reader see, and what would you want the map of who waits for whom to look like?",
+    });
+    await run("probe-turn", { sessionId });
+    expect(withinBudgets()).toEqual(["probe-decision", "probe", "wording-review"]);
+  });
 
   it("keeps a just-imported track's opening within budget, its notes read whole only once", async () => {
     const { sessionId } = await createLargeTrack(t.db);

@@ -45,6 +45,15 @@ export type {
   StoredLessonOutline,
 } from "./lesson.js";
 export { loadMethod } from "./method-file.js";
+export {
+  reviewIssues,
+  reviewSystem,
+  reviewWording,
+  wordingReviewSchema,
+  type Reviewer,
+  type ReviewUnit,
+  type WordingReview,
+} from "./review.js";
 export { checkVerdictSchema, type CheckVerdict } from "./check.js";
 export {
   planActionsSchema,

@@ -72,6 +72,7 @@ import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import { markCardsTaught } from "./word-cards.js";
+import { createReviewer } from "./review.js";
 import {
   applyActions,
   applyValidActions,
@@ -180,6 +181,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   /** A phase's system prompt, in the parts that let the provider cache its stable start. */
   const systemFor = (phase: Phase, context: PromptContext) =>
     systemMessages(assembleSystemPrompt(method, phase, context));
+  /** The review of what the validators can't match (review.ts), in a session's calls. */
+  const reviewerFor = (session: { id: string; userId: string; trackId: string }) =>
+    createReviewer(models, {
+      userId: session.userId,
+      trackId: session.trackId,
+      sessionId: session.id,
+    });
 
   const contextFor = async (sessionId: string, phase: Phase) => {
     const session = await loadSession(db, sessionId);
@@ -592,6 +600,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       await writeChatMessage({
         db,
         media: deps.media,
+        review: reviewerFor(session),
         sessionId,
         model: await modelFor("probe"),
         system: context.system,
@@ -635,6 +644,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           system,
           request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}`,
           terms,
+          review: reviewerFor(session),
           ...(resume ? { resume } : {}),
           media: createLessonMedia({
             ...deps.media,
@@ -736,16 +746,29 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             });
             return output;
           });
-        const problems = (text: string | null) => {
-          if (!text) return [];
-          const parsed = parseBlocks(text);
+        const review = reviewerFor(session);
+        // The reply and the fresh question, checked by matching, then judged together by the review.
+        const problems = async (graded: { reply: string; freshQuestion: string | null }) => {
+          const texts = [graded.reply, graded.freshQuestion ?? ""].filter(Boolean);
+          const found = texts.flatMap((text) => {
+            const parsed = parseBlocks(text);
+            return [
+              ...parsed.issues,
+              ...validate(parsed.blocks, { surface: "repair", terms, introduced }),
+            ];
+          });
           return [
-            ...parsed.issues,
-            ...validate(parsed.blocks, { surface: "repair", terms, introduced }),
-          ].filter((i) => i.severity !== "review");
+            ...found.filter((i) => i.severity !== "review"),
+            ...(await review({
+              markdown: texts.join("\n\n"),
+              flagged: found.filter((i) => i.severity === "review"),
+              terms,
+              introduced,
+            })),
+          ];
         };
         let verdict = await grade("");
-        const issues = [...problems(verdict.reply), ...problems(verdict.freshQuestion)];
+        const issues = await problems(verdict);
         if (issues.length > 0) {
           log.info({ issues: issues.map((i) => i.code) }, "check reply broke rules; grading again");
           verdict = await grade(
@@ -865,6 +888,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         await writeChatMessage({
           db,
           media: deps.media,
+          review: reviewerFor(session),
           sessionId,
           model,
           system,
@@ -893,6 +917,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           await writeChatMessage({
             db,
             media: deps.media,
+            review: reviewerFor(session),
             sessionId,
             model: await models.model({
               userId: session.userId,
@@ -1042,6 +1067,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           const reply = await writeChatMessage({
             db,
             media: deps.media,
+            review: reviewerFor(session),
             sessionId,
             model,
             system,

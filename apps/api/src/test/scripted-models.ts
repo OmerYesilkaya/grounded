@@ -98,6 +98,9 @@ const searchTool: Tool = {
   inputSchema: jsonSchema({ type: "object", properties: { query: { type: "string" } } }),
 };
 
+/** A wording review that finds nothing to change (review.ts in @grounded/core). */
+export const CLEAN_REVIEW = JSON.stringify({ flagged: [], jargon: [] });
+
 /** Model access for tests: each purpose serves its scripted models in order. */
 export function scriptedModels() {
   const queues = new Map<string, MockLanguageModelV4[]>();
@@ -105,7 +108,10 @@ export function scriptedModels() {
   let search = false;
   const access: ModelAccess = {
     model: ({ purpose }) => {
-      const model = queues.get(purpose)?.shift();
+      // The wording review finds nothing unless a test scripts what it finds.
+      const model =
+        queues.get(purpose)?.shift() ??
+        (purpose === "wording-review" ? scriptedModel({ text: CLEAN_REVIEW }) : undefined);
       if (!model) return Promise.reject(new Error(`no scripted model for "${purpose}"`));
       used.push({ purpose, model });
       return Promise.resolve(model);

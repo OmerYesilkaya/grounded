@@ -10,6 +10,7 @@ import {
 import { generateText, Output, stepCountIs, streamText, type Instructions, type ToolSet } from "ai";
 import { z } from "zod";
 import type { LessonStepInfo, StepCheck } from "./session.js";
+import type { Reviewer } from "./review.js";
 
 export const lessonOutlineSchema = z.object({
   title: z
@@ -119,6 +120,8 @@ export interface GenerateLessonOptions {
   resume?: { outline: StoredLessonOutline; written: readonly string[] };
   /** Finding and verifying media; without it, steps are kept as parsed. */
   media?: LessonMedia;
+  /** Judges what the validators can't decide by matching (design §3.3); without it, nothing is. */
+  review?: Reviewer;
 }
 
 export interface LessonResult {
@@ -135,6 +138,8 @@ export interface LessonResult {
 
 const USABLE = new Set(["confirmed", "assumed", "borrowed"]);
 const DEGRADABLE = /^(diagram|stepper|chart|video|image|audio|link)\//;
+/** Whether the cheap model's review found the issue (review.ts). */
+const isJudged = (code: string) => code.endsWith("/judged");
 const norm = (term: string) => term.trim().toLowerCase();
 
 type Settled =
@@ -428,11 +433,21 @@ async function check(
 ): Promise<Settled> {
   const parsed = parseLesson(markdown, { firstStepNumber: index + 1 });
   const [step] = parsed.steps;
-  const issues = [...parsed.issues];
-  if (step) issues.push(...stepErrors(step, index, planned, options));
+  const found = step ? stepIssues(step, index, planned, options) : [];
+  const issues = [...parsed.issues, ...found.filter((i) => i.severity !== "review")];
   if (!step && issues.length === 0)
     issues.push({ code: "lesson/empty", message: "The step is empty." });
   if (!step || issues.length > 0) return { kind: "retry", markdown, issues };
+  // What matching can't decide, the cheap model judges, once the step is otherwise sound.
+  if (options.review) {
+    const judged = await options.review({
+      markdown,
+      flagged: found.filter((i) => i.severity === "review"),
+      terms: options.terms,
+      introduced: introducedBefore(planned.outline, index + 1),
+    });
+    if (judged.length > 0) return { kind: "retry", markdown, issues: judged };
+  }
   if (!options.media) return { kind: "ok", step, markdown };
   const verified = await options.media.verify(step);
   return verified.issues.length === 0
@@ -441,6 +456,16 @@ async function check(
 }
 
 function stepErrors(
+  step: LessonStep,
+  index: number,
+  planned: Planned,
+  options: GenerateLessonOptions,
+): Issue[] {
+  return stepIssues(step, index, planned, options).filter((issue) => issue.severity !== "review");
+}
+
+/** A step's issues, the ones for the review (severity "review") included. */
+function stepIssues(
   step: LessonStep,
   index: number,
   planned: Planned,
@@ -455,7 +480,7 @@ function stepErrors(
       taughtHere: planned.outline.steps[index]?.introduces ?? [],
       ...(options.glossary ? { glossary: options.glossary } : {}),
     }),
-  ].filter((issue) => issue.severity !== "review");
+  ];
 }
 
 /** A step ends with a check exactly where the app placed one. */
@@ -488,7 +513,9 @@ async function finalize(
   planned: Planned,
   options: GenerateLessonOptions,
 ): Promise<Settled> {
-  if (entry.issues.every((i) => DEGRADABLE.test(i.code))) {
+  // A step whose only problems are drawings, media or what the review judged is kept: without the
+  // broken blocks, and as written where only the review objects (it can't fail a lesson).
+  if (entry.issues.every((i) => DEGRADABLE.test(i.code) || isJudged(i.code))) {
     const parsed = parseLesson(entry.markdown, {
       firstStepNumber: index + 1,
       tolerate: (i) => DEGRADABLE.test(i.code),

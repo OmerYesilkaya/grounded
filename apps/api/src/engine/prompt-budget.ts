@@ -16,8 +16,11 @@ export type BudgetedPhase = Extract<
  *   and up to 300 terms held in the learner's other tracks, to borrow (#54).
  * - close: the whole plan and the plan's notes as written, which only the close reads.
  * - aside: the whole lesson (six steps of a real one's size, about 20 KB) and two earlier asides.
+ * - wording-review: the cheap model's review of one text (#52): the whole term list by name, and the
+ *   text: ~4,600 measured for a probe question on the large track; a lesson step of about 3 KB adds
+ *   some 800 more.
  */
-export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {
+export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase | "wording-review", number>> = {
   probe: 12_000,
   plan: 20_000,
   lesson: 12_500,
@@ -25,6 +28,7 @@ export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase, number>> = {
   homework: 12_500,
   close: 25_000,
   aside: 16_000,
+  "wording-review": 7_000,
 };
 
 /** A rough count of tokens: about four characters each for English prose and markdown. */

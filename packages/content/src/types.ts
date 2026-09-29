@@ -91,6 +91,8 @@ export interface Issue {
   message: string;
   /** "review": needs a judgement in context (a cheap model decides). Absent: an error to regenerate. */
   severity?: "review";
+  /** For a review: the word to judge. */
+  word?: string;
   blockId?: string;
   /** Set for issues inside a lesson step, so only that step is regenerated. */
   stepId?: string;

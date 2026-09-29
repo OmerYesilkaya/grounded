@@ -21,6 +21,8 @@ import {
 } from "./test/flows.js";
 
 const models = scriptedModels();
+/** The tutor's own calls, in order, without the wording reviews made on what it wrote. */
+const tutorCalls = () => models.used.filter((u) => u.purpose !== "wording-review");
 const t = createTestHarness({ models: models.access });
 
 beforeEach(() => {
@@ -144,7 +146,7 @@ describe("where you left off", () => {
     const { cookie, trackId } = await withNotes("Reordered: backend first.");
     models.script("probe", { text: FIRST_QUESTION });
     expect(JSON.stringify(await open(cookie, trackId))).toContain("Reordered: backend first.");
-    expect(models.used.map((u) => u.purpose)).toEqual(["probe"]);
+    expect(tutorCalls().map((u) => u.purpose)).toEqual(["probe"]);
   });
 
   it("falls back to the notes as written when it can't be written", async () => {
@@ -237,8 +239,8 @@ describe("probe and plan", () => {
       "Noting what your answers showed",
       "Thinking…",
     ]);
-    expect(models.used.map((u) => u.purpose)).toEqual(["probe", "probe-decision", "probe"]);
-    const [, decision, question] = models.used.map((u) => u.model);
+    expect(tutorCalls().map((u) => u.purpose)).toEqual(["probe", "probe-decision", "probe"]);
+    const [, decision, question] = tutorCalls().map((u) => u.model);
     expect(JSON.stringify(decision?.doGenerateCalls[0]?.prompt)).not.toContain("Verstanden");
     expect(JSON.stringify(question?.doStreamCalls[0]?.prompt)).toContain(
       "Teaching language: German",
@@ -314,7 +316,7 @@ describe("probe and plan", () => {
 
   it("gives the plan the probe's conclusion, written by its own call after the decision", async () => {
     await planned();
-    expect(models.used.map((u) => u.purpose)).toEqual([
+    expect(tutorCalls().map((u) => u.purpose)).toEqual([
       "probe",
       "probe-decision",
       "probe-summary",
@@ -518,6 +520,32 @@ describe("probe and plan", () => {
     expect(message?.blocks?.map((b) => b.type)).toEqual(["paragraph"]);
     const [user] = await t.db.select().from(users);
     expect(user).toBeDefined();
+  });
+
+  it("rewrites a probe message whose ambiguous word the review judges to be machinery", async () => {
+    const { cookie, trackId } = await learner();
+    const first =
+      "Before we start, I want to see where your map of this ends. In your own words, what happens between typing an address into the browser and seeing the page appear on the screen?";
+    const rewrite =
+      "In your own words, what happens between typing an address and seeing the page?";
+    models.script("probe", { text: first, thenGenerate: [rewrite] });
+    models.script("wording-review", {
+      text: JSON.stringify({ flagged: [{ word: "map", machinery: true }], jargon: [] }),
+    });
+    const { id } = (await (
+      await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie })
+    ).json()) as { id: string };
+    await until(cookie, id, storedMessages(1));
+
+    const [message] = await t.db
+      .select()
+      .from(sessionMessages)
+      .where(eq(sessionMessages.sessionId, id));
+    expect(message?.text).toBe(rewrite);
+    const asked = JSON.stringify(
+      models.used.find((u) => u.purpose === "probe")?.model.doGenerateCalls[0]?.prompt,
+    );
+    expect(asked).toContain("reads as the tutor's own bookkeeping here");
   });
 });
 
