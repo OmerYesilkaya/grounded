@@ -1,9 +1,9 @@
 import type { Phase } from "@grounded/core";
 
-/** The phases the session's jobs run today; review, the final and profile refreshes have none yet. */
+/** The phases the session's jobs run today; the final and profile refreshes have none yet. */
 export type BudgetedPhase = Extract<
   Phase,
-  "probe" | "plan" | "lesson" | "check" | "homework" | "close" | "aside"
+  "review" | "probe" | "plan" | "lesson" | "check" | "homework" | "close" | "aside"
 >;
 
 /**
@@ -15,6 +15,9 @@ export type BudgetedPhase = Extract<
  * - plan: the whole plan, every arc with its terms (it places its new terms in the arcs they belong to),
  *   and up to 300 terms held in the learner's other tracks, to borrow (#54).
  * - close: the whole plan and the plan's notes as written, which only the close reads.
+ * - review: the opening review (#40) at its largest: an arc exam's review and a homework's, twelve
+ *   open comments with their threads, two steps left shaky with their sources and check threads,
+ *   and four answers: ~12,300 on the large track.
  * - aside: the whole lesson (six steps of a real one's size, about 20 KB) and two earlier asides.
  * - wording-review: the cheap model's review of one text (#52): the whole term list by name, and the
  *   text: ~4,600 measured for a probe question on the large track; a lesson step of about 3 KB adds
@@ -24,6 +27,7 @@ export type BudgetedPhase = Extract<
  *   sessions that taught it: ~13,200 on the large track, whose arcs have 17 terms.
  */
 export const PROMPT_BUDGETS: Readonly<Record<BudgetedPhase | "wording-review" | "exam", number>> = {
+  review: 15_000,
   probe: 12_000,
   plan: 20_000,
   lesson: 12_500,

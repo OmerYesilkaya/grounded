@@ -415,7 +415,9 @@ about, test and debug.
   carries the whole lesson: ~13,300 with six steps of a real one's size (about 20 KB) and two
   earlier asides, budget 16,000. The wording review (#52, §3.3) carries the whole term list by name
   and one text: ~4,600 for a probe question, budget 7,000. The arc exam (#42) carries the homework's
-  call, its message and the whole arc it covers: ~13,200, budget 16,000.
+  call, its message and the whole arc it covers: ~13,200, budget 16,000. The opening review (#40)
+  at its largest (an arc exam's review and a homework's with twelve open comments and their
+  threads, two steps left shaky with their check threads, four answers): ~12,300, budget 15,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one

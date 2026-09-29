@@ -1,6 +1,21 @@
 import type { LanguageModelV4Prompt } from "@ai-sdk/provider";
 import { initialSession, loadMethod, type SessionState } from "@grounded/core";
-import { checkMessages, eq, learningSessions, lessons, terms, tracks } from "@grounded/db";
+import {
+  and,
+  assignments,
+  checkMessages,
+  desc,
+  eq,
+  isNotNull,
+  learningSessions,
+  lessons,
+  reviewComments,
+  reviewMessages,
+  reviews,
+  sessionMessages,
+  terms,
+  tracks,
+} from "@grounded/db";
 import type { JobHelpers } from "graphile-worker";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createAsideTasks } from "./engine/aside-tasks.js";
@@ -83,6 +98,139 @@ const ASIDE_ANCHOR = {
 };
 const ASIDE_ANSWER =
   "It can wait until the change is finished, or it can read the row as it was before the change began. Which one happens is a setting of the database, and the lesson builds it shortly.";
+
+const COMMENT =
+  "Look at what you wrote about the second reader here. What does the row look like to it at the moment the first transaction has changed it but not yet committed, and why?";
+const REPLY = "I think it sees the new value, because the change has already been made to the row.";
+
+/**
+ * A review of work the last closed session set, done and taken up by `takenUpIn`: `parts` tasks,
+ * `items` checklist items (the first leaked), and `comments` open comments, each with a reply and
+ * the tutor's answer.
+ */
+async function reviewedWork(
+  last: { id: string; trackId: string; userId: string },
+  takenUpIn: string,
+  shape: { kind: "homework" | "exam"; parts: number; items: number; comments: number },
+) {
+  const tasks = Array.from({ length: shape.parts }, (_, i) => ({
+    id: `t${String(i + 1)}`,
+    title: shape.parts > 1 ? `Part ${String(i + 1)}: two readers and one writer` : null,
+    form: "explain" as const,
+    blocks: [],
+    source: "Explain it.",
+  }));
+  const checklist = Array.from({ length: shape.items }, (_, i) => ({
+    id: `c${String(i + 1)}`,
+    text: `Item ${String(i + 1)}: says what the reader sees while the row is changed, and why.`,
+  }));
+  const [assignment] = await t.db
+    .insert(assignments)
+    .values({
+      trackId: last.trackId,
+      userId: last.userId,
+      sessionId: last.id,
+      kind: shape.kind,
+      title: shape.kind === "exam" ? "Readers, writers and isolation" : "The second reader",
+      tasks,
+      checklist,
+      messageId: crypto.randomUUID(),
+      submittedAt: new Date(),
+    })
+    .returning();
+  const [review] = await t.db
+    .insert(reviews)
+    .values({
+      assignmentId: assignment?.id ?? "",
+      status: "done",
+      checklist: checklist.map((item, i) => ({
+        id: item.id,
+        mark: i === 0 ? ("leaked" as const) : ("held" as const),
+        note: i === 0 ? "Look again at what the second reader sees." : "",
+      })),
+      takenUpIn,
+    })
+    .returning();
+  for (let i = 0; i < shape.comments; i++) {
+    const [comment] = await t.db
+      .insert(reviewComments)
+      .values({
+        reviewId: review?.id ?? "",
+        position: i,
+        anchor: {
+          taskId: tasks[i % tasks.length]?.id ?? "t1",
+          field: "text",
+          quote: "the reader sees the new value",
+          prefix: "",
+          suffix: "",
+        },
+        items: ["c1"],
+      })
+      .returning();
+    await t.db.insert(reviewMessages).values(
+      [COMMENT, REPLY, COMMENT].map((text, j) => ({
+        commentId: comment?.id ?? "",
+        role: j % 2 === 0 ? ("tutor" as const) : ("learner" as const),
+        text,
+      })),
+    );
+  }
+}
+
+/**
+ * What waits for the large track's opening review, at its largest: an arc exam's review and a
+ * homework's, with open comments in their margins, and two steps the last session went past while
+ * still shaky, each with its check thread. The review has had four answers.
+ */
+async function openingReviewWaiting(sessionId: string) {
+  const { trackId } = await loadSession(t.db, sessionId);
+  const [last] = await t.db
+    .select()
+    .from(learningSessions)
+    .where(and(eq(learningSessions.trackId, trackId), isNotNull(learningSessions.closedAt)))
+    .orderBy(desc(learningSessions.createdAt))
+    .limit(1);
+  if (!last) throw new Error("no closed session");
+  await reviewedWork(last, sessionId, { kind: "exam", parts: 4, items: 6, comments: 8 });
+  await reviewedWork(last, sessionId, { kind: "homework", parts: 1, items: 4, comments: 4 });
+  const shaky = ["s1", "s2"];
+  await t.db
+    .update(learningSessions)
+    .set({
+      state: {
+        ...last.state,
+        lesson: {
+          status: "ready",
+          steps: shaky.map((id) => ({ id, check: { steps: [id], terms: [], gates: true } })),
+        },
+        steps: Object.fromEntries(
+          shaky.map((id) => [id, { status: "settling", misses: 2, offerGate: false }]),
+        ),
+      },
+    })
+    .where(eq(learningSessions.id, last.id));
+  await t.db
+    .insert(lessons)
+    .values({ sessionId: last.id, stepSources: { s1: STEP_SOURCE, s2: STEP_SOURCE } });
+  for (const stepId of shaky)
+    await t.db.insert(checkMessages).values(
+      [REPLY, COMMENT, REPLY, COMMENT].map((text, i) => ({
+        sessionId: last.id,
+        stepId,
+        role: i % 2 === 0 ? ("learner" as const) : ("tutor" as const),
+        text,
+      })),
+    );
+  // The review so far: its opening message and four answers.
+  await t.db.delete(sessionMessages).where(eq(sessionMessages.sessionId, sessionId));
+  for (let i = 0; i < 8; i++)
+    await t.db.insert(sessionMessages).values({
+      sessionId,
+      role: i % 2 === 0 ? "tutor" : "learner",
+      kind: "review",
+      text: i % 2 === 0 ? COMMENT : REPLY,
+    });
+}
 
 /** A session of the large track in the given state, and the job that runs its phase. */
 const scenarios: Record<
@@ -200,6 +348,20 @@ const scenarios: Record<
     },
     job: "recap",
   },
+  review: {
+    state: initialSession("review"),
+    setup: async (sessionId) => {
+      await openingReviewWaiting(sessionId);
+      return undefined;
+    },
+    script: () => {
+      models.script("opening-review-decision", {
+        thenGenerate: [JSON.stringify({ actions: [], resolved: [], finished: false })],
+      });
+      models.script("opening-review", { text: "And the second writer: what does it see?" });
+    },
+    job: "opening-review",
+  },
   aside: {
     state: {
       ...lesson,
@@ -249,6 +411,8 @@ const PHASE_OF: Record<string, BudgetedPhase> = {
   "term-sweep": "close",
   "left-off": "close",
   "aside-record": "aside",
+  "opening-review-decision": "review",
+  "opening-review": "review",
 };
 
 const withinBudgets = () => {
@@ -268,6 +432,7 @@ describe("prompt budgets on a large track", () => {
     check: ["check"],
     homework: ["homework"],
     close: ["close", "term-sweep", "left-off"],
+    review: ["opening-review-decision", "opening-review"],
     aside: ["aside", "aside-record"],
   };
   for (const [phase, scenario] of Object.entries(scenarios)) {
