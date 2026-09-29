@@ -1,11 +1,11 @@
 import type { LessonStep } from "@grounded/content";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
 import { useMediaQuery } from "@/lib/media-query";
-import { scrollBehavior } from "@/lib/motion";
 import { AsideLayer } from "./aside-layer";
 import { CheckCard } from "./check-card";
+import { jumpToStep, stepAnchor, unlockedSteps, useCurrentStep } from "./steps";
 import { StepTimeline } from "./step-timeline";
 import type { LessonAsides, StepProgress } from "./types";
 
@@ -37,24 +37,6 @@ export interface LessonViewProps {
 const WIDE = "(min-width: 1100px)";
 
 const OPEN: StepProgress = { status: "open", thread: [] };
-const stepAnchor = (stepId: string) => `step-${stepId}`;
-
-/**
- * Steps up to and including the first whose check hasn't landed (or was continued past). A step
- * without a check opens with the step before it.
- */
-function unlockedSteps(
-  steps: readonly LessonStep[],
-  progress: LessonViewProps["progress"],
-): LessonStep[] {
-  const shown: LessonStep[] = [];
-  for (const step of steps) {
-    shown.push(step);
-    const status = progress[step.id]?.status ?? "open";
-    if (status !== "passed" && status !== "settling" && status !== "unchecked") break;
-  }
-  return shown;
-}
 
 /**
  * The lesson reading view: steps unlock as the checks before them land, a timeline in the left gutter, the
@@ -73,12 +55,6 @@ export function LessonView(props: LessonViewProps) {
   // Where the browser can't tell (tests), the margin is there.
   const wide = useMediaQuery(WIDE, true);
 
-  const jump = (stepId: string) => {
-    document
-      .getElementById(stepAnchor(stepId))
-      ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
-  };
-
   return (
     <div
       ref={grid}
@@ -91,7 +67,7 @@ export function LessonView(props: LessonViewProps) {
             lockedCount={lockedCount}
             currentStepId={currentStepId}
             progress={progress}
-            onJump={jump}
+            onJump={jumpToStep}
           />
         </div>
       </div>
@@ -174,28 +150,6 @@ export function LessonView(props: LessonViewProps) {
   );
 }
 
-/** The step being read: the last one whose top has scrolled past a third of the viewport. */
-function useCurrentStep(shown: readonly LessonStep[]): string | null {
-  const lastId = shown.at(-1)?.id ?? null;
-  const [current, setCurrent] = useState<string | null>(null);
-  useEffect(() => {
-    const update = () => {
-      let id: string | null = shown[0]?.id ?? null;
-      for (const step of shown) {
-        const top = document.getElementById(stepAnchor(step.id))?.getBoundingClientRect().top;
-        if (top !== undefined && top < window.innerHeight * 0.35) id = step.id;
-      }
-      setCurrent(id);
-    };
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", update);
-    };
-  }, [shown, lastId]);
-  return current;
-}
-
 /**
  * When a check lands and steps open, glide to the first of them once the verdict has been read. The
  * glide goes to the latest step opened by a check; a step that follows one without a check arrives
@@ -208,9 +162,7 @@ function useScrollToNewStep(shown: readonly LessonStep[]): void {
     if (!target || target === seen.current) return;
     seen.current = target;
     const timer = window.setTimeout(() => {
-      document
-        .getElementById(stepAnchor(target))
-        ?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
+      jumpToStep(target);
     }, 1400);
     return () => {
       window.clearTimeout(timer);

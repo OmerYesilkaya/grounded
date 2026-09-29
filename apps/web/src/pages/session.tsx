@@ -6,6 +6,7 @@ import { PageBar } from "@/components/page-bar";
 import { ContentProvider } from "@/content/environment";
 import { BuiltPicture } from "@/components/session-pictures";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
+import { StepMenu } from "@/lesson/step-menu";
 import { api } from "@/lib/api";
 import { asideActions } from "@/lib/asides";
 import { readableSteps, useSessionModel, type SessionModel } from "@/lib/session";
@@ -65,9 +66,27 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
 
   if (!model) return null;
   const lessonFailed = model.state.phase === "lesson" && model.state.lesson.status === "failed";
+  const progress = stepProgress(model);
+  // A failed lesson's missing steps aren't waiting on a check: the notice after the last step says
+  // why.
+  const totalSteps = lessonFailed ? steps.length : (model.lesson?.totalSteps ?? 0);
+  const reading = tab === "lesson" && hasLesson;
   return (
     <ContentProvider>
-      <PageBar>
+      <PageBar
+        end={
+          reading && (
+            // Where the gutter's timeline is gone (design §9.4).
+            <StepMenu
+              steps={steps}
+              totalSteps={totalSteps}
+              progress={progress}
+              asides={model.asides}
+              className="-mr-1.5 min-[1100px]:hidden"
+            />
+          )
+        }
+      >
         <div className="flex gap-0.5 rounded-lg border bg-card p-0.5">
           {(["chat", "lesson"] as const).map((t) => (
             <button
@@ -120,10 +139,8 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
       ) : (
         <LessonView
           steps={steps}
-          // A failed lesson's missing steps aren't waiting on a check: the notice after the last
-          // step says why.
-          totalSteps={lessonFailed ? steps.length : model.lesson.totalSteps}
-          progress={stepProgress(model)}
+          totalSteps={totalSteps}
+          progress={progress}
           onAnswer={(stepId, text) => {
             post.mutate({
               path: `/api/sessions/${sessionId}/steps/${stepId}/answer`,
