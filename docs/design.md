@@ -492,7 +492,7 @@ Planned for v1, not built yet:
 | `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
 
 Research notes are not stored on the track yet; the first plan's notes go only into that plan's calls
-(#51). Which session closes each arc isn't recorded yet (#42).
+(#53). Which session closes each arc isn't recorded yet (#42).
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -1155,11 +1155,11 @@ progress, so a step is done when its issues are closed.
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),
-   the pictures of what rests on what (#47), research for the lesson (#51).
+   the pictures of what rests on what (#47), research for the lesson (#53).
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).
-8. Learner profile, per-track stats, usage display (#44, #45, #46).
-9. Eval harness; fill the model list (#48).
-10. Phone pass (#53); the track list's search (#55) and the sign-up sentence (#56); deploy; invite
-    the first people.
+8. Learner profile, per-track stats (#44, #45); the usage display is built (#46).
+9. Eval harness (built, §11); fill the model list with its results (#48).
+10. Phone pass (#49); deploy; invite the first people. The track list's search (#55) and the sign-up
+    sentence (#56) are built.
