@@ -252,6 +252,7 @@ export function ReviewCards(props: {
             key={comment.id}
             type="button"
             {...ASIDE_UI}
+            data-review-card={comment.id}
             aria-label="Open this comment on your answer"
             onClick={() => {
               props.onActivate(comment.id);
