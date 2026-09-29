@@ -95,7 +95,7 @@ export function AccountMenu({ email }: { email: string }) {
                 onSelect={(event) => {
                   event.preventDefault();
                 }}
-                className="size-6 justify-center rounded-[3px] p-0 text-subtle-foreground focus:text-foreground data-[state=checked]:bg-highlight data-[state=checked]:text-primary"
+                className="size-6 justify-center rounded-[3px] p-0 text-subtle-foreground pointer-coarse:size-9 pointer-coarse:p-0 focus:text-foreground data-[state=checked]:bg-highlight data-[state=checked]:text-primary"
               >
                 <Icon className="size-3.5" />
               </DropdownMenuRadioItem>

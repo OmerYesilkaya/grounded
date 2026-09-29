@@ -89,7 +89,7 @@ function Note({ note }: { note: TeachingNote }) {
     <li className="group py-4">
       <div className="flex items-start gap-3">
         <p className="min-w-0 flex-1 font-serif text-[16.5px] leading-relaxed">{note.text}</p>
-        <div className="flex shrink-0 gap-0.5 opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+        <div className="flex shrink-0 gap-0.5 opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:gap-2 pointer-coarse:opacity-100">
           <Button
             variant="ghost"
             size="icon-sm"

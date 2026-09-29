@@ -35,9 +35,14 @@ function resolved(): Theme {
   return choice === "system" ? systemTheme() : choice;
 }
 
+/** Each theme's `--background` (index.css), for the browser's own bar around the page. */
+const BAR_COLOUR: Record<Theme, string> = { dark: "#111214", light: "#fbfaf7" };
+
 /** Sets the page's theme (index.css reads `data-theme`) and tells whoever draws with it. */
 function apply() {
-  document.documentElement.dataset.theme = resolved();
+  const theme = resolved();
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]')?.setAttribute("content", BAR_COLOUR[theme]);
   for (const listener of listeners) listener();
 }
 

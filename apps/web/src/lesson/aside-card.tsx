@@ -227,7 +227,7 @@ export function QuestionBox({
         minRows={minRows}
         autoFocus={autoFocus}
         rich
-        className="rounded-lg bg-background [&_.line-field]:px-3 [&_.line-field]:pt-2 [&_.line-prose]:text-[14px]"
+        className="rounded-lg bg-background [&_.line-field]:px-3 [&_.line-field]:pt-2 [&_.line-prose]:text-[14px] pointer-coarse:[&_.line-prose]:text-base"
         actions={children}
       />
       {error && <p className="mt-1.5 text-[12px] text-destructive">{error}</p>}

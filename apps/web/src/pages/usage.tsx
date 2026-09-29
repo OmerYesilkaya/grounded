@@ -92,7 +92,7 @@ function Report({ report }: { report: UsageReport }) {
             {earlier.map((m) => (
               <li
                 key={m.month}
-                className="grid grid-cols-[9rem_1fr_5rem] items-center gap-4 py-2.5"
+                className="grid grid-cols-[9rem_1fr_5rem] items-center gap-4 py-2.5 max-sm:grid-cols-[6.5rem_1fr_4.5rem] max-sm:gap-3"
               >
                 <span className="text-sm">{monthName(m.month)}</span>
                 <span aria-hidden className="h-1 rounded-full bg-muted">

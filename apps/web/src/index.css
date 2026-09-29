@@ -183,6 +183,24 @@
   }
 }
 
+/* On a touch screen, a control is at least 44px square to the finger, however small it is drawn
+   (design §9.4): an invisible box centred on it takes the tap. The control must be positioned
+   (`relative`, or already absolute or fixed). Neighbours closer than that share the space between
+   them, the later one on top. */
+@utility touch-target {
+  @media (pointer: coarse) {
+    &::after {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: max(100%, 44px);
+      height: max(100%, 44px);
+      translate: -50% -50%;
+    }
+  }
+}
+
 /* Highlighted code (code-block.tsx): Shiki writes both themes' colours as variables, and the page's
    theme picks one. */
 .shiki-wrap .shiki,

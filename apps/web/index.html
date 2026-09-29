@@ -2,7 +2,15 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover lets the page reach under a phone's rounded corners and home bar, which
+         the layout keeps clear with env(safe-area-inset-*); resizes-content has an on-screen
+         keyboard shrink the page (Android), so the box being typed in stays above it. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <!-- The browser's own bar in the page's background; src/lib/theme.ts keeps it in step. -->
+    <meta name="theme-color" content="#111214" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link

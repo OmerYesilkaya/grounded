@@ -197,7 +197,7 @@ export function Composer({
             event.preventDefault();
             onAddFiles(files);
           }}
-          className="block max-h-52 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3 pb-1 text-[15px] leading-relaxed outline-none placeholder:text-subtle-foreground disabled:cursor-not-allowed"
+          className="block max-h-52 w-full resize-none overflow-y-auto bg-transparent px-4 pt-3 pb-1 text-[15px] leading-relaxed outline-none pointer-coarse:text-base placeholder:text-subtle-foreground disabled:cursor-not-allowed"
         />
       )}
       {attachments}

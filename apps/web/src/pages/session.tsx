@@ -77,7 +77,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
                 setTab(t);
               }}
               className={cn(
-                "rounded-md px-4 py-1 text-[13px] text-muted-foreground capitalize disabled:opacity-40",
+                "touch-target relative rounded-md px-4 py-1 text-[13px] text-muted-foreground capitalize disabled:opacity-40 pointer-coarse:py-1.5",
                 tab === t && "bg-muted text-foreground",
               )}
             >
@@ -95,12 +95,12 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
         />
       ) : !hasLesson || !model.lesson ? (
         lessonFailed ? (
-          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
+          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24 max-md:pt-12">
             <LessonAgain model={model} />
           </div>
         ) : (
           // The outline exists but no step is written yet: say so, rather than an empty timeline.
-          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24">
+          <div className="mx-auto w-full max-w-[68ch] px-6 pt-24 max-md:pt-12">
             <h2 className="font-serif text-2xl font-semibold tracking-tight">
               Writing your lesson
             </h2>
@@ -158,13 +158,13 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
       )}
       {tab === "lesson" && hasLesson && model.activities.length > 0 && (
         // Later steps are still being written, or an answer is being checked.
-        <div className="fixed bottom-4 left-4 rounded-lg border bg-card/95 px-3 py-2 shadow backdrop-blur md:left-[264px]">
+        <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] rounded-lg border bg-card/95 px-3 py-2 shadow backdrop-blur md:left-[264px]">
           <ActivityLine activities={model.activities} />
         </div>
       )}
       {model.state.phase === "lesson" &&
         model.state.steps[model.state.currentStep ?? ""]?.status === "paused" && (
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg border bg-card px-4 py-2 text-sm shadow">
+          <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-lg border bg-card px-4 py-2 text-sm whitespace-nowrap shadow">
             Paused here.{" "}
             <button
               type="button"

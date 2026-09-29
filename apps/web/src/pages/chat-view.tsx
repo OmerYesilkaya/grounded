@@ -152,7 +152,11 @@ export function ChatView({
         {phase === "lesson" && hasSteps && !lessonFailed && (
           <div className="rounded-xl border bg-card px-5 py-4 text-sm">
             The lesson is on.{" "}
-            <Button variant="link" className="h-auto px-0" onClick={onOpenLesson}>
+            <Button
+              variant="link"
+              className="h-auto px-0 pointer-coarse:h-auto"
+              onClick={onOpenLesson}
+            >
               Open the lesson
             </Button>
           </div>
@@ -194,7 +198,7 @@ export function ChatView({
       </div>
 
       {phase === "plan" && plan === "proposed" && !writing && (
-        <div className="mt-6 flex items-center gap-3">
+        <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button
             disabled={approve.isPending}
             onClick={() => {

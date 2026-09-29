@@ -66,7 +66,7 @@ export function HomeworkReminder() {
   return (
     <aside
       aria-label="Homework due"
-      className="fixed right-4 bottom-4 left-4 z-40 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg sm:left-auto sm:w-[360px]"
+      className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-40 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg sm:left-auto sm:w-[360px]"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
@@ -83,7 +83,7 @@ export function HomeworkReminder() {
           type="button"
           aria-label="Not now"
           onClick={dismiss}
-          className="-mt-1 -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="touch-target relative -mt-1 -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <X className="size-4" aria-hidden />
         </button>
