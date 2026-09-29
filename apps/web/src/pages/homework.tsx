@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { ArrowLeft, Check } from "lucide-react";
 import { useState } from "react";
+import { PageBar } from "@/components/page-bar";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { ContentProvider } from "@/content/environment";
@@ -180,27 +181,31 @@ const SAVE_WORDS: Record<SaveStatus, string> = {
 /** The page's header band, level with the sidebar's: the way back to its session, and saving. */
 function TopBar({ assignment, status }: { assignment: Assignment; status: SaveStatus | null }) {
   return (
-    <div className="sticky top-0 z-10 flex h-13 items-center gap-3 border-b bg-background/90 px-4 backdrop-blur">
-      <Link
-        to="/sessions/$sessionId"
-        params={{ sessionId: assignment.sessionId }}
-        className="flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
-      >
-        <ArrowLeft className="size-3.5" aria-hidden />
-        Session {assignment.session.number}
-      </Link>
-      {status && (
-        <span
-          role="status"
-          className={cn(
-            "ml-auto text-[12px] text-subtle-foreground",
-            status === "failed" && "text-destructive",
-          )}
+    <PageBar
+      start={
+        <Link
+          to="/sessions/$sessionId"
+          params={{ sessionId: assignment.sessionId }}
+          className="touch-target relative flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] whitespace-nowrap text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          {SAVE_WORDS[status]}
-        </span>
-      )}
-    </div>
+          <ArrowLeft className="size-3.5" aria-hidden />
+          Session {assignment.session.number}
+        </Link>
+      }
+      end={
+        status && (
+          <span
+            role="status"
+            className={cn(
+              "text-[12px] text-subtle-foreground",
+              status === "failed" && "text-destructive",
+            )}
+          >
+            {SAVE_WORDS[status]}
+          </span>
+        )
+      }
+    />
   );
 }
 

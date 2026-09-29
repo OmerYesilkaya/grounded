@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ActivityLine } from "@/components/activity-line";
+import { PageBar } from "@/components/page-bar";
 import { ContentProvider } from "@/content/environment";
 import { BuiltPicture } from "@/components/session-pictures";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
@@ -66,7 +67,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
   const lessonFailed = model.state.phase === "lesson" && model.state.lesson.status === "failed";
   return (
     <ContentProvider>
-      <div className="sticky top-0 z-10 flex h-13 items-center justify-center border-b bg-background/90 backdrop-blur">
+      <PageBar>
         <div className="flex gap-0.5 rounded-lg border bg-card p-0.5">
           {(["chat", "lesson"] as const).map((t) => (
             <button
@@ -85,7 +86,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
             </button>
           ))}
         </div>
-      </div>
+      </PageBar>
       {tab === "chat" || (!model.lesson && !lessonFailed) ? (
         <ChatView
           model={model}

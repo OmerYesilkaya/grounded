@@ -1,15 +1,28 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MANY_TRACKS, searchTracks, shortList } from "@/lib/track-list";
 import { useTracks } from "@/lib/tracks";
+import { cn } from "@/lib/utils";
 import { AccountMenu } from "./account-menu";
 import { Brand } from "./brand";
 import { itemLink, TrackGroup } from "./track-list";
 import { TrackMenu } from "./track-menu";
 
-/** The track list: the "typographic index" from the prototype (design §9.2). */
-export function TrackSidebar({ email }: { email: string }) {
+/**
+ * The track list: the "typographic index" from the prototype (design §9.2). A column beside the
+ * page, or on a phone the same list in a drawer (`TrackDrawer`), which puts its close button at the
+ * end of the header.
+ */
+export function TrackSidebar({
+  email,
+  className,
+  headerEnd,
+}: {
+  email: string;
+  className?: string;
+  headerEnd?: ReactNode;
+}) {
   const tracks = useTracks();
   const params = useParams({ strict: false });
   const navigate = useNavigate();
@@ -59,21 +72,22 @@ export function TrackSidebar({ email }: { email: string }) {
   };
 
   return (
-    <aside className="sticky top-0 flex h-screen w-[248px] shrink-0 flex-col border-r bg-background max-md:hidden">
-      {/* As tall as the session's Chat / Lesson bar, so the two read as one header band. */}
+    <aside className={cn("flex flex-col border-r bg-background", className)}>
+      {/* As tall as the page's bar (PageBar), so the two read as one header band. */}
       <div className="flex h-13 shrink-0 items-center border-b px-3.5">
         <Link to="/">
           <Brand className="text-lg" />
         </Link>
+        {headerEnd}
       </div>
       <div className="flex flex-col gap-2 px-3.5 pt-3.5 pb-2">
         <Link
           to="/tracks/new"
-          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-ring bg-highlight px-2.5 py-2 text-[13px] font-medium text-primary hover:border-solid"
+          className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-ring bg-highlight px-2.5 py-2 pointer-coarse:py-2.5 text-[13px] font-medium text-primary hover:border-solid"
         >
           + New track
         </Link>
-        <label className="flex h-8 items-center gap-2 rounded-md border px-2.5 text-subtle-foreground focus-within:border-border-strong focus-within:text-foreground">
+        <label className="flex h-8 items-center gap-2 rounded-md border px-2.5 text-subtle-foreground pointer-coarse:h-10 focus-within:border-border-strong focus-within:text-foreground">
           <Search aria-hidden className="size-3.5 shrink-0" />
           <input
             ref={search}
@@ -93,10 +107,10 @@ export function TrackSidebar({ email }: { email: string }) {
                 event.currentTarget.blur();
               }
             }}
-            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none placeholder:text-subtle-foreground [&::-webkit-search-cancel-button]:hidden"
+            className="min-w-0 flex-1 bg-transparent text-[13px] text-foreground outline-none pointer-coarse:text-base placeholder:text-subtle-foreground [&::-webkit-search-cancel-button]:hidden"
           />
           {!searching && (
-            <kbd className="rounded-[3px] border px-1 font-sans text-[10.5px] leading-4 text-subtle-foreground">
+            <kbd className="rounded-[3px] border px-1 font-sans pointer-coarse:hidden text-[10.5px] leading-4 text-subtle-foreground">
               /
             </kbd>
           )}
@@ -145,7 +159,7 @@ export function TrackSidebar({ email }: { email: string }) {
           <p className="px-2 py-2.5 text-[12.5px] text-subtle-foreground">No tracks yet.</p>
         )}
       </nav>
-      <div className="shrink-0 border-t px-1.5 py-1.5">
+      <div className="shrink-0 border-t px-1.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">
         <AccountMenu email={email} />
       </div>
     </aside>

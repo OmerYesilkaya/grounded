@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PhoneBar } from "@/components/page-bar";
 import { Link } from "@tanstack/react-router";
 import {
   formatCost,
@@ -46,19 +47,23 @@ function Unpriced({ total }: { total: UsageTotal }) {
 export function UsagePage() {
   const usage = useQuery(usageQuery);
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24">
-      <p className="text-xs tracking-widest text-subtle-foreground uppercase">Usage</p>
-      <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">
-        What your key has spent
-      </h1>
-      <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-        Estimated from each model&apos;s list price. Your provider&apos;s bill is the exact figure.
-      </p>
-      {usage.data && <Report report={usage.data} />}
-      {usage.error && (
-        <p className="mt-10 text-sm text-destructive">Usage couldn&apos;t be loaded.</p>
-      )}
-    </main>
+    <>
+      <PhoneBar />
+      <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24 max-md:pt-10">
+        <p className="text-xs tracking-widest text-subtle-foreground uppercase">Usage</p>
+        <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">
+          What your key has spent
+        </h1>
+        <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+          Estimated from each model&apos;s list price. Your provider&apos;s bill is the exact
+          figure.
+        </p>
+        {usage.data && <Report report={usage.data} />}
+        {usage.error && (
+          <p className="mt-10 text-sm text-destructive">Usage couldn&apos;t be loaded.</p>
+        )}
+      </main>
+    </>
   );
 }
 

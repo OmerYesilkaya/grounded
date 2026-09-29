@@ -38,7 +38,7 @@ export function TrackGroup(props: {
           aria-expanded={expanded}
           aria-label={`${expanded ? "Hide" : "Show"} what is in ${track.title}`}
           onClick={onToggle}
-          className="flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          className="touch-target relative flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <ChevronRight
             className={cn(
@@ -53,7 +53,7 @@ export function TrackGroup(props: {
           params={{ trackId: track.id }}
           aria-current={current ? "true" : undefined}
           className={cn(
-            "min-w-0 flex-1 truncate py-1.5 pr-1 font-serif text-[15px] leading-snug font-semibold tracking-tight outline-none focus-visible:underline",
+            "min-w-0 flex-1 truncate py-1.5 pr-1 font-serif pointer-coarse:py-2.5 text-[15px] leading-snug font-semibold tracking-tight outline-none focus-visible:underline",
             current ? "text-foreground" : "text-muted-foreground hover:text-foreground",
           )}
           title={track.title}
@@ -109,7 +109,7 @@ function TrackItems({
             onClick={() => {
               setShowDone(!doneShown);
             }}
-            className="flex items-center gap-1 py-1 pl-3 text-[11.5px] text-subtle-foreground outline-none hover:text-foreground focus-visible:underline"
+            className="flex items-center gap-1 py-1 pl-3 text-[11.5px] pointer-coarse:py-2.5 text-subtle-foreground outline-none hover:text-foreground focus-visible:underline"
           >
             {done.length} done
             <ChevronRight
@@ -158,7 +158,7 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
         aria-current={current ? "page" : undefined}
         className={cn(
           // The accent segment is drawn over the thread line, beside the item it marks.
-          "relative -ml-px block border-l border-transparent py-1 pr-2 pl-3 outline-none focus-visible:bg-accent/60",
+          "relative -ml-px block border-l border-transparent py-1 pr-2 pl-3 outline-none pointer-coarse:py-2 focus-visible:bg-accent/60",
           current
             ? "border-primary text-foreground"
             : "text-muted-foreground hover:border-border-strong hover:text-foreground",

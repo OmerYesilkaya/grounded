@@ -21,7 +21,8 @@ import type { TrackSummary } from "@/lib/tracks";
 
 /**
  * A track's menu at the end of its line in the track list (design §9.2): shown while the line is
- * hovered or focused. Deleting asks first, naming what goes with the track.
+ * hovered or focused, and always on a touch screen, which has no hover. Deleting asks first, naming
+ * what goes with the track.
  */
 export function TrackMenu({ track, current }: { track: TrackSummary; current: boolean }) {
   const queryClient = useQueryClient();
@@ -46,7 +47,7 @@ export function TrackMenu({ track, current }: { track: TrackSummary; current: bo
       <DropdownMenu>
         <DropdownMenuTrigger
           aria-label={`${track.title}: more`}
-          className="mr-0.5 hidden size-6 shrink-0 items-center justify-center rounded-[4px] text-subtle-foreground outline-none group-focus-within/track:flex group-hover/track:flex hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:flex data-[state=open]:bg-accent data-[state=open]:text-foreground"
+          className="touch-target relative mr-0.5 hidden size-6 shrink-0 items-center pointer-coarse:flex pointer-coarse:size-8 justify-center rounded-[4px] text-subtle-foreground outline-none group-focus-within/track:flex group-hover/track:flex hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:flex data-[state=open]:bg-accent data-[state=open]:text-foreground"
         >
           <Ellipsis className="size-3.5" />
         </DropdownMenuTrigger>

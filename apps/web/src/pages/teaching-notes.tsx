@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { PhoneBar } from "@/components/page-bar";
 import { Link } from "@tanstack/react-router";
 import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
@@ -15,55 +16,58 @@ export function TeachingNotesPage() {
   const notes = useQuery(teachingNotesQuery);
   const [adding, setAdding] = useState(false);
   return (
-    <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24">
-      <p className="text-xs tracking-widest text-subtle-foreground uppercase">Teaching notes</p>
-      <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">How you learn</h1>
-      <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-        What the tutor has noticed helps you learn, across your tracks. It reads these before every
-        lesson and check. Change anything that doesn&apos;t sound like you.
-      </p>
-      {notes.data && (
-        <>
-          {notes.data.length === 0 && !adding && (
-            <p className="mt-10 rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
-              Nothing yet. After about six sessions the tutor starts noting what helps you, each
-              note resting on at least three of them.
-            </p>
-          )}
-          {notes.data.length > 0 && (
-            <ul className="mt-10 divide-y border-y">
-              {notes.data.map((note) => (
-                <Note key={note.id} note={note} />
-              ))}
-            </ul>
-          )}
-          <div className="mt-6">
-            {adding ? (
-              <NoteEditor
-                initial=""
-                onDone={() => {
-                  setAdding(false);
-                }}
-              />
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  setAdding(true);
-                }}
-              >
-                <Plus />
-                Add a note
-              </Button>
+    <>
+      <PhoneBar />
+      <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24 max-md:pt-10">
+        <p className="text-xs tracking-widest text-subtle-foreground uppercase">Teaching notes</p>
+        <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">How you learn</h1>
+        <p className="mt-2 max-w-prose text-sm text-muted-foreground">
+          What the tutor has noticed helps you learn, across your tracks. It reads these before
+          every lesson and check. Change anything that doesn&apos;t sound like you.
+        </p>
+        {notes.data && (
+          <>
+            {notes.data.length === 0 && !adding && (
+              <p className="mt-10 rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
+                Nothing yet. After about six sessions the tutor starts noting what helps you, each
+                note resting on at least three of them.
+              </p>
             )}
-          </div>
-        </>
-      )}
-      {notes.error && (
-        <p className="mt-10 text-sm text-destructive">Your notes couldn&apos;t be loaded.</p>
-      )}
-    </main>
+            {notes.data.length > 0 && (
+              <ul className="mt-10 divide-y border-y">
+                {notes.data.map((note) => (
+                  <Note key={note.id} note={note} />
+                ))}
+              </ul>
+            )}
+            <div className="mt-6">
+              {adding ? (
+                <NoteEditor
+                  initial=""
+                  onDone={() => {
+                    setAdding(false);
+                  }}
+                />
+              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setAdding(true);
+                  }}
+                >
+                  <Plus />
+                  Add a note
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+        {notes.error && (
+          <p className="mt-10 text-sm text-destructive">Your notes couldn&apos;t be loaded.</p>
+        )}
+      </main>
+    </>
   );
 }
 

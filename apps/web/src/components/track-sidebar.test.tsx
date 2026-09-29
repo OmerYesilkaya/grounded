@@ -5,16 +5,20 @@ import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "@/lib/api";
 import type { HomeworkItem, SessionItem, TrackSummary } from "@/lib/tracks";
+import { DrawerButton, TrackDrawer } from "./track-drawer";
 import { TrackSidebar } from "./track-sidebar";
 
-const page = vi.hoisted((): { params: { trackId?: string; sessionId?: string } } => ({
+const page = vi.hoisted((): { params: { trackId?: string; sessionId?: string }; href: string } => ({
   params: {},
+  href: "/",
 }));
 const tracks = vi.hoisted(() => ({ data: [] as TrackSummary[] }));
 const navigate = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-router", () => ({
   useParams: () => page.params,
+  useRouterState: ({ select }: { select: (state: { location: { href: string } }) => string }) =>
+    select({ location: { href: page.href } }),
   useNavigate: () => navigate,
   Link: (props: {
     to: string;
@@ -87,6 +91,7 @@ const software = () =>
 
 beforeEach(() => {
   page.params = {};
+  page.href = "/";
   tracks.data = [];
   vi.clearAllMocks();
 });
@@ -276,5 +281,64 @@ describe("deleting a track", () => {
       expect(navigate).toHaveBeenCalledWith({ to: "/" });
     });
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("the track list on a phone", () => {
+  const drawer = () => (
+    <TrackDrawer email="ada@example.com">
+      <DrawerButton />
+    </TrackDrawer>
+  );
+  // jsdom doesn't follow links; the page would.
+  const stayOnPage = (event: MouseEvent) => {
+    event.preventDefault();
+  };
+  beforeEach(() => {
+    // Narrower than the column needs.
+    vi.stubGlobal("matchMedia", (query: string) => ({
+      matches: false,
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    }));
+    document.addEventListener("click", stayOnPage);
+    return () => {
+      document.removeEventListener("click", stayOnPage);
+      vi.unstubAllGlobals();
+    };
+  });
+
+  it("opens as a drawer from the page's bar, and closes on following a link", async () => {
+    const user = userEvent.setup();
+    tracks.data = [software()];
+    render(drawer(), { wrapper });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open the track list" }));
+    const list = screen.getByRole("dialog", { name: "Tracks" });
+    expect(within(list).getByRole("searchbox", { name: /Search/ })).toBeInTheDocument();
+    expect(within(list).getByText("ada@example.com")).toBeInTheDocument();
+
+    // Opening a track's items leaves it open; following a link closes it.
+    await user.click(within(list).getByRole("button", { name: /what is in How software works/ }));
+    expect(screen.getByRole("dialog", { name: "Tracks" })).toBeInTheDocument();
+    await user.click(within(list).getByRole("link", { name: "How software works" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("closes when the page changes, and with its close button", async () => {
+    const user = userEvent.setup();
+    tracks.data = [software()];
+    const view = render(drawer(), { wrapper });
+
+    await user.click(screen.getByRole("button", { name: "Open the track list" }));
+    page.href = "/tracks/t1";
+    view.rerender(drawer());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Open the track list" }));
+    await user.click(screen.getByRole("button", { name: "Close the track list" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 });

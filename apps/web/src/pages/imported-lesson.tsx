@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { PageBar } from "@/components/page-bar";
 import { api, ApiError } from "@/lib/api";
 
 interface ImportedLesson {
@@ -21,19 +22,23 @@ export function ImportedLessonPage({ trackId }: { trackId: string }) {
   });
 
   return (
-    <main className="flex h-screen flex-col">
-      <header className="flex items-baseline gap-3 border-b px-6 py-3">
-        <Link
-          to="/tracks/$trackId"
-          params={{ trackId }}
-          className="text-sm text-subtle-foreground hover:text-foreground"
-        >
-          ← Track
-        </Link>
-        <p className="text-xs tracking-widest text-subtle-foreground uppercase">
-          Last lesson · from your earlier setup · read-only
-        </p>
-      </header>
+    <main className="flex h-dvh flex-col">
+      <PageBar
+        start={
+          <Link
+            to="/tracks/$trackId"
+            params={{ trackId }}
+            className="touch-target relative px-1 text-sm whitespace-nowrap text-subtle-foreground hover:text-foreground"
+          >
+            ← Track
+          </Link>
+        }
+        end={
+          <p className="truncate text-xs tracking-widest text-subtle-foreground uppercase">
+            Last lesson · from your earlier setup · read-only
+          </p>
+        }
+      />
       {lesson.data ? (
         <iframe
           title={lesson.data.title}
