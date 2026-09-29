@@ -619,18 +619,59 @@ naturally, and ids are what asides, repair notes and validation hang off. No mod
 | audio                                         | Commons audio (music samples, instruments, pronunciation) through `find_audio` — "audio when needed"                                                                                                                                                                              |
 | link card                                     | anything else from sources: title, site, one-line reason                                                                                                                                                                                                                          |
 | check                                         | the step's question; answered and graded inline                                                                                                                                                                                                                                   |
+| word card                                     | `:::word{term="…"}`: a word the learner doesn't hold, and what it means in words they do, given before the lesson uses it (below)                                                                                                                                                 |
+| preview card                                  | `:::about{name="…" track="…"}`: a person, place or work the lesson leans on, in a paragraph at most; `track` offers a track of its own (below)                                                                                                                                    |
 
 v2: runnable code (JS in a Web Worker, Python via Pyodide — browser only, never on our servers),
 generated sound (the model writes notes, the browser plays them), function plots, other interactives.
 
+**Word cards** (decided 2026-09-29, #24). In prose a new word is easy to read past; a card marks the
+moment it is given. Whoever spent a year hearing "ontology" and "epistemology" without being told
+what they mean knows the cost.
+
+- **One card per term a step introduces** (the outline's `introduces`), in that step, before its
+  first use. The step's heading counts as a use, so a heading names the idea, not the new word. The
+  card holds the word and what it means in a sentence or two of text (maths allowed; no drawings).
+- **Validated with the step** (`taughtHere` in `validate`): a term the step introduces is untaught
+  until its card and usable from it on, the card's own definition included, so the definition uses
+  only words the learner holds (and the step's earlier cards). Errors, rewritten like any other:
+  used before its card (`word/before-card`), no card (`word/missing-card`), a card for a word the
+  learner holds (`word/held`) or for a term taught in another step or lesson (`word/not-here`). A
+  card for a word the track doesn't list (a label the lesson coins, method rule 3) is allowed. A
+  card is found for a long imported term by its name up to a ":", "(" or ";".
+- **The card marks its term taught, server-derived** (`markCardsTaught`, `engine/word-cards.ts`):
+  the lesson has no structured call to promote it, and a model shouldn't have to remember. It is
+  marked once the learner can read the step (it is written and every check before it resolved), not
+  when it is written: a learner who pauses never sees the steps behind the check, and nothing moves
+  a term back to `planned`. Only a `planned` term moves; the evidence is the card ("Given its word
+  card in the lesson: …"), source `lesson s2`. Run after each step is stored, after a check's
+  verdict and after "Continue anyway". The check then confirms it as before.
+- **Lesson only.** Asides, repair threads and homework change no status and teach no new word; a
+  repair re-teaches a word the lesson already gave.
+- **The glossary** (`ValidateContext.glossary`: jargon of the track not in the plan, never usable
+  untaught) is separate and not yet filled by anything. A card never adds to it: a carded word is a
+  term-list term. The cards themselves, with their definitions in `term_events`, are what a
+  learner-facing list of words would be built from.
+
+**Preview cards** (decided 2026-09-29, #24). "Kant's ideas were regarded highly in those times"
+leans on who Kant was, which no definition gives and which isn't taught the way a term is. A
+`:::about{name="Immanuel Kant"}` card says who or what it is, when, and why it matters here, in one
+paragraph (`about/not-one-paragraph` otherwise); its text obeys the term list like prose. When there
+is more to it than a preview, the model adds `track="…"`, the goal of a track of its own ("Kant:
+what he held and why it mattered"), and the card offers **Make a track about this**: the new-track
+page (`/tracks/new?goal=…`) in a new tab with the goal in the box, so the lesson stays where it is
+and the learner edits or creates it themselves. It records nothing about the learner. Allowed in
+lessons and asides.
+
 ### 6.3 Per-surface allowlists
 
-| Surface                                | Allowed                                                                                               |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Probe and plan chat                    | text-like only: paragraphs, lists, quotes, code, maths, tables (the plan picture is drawn by the app) |
-| Lesson                                 | everything, and the only surface with checks                                                          |
-| Repair thread, aside card, review card | text-like blocks plus diagram and stepper                                                             |
-| Homework prompt                        | text-like blocks plus headings, diagram and media                                                     |
+| Surface                    | Allowed                                                                                               |
+| -------------------------- | ----------------------------------------------------------------------------------------------------- |
+| Probe and plan chat        | text-like only: paragraphs, lists, quotes, code, maths, tables (the plan picture is drawn by the app) |
+| Lesson                     | everything, and the only surface with checks                                                          |
+| Aside card                 | text-like blocks plus diagram, stepper and preview card                                               |
+| Repair thread, review card | text-like blocks plus diagram and stepper                                                             |
+| Homework prompt            | text-like blocks plus headings, diagram and media                                                     |
 
 Code stays allowed in the chat because a probe question may need to show code in full ("what does
 this print?"). The allowlists live in `@grounded/content` (`ALLOWED_BLOCKS`).

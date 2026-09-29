@@ -64,7 +64,7 @@ const OUTLINE = {
 };
 const STEP = [
   "## Adding one is three moves",
-  "The value is copied out into a working copy, changed, and put back.",
+  'The value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::',
   '::image{ref="commons:File:Counter.png" caption="A tally counter."}',
   '::link{url="https://example.org/gone" title="More" why="Goes further."}',
   ":::check\nWhat is in memory meanwhile?\n:::",
@@ -85,8 +85,8 @@ describe("lesson media", () => {
       .from(lessons)
       .where(eq(lessons.sessionId, session.sessionId));
     const [stored]: (LessonStep | undefined)[] = lesson?.steps ?? [];
-    expect(stored?.body.map((b: Block) => b.type)).toEqual(["paragraph", "image"]);
-    expect(stored?.body[1]).toMatchObject({
+    expect(stored?.body.map((b: Block) => b.type)).toEqual(["paragraph", "word", "image"]);
+    expect(stored?.body[2]).toMatchObject({
       type: "image",
       file: { url: "https://upload.wikimedia.org/Counter.png", license: "CC0", credit: null },
     });

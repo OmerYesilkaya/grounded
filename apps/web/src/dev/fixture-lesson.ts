@@ -6,6 +6,16 @@ You told me earlier that _"the computer just adds one to the number"_. That's tr
 
 So to add one, it has to do three separate things: copy the value out, change the copy, and put the copy back. Each of those is a move of its own, and nothing forces the three to happen back to back.
 
+:::word{term="working copy"}
+The copy of a value that is taken out of memory to be changed, before it is put back.
+:::
+
+The idea that a machine only ever works on copies goes back to the first stored-program computers.
+
+:::about{name="John von Neumann" track="John von Neumann: the design every computer still follows"}
+A Hungarian-American mathematician (1903–1957) whose 1945 report described a computer that keeps its program and its numbers in the same memory, and fetches each into the processor to work on it.
+:::
+
 ` +
   "```diagram" +
   String.raw`

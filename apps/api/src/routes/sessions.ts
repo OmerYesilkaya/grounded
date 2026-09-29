@@ -22,6 +22,7 @@ import { writeLessonAgain } from "../engine/lesson-again.js";
 import type { JobQueue } from "../engine/queue.js";
 import { retryStalled, stalledJob } from "../engine/retry.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
+import { markCardsTaught } from "../engine/word-cards.js";
 import type { FileStore } from "../files/store.js";
 import { addLogContext } from "../log.js";
 
@@ -287,6 +288,7 @@ export function registerSessionRoutes(
     if (!session) return c.json({ error: "Not found." }, 404);
     const applied = await apply(session.id, { type: "continue", stepId: c.req.param("stepId") });
     if (!applied.ok) return c.json({ error: applied.reason }, 409);
+    await markCardsTaught(db, session.id, applied.state);
     await completeIfDone(db, queue, session.id, applied.state);
     return c.json({ state: applied.state });
   });

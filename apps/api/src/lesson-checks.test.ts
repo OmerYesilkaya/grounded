@@ -1,4 +1,4 @@
-import { eq, terms, tracks as tracksTable } from "@grounded/db";
+import { and, eq, termEvents, terms, tracks as tracksTable } from "@grounded/db";
 import { APICallError } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -44,10 +44,14 @@ const step = (heading: string, body: string, check: string) =>
 const LESSON = [
   step(
     "Adding one is three moves",
-    "The value is copied out into a working copy, changed, and put back.",
+    'The value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::',
     "What is in memory meanwhile?",
   ),
-  step("Two workers", "Both copy 5, and one addition vanishes: a lost update.", "Why 6 and not 7?"),
+  step(
+    "Two workers",
+    'Both copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::',
+    "Why 6 and not 7?",
+  ),
   step(
     "Why it hides",
     "It only happens when the timing is just wrong.",
@@ -136,6 +140,27 @@ describe("checks", () => {
       (a) => a.label === "Checking your answer",
     );
     expect(checking.map((a) => a.state)).toEqual(["done"]);
+  });
+
+  it("marks a word card's term taught once the learner can read its step", async () => {
+    const { cookie, sessionId } = await inLesson();
+    const status = async (term: string) =>
+      (await t.db.select().from(terms).where(eq(terms.term, term)))[0]?.status;
+    // s1 is open to read; s2, behind s1's check, is not yet.
+    await t.waitFor(async () => (await status("working copy")) === "taught");
+    expect(await status("lost update")).toBe("planned");
+    const [event] = await t.db
+      .select()
+      .from(termEvents)
+      .where(and(eq(termEvents.toStatus, "taught"), eq(termEvents.source, "lesson s1")));
+    expect(event?.evidence).toBe(
+      "Given its word card in the lesson: The copy of a value that is changed before it is put back.",
+    );
+
+    models.script("check", verdict({ verdict: "landed", reply: "That's it." }));
+    await answer(cookie, sessionId, "s1", { text: "memory still holds 5" });
+    await until(cookie, sessionId, (s) => s.state.currentStep === "s2");
+    expect(await status("lost update")).toBe("taught");
   });
 
   it("records what validates of a verdict's term edits, and asks once more for the rest", async () => {
@@ -298,8 +323,12 @@ describe("checks", () => {
       ],
     };
     const lesson = [
-      "## Adding one is three moves\n\nThe value is copied out into a working copy, changed, and put back.",
-      step("Two workers", "Both copy 5, and one addition vanishes: a lost update.", "Why 6?"),
+      '## Adding one is three moves\n\nThe value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::',
+      step(
+        "Two workers",
+        'Both copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::',
+        "Why 6?",
+      ),
       step("Why it hides", "It only happens when the timing is just wrong.", "Why months?"),
     ].join("\n\n");
     models.script("lesson", { text: lesson, thenGenerate: [JSON.stringify(outline)] });
@@ -324,7 +353,7 @@ describe("checks", () => {
       models.used.find((u) => u.purpose === "check")?.model.doGenerateCalls[0]?.prompt,
     );
     expect(grading).toContain("The steps this check covers (it ends step 2)");
-    expect(grading).toContain("copied out into a working copy");
+    expect(grading).toContain("The copy of a value that is changed before it is put back.");
     expect(grading).toContain("This check covers: working copy, lost update.");
   });
 

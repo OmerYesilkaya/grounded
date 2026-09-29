@@ -39,12 +39,12 @@ const step = (heading: string, body: string, check: string) =>
 const LESSON = [
   step(
     "Adding one is three moves",
-    'You told me the computer “just adds one”. That\'s true, and it hides something: the number lives in memory, and the part that does arithmetic can\'t change a value where it sits.\n\nSo it copies the value out into a working copy, changes the copy, and puts it back.\n\n```diagram\ncaption: Adding one takes three separate moves.\nhighlight: C\n---\nflowchart TB\n  M[("memory: 5")] -->|copy out| R["working copy: 5"]\n  R -->|change| C["working copy: 6"]\n  C -->|put back| M2[("memory: 6")]\n```',
+    'You told me the computer “just adds one”. That\'s true, and it hides something: the number lives in memory, and the part that does arithmetic can\'t change a value where it sits.\n\nSo it copies the value out, changes the copy, and puts it back.\n\n:::word{term="working copy"}\nThe copy of a value that is taken out to be changed, before it is put back.\n:::\n\n```diagram\ncaption: Adding one takes three separate moves.\nhighlight: C\n---\nflowchart TB\n  M[("memory: 5")] -->|copy out| R["working copy: 5"]\n  R -->|change| C["working copy: 6"]\n  C -->|put back| M2[("memory: 6")]\n```',
     "In one sentence: what is in memory while the working copy is being changed?",
   ),
   step(
     "Two workers, one number",
-    "Now two workers do the same job at once. Each does its own three moves, and nothing keeps one worker's moves together.\n\nIf both copy 5 before either puts its copy back, both put back 6. Two additions happened; the number went up by one. That missing addition has a name: a lost update.",
+    'Now two workers do the same job at once. Each does its own three moves, and nothing keeps one worker\'s moves together.\n\nIf both copy 5 before either puts its copy back, both put back 6. Two additions happened; the number went up by one. That missing addition is common enough to have a name.\n\n:::word{term="lost update"}\nAn addition that vanishes because another worker put its copy back over it.\n:::',
     "In one sentence: why did the number end at 6 instead of 7?",
   ),
   step(

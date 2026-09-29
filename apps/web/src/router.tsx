@@ -65,7 +65,13 @@ const homeRoute = createRoute({
 const newTrackRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tracks/new",
-  component: NewTrackPage,
+  // A preview card's "Make a track about this" opens it with the goal in the box (design §6.2).
+  validateSearch: (search: Record<string, unknown>): { goal?: string } =>
+    typeof search.goal === "string" ? { goal: search.goal } : {},
+  component: function NewTrack() {
+    const { goal } = newTrackRoute.useSearch();
+    return <NewTrackPage initialGoal={goal} />;
+  },
 });
 
 const trackRoute = createRoute({

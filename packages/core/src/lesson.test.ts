@@ -75,14 +75,15 @@ const promptText = (call: { prompt: unknown } | undefined) =>
 
 const step = (heading: string, body: string, check?: string) =>
   check ? `## ${heading}\n\n${body}\n\n:::check\n${check}\n:::` : `## ${heading}\n\n${body}`;
-const S1 = step(
-  "Adding one is three moves",
-  "The value is copied out into a working copy.",
-  "What is in memory meanwhile?",
+const WORKING_COPY =
+  'The value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::\n\nThe working copy holds 5.';
+const S1 = step("Adding one is three moves", WORKING_COPY, "What is in memory meanwhile?");
+const S2 = step(
+  "Two workers",
+  'Both copy 5, and one update is lost.\n\n:::word{term="race condition"}\nWhen the result depends on which worker goes first.\n:::',
 );
-const S2 = step("Two workers", "Both copy 5; this is a race condition.");
 const S3 = step("An aside on speed", "It happens rarely.", "Why did the second worker's 6 win?");
-const BROKEN_S1 = step("Adding one is three moves", "The value is copied out into a working copy.");
+const BROKEN_S1 = step("Adding one is three moves", WORKING_COPY);
 
 async function run(model: MockLanguageModelV4, options: Partial<GenerateLessonOptions> = {}) {
   const emitted: LessonStep[] = [];
@@ -122,6 +123,27 @@ describe("generateLesson", () => {
     expect(writing).toContain("it ends without a check (nothing ahead rests on it yet");
     expect(writing).toContain(
       'on "race condition" (taught in step 2), because the lesson\'s last check, before the homework',
+    );
+  });
+
+  it("rewrites a step that uses its new word before giving it a word card", async () => {
+    const uncarded = step(
+      "Adding one is three moves",
+      "The value is copied out into a working copy.",
+      "What is in memory meanwhile?",
+    );
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(OUTLINE)), text(S1)],
+      doStream: streamOf([uncarded, S2, S3].join("\n\n")),
+    });
+    const { emitted } = await run(model);
+    expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
+    const rewrite = promptText(model.doGenerateCalls[1]);
+    expect(rewrite).toContain('"working copy" is used before its word card.');
+    expect(rewrite).toContain('give it a word card (:::word{term="working copy"})');
+    // The writer is told which words each step gives a card.
+    expect(promptText(model.doStreamCalls[0])).toContain(
+      "introduces working copy (each on its word card before it is used)",
     );
   });
 
@@ -217,7 +239,7 @@ describe("generateLesson", () => {
     expect(result.stepInfo.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
     const writing = promptText(model.doStreamCalls[0]);
     expect(writing).toContain("Its first step is written already:");
-    expect(writing).toContain("The value is copied out into a working copy.");
+    expect(writing).toContain("The working copy holds 5.");
     expect(writing).toContain("from step 2 to the end");
   });
 
@@ -293,7 +315,7 @@ describe("generateLesson", () => {
   it("keeps a step whose only problem is a broken drawing, without the drawing, after retries", async () => {
     const withBadDiagram = step(
       "Adding one is three moves",
-      "Copied into a working copy.\n\n```diagram\nno caption\n```",
+      `${WORKING_COPY}\n\n` + "```diagram\nno caption\n```",
       "What is in memory meanwhile?",
     );
     const model = new MockLanguageModelV4({
@@ -303,7 +325,7 @@ describe("generateLesson", () => {
     const { result, emitted } = await run(model);
 
     expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
-    expect(emitted[0]?.body.map((b) => b.type)).toEqual(["paragraph"]);
+    expect(emitted[0]?.body.map((b) => b.type)).toEqual(["paragraph", "word", "paragraph"]);
     expect(result.degraded.map((d) => [d.stepId, d.issues.map((i) => i.code)])).toEqual([
       ["s1", ["diagram/missing-separator"]],
     ]);
@@ -314,7 +336,7 @@ describe("generateLesson: media", () => {
   const IMAGE = '::image{ref="commons:File:Counter.png" caption="A counter."}';
   const withImage = step(
     "Adding one is three moves",
-    `The value is copied out into a working copy.\n\n${IMAGE}`,
+    `${WORKING_COPY}\n\n${IMAGE}`,
     "What is in memory meanwhile?",
   );
   /** Media whose verifier finds nothing on Commons, and records what it was asked. */
@@ -384,7 +406,7 @@ describe("generateLesson: media", () => {
 
     expect(promptText(model.doGenerateCalls[1])).toContain("No such file.");
     expect(emitted.map((s) => s.id)).toEqual(["s1", "s2", "s3"]);
-    expect(emitted[0]?.body.map((b) => b.type)).toEqual(["paragraph"]);
+    expect(emitted[0]?.body.map((b) => b.type)).toEqual(["paragraph", "word", "paragraph"]);
     expect(result.degraded.map((d) => [d.stepId, d.issues.map((i) => i.code)])).toEqual([
       ["s1", ["image/unverified"]],
     ]);

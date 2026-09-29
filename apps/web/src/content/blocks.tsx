@@ -1,5 +1,6 @@
 import type { Block } from "@grounded/content";
 import { CodeBlock } from "./code-block";
+import { AboutCardView, WordCardView } from "./card-blocks";
 import { AudioView, ImageView, LinkCardView, VideoView } from "./media-blocks";
 import { Inlines } from "./inlines";
 import { Tex } from "./tex";
@@ -103,6 +104,18 @@ function BlockView({ block }: { block: Block }) {
       return <VideoView block={block} />;
     case "link":
       return <LinkCardView block={block} />;
+    case "word":
+      return (
+        <WordCardView block={block}>
+          <Blocks blocks={block.children} />
+        </WordCardView>
+      );
+    case "about":
+      return (
+        <AboutCardView block={block}>
+          <Blocks blocks={block.children} />
+        </AboutCardView>
+      );
     case "check":
       // Checks are interactive; LessonView renders them with the step's progress.
       return null;

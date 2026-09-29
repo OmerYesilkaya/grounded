@@ -71,6 +71,7 @@ import { addLogContext, content, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
+import { markCardsTaught } from "./word-cards.js";
 import {
   applyActions,
   applyValidActions,
@@ -655,6 +656,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 stepSources: sql`${lessons.stepSources} || ${JSON.stringify({ [step.id]: markdown })}::jsonb`,
               })
               .where(eq(lessons.sessionId, sessionId));
+            // Its word cards mark their terms taught once the learner can read it: before the
+            // learner sees it, so nothing read from the step finds its words still planned.
+            await markCardsTaught(db, sessionId);
             await publish(db, sessionId, "lesson-step", { step });
           },
           onOutlineRejected: (attempt, problems) => {
@@ -787,6 +791,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           stepId,
           verdict: verdict.verdict,
         });
+        await markCardsTaught(db, sessionId, next);
         await recordCheckMessage(db, sessionId, stepId, verdict.reply, verdict.verdict, deps.media);
 
         const step = next.steps[stepId];

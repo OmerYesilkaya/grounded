@@ -1,4 +1,5 @@
 import type { Block, BlockType, DiagramFrame, Inline, Issue, LessonStep } from "./types.js";
+import { cardNames } from "./word-cards.js";
 
 /** Where content is shown. Each surface allows its own block types. */
 export type Surface = "chat" | "lesson" | "aside" | "repair" | "review" | "homework";
@@ -18,12 +19,14 @@ export const ALLOWED_BLOCKS: Record<Surface, readonly BlockType[]> = {
     "divider",
     "chart",
     "check",
+    "word",
+    "about",
     "image",
     "video",
     "audio",
     "link",
   ],
-  aside: WITH_DRAWINGS,
+  aside: [...WITH_DRAWINGS, "about"],
   repair: WITH_DRAWINGS,
   review: WITH_DRAWINGS,
   homework: [...TEXT, "heading", "divider", "diagram", "image", "video", "audio", "link"],
@@ -43,8 +46,13 @@ export interface ValidateContext {
   terms?: readonly TrackTerm[];
   /** Domain jargon of the track (from research) that isn't in the plan: never usable untaught. */
   glossary?: readonly string[];
-  /** Terms the content itself introduces (a lesson step's new names), allowed here. */
+  /** Terms the surroundings introduced before this content (a lesson's earlier steps), usable here. */
   introduced?: readonly string[];
+  /**
+   * Terms this content teaches with word cards (a lesson step's new names): each needs its card,
+   * and is usable only from it on.
+   */
+  taughtHere?: readonly string[];
 }
 
 /** Always the method's machinery when they appear in learner-facing text. */
@@ -66,16 +74,23 @@ const MAYBE_MACHINERY =
 export function validate(blocks: readonly Block[], context: ValidateContext): Issue[] {
   const issues: Issue[] = [];
   const allowed = ALLOWED_BLOCKS[context.surface];
+  const terms = context.terms ?? [];
   const usable = new Set(
     [
-      ...(context.terms ?? []).filter((t) => USABLE.includes(t.status)).map((t) => t.term),
+      ...terms.filter((t) => USABLE.includes(t.status)).map((t) => t.term),
       ...(context.introduced ?? []),
     ].map(normalize),
   );
-  const untaught = [
-    ...(context.terms ?? []).filter((t) => !USABLE.includes(t.status)).map((t) => t.term),
-    ...(context.glossary ?? []),
-  ].filter((term) => !usable.has(normalize(term)));
+  // Taught here: untaught until its word card, usable from the card on (its definition included).
+  const pending = (context.taughtHere ?? []).filter((term) => !usable.has(normalize(term)));
+  const untaught = () =>
+    [
+      ...terms.filter((t) => !USABLE.includes(t.status)).map((t) => t.term),
+      ...pending,
+      ...(context.glossary ?? []),
+    ]
+      .filter((term, i, all) => !usable.has(normalize(term)) && all.indexOf(term) === i)
+      .map((term) => ({ term, carded: pending.includes(term) }));
 
   walk(blocks, (block) => {
     if (!allowed.includes(block.type)) {
@@ -85,14 +100,54 @@ export function validate(blocks: readonly Block[], context: ValidateContext): Is
         blockId: block.id,
       });
     }
+    if (block.type === "word") {
+      issues.push(...cardIssues(block, terms, pending, usable));
+      const given = pending.find((term) => cardNames(block.term, term));
+      usable.add(normalize(given ?? block.term));
+    }
+    const left = untaught();
     for (const text of visibleText(block)) {
-      issues.push(
-        ...scaffolding(text, block.id, usable),
-        ...untaughtTerms(text, block.id, untaught),
-      );
+      issues.push(...scaffolding(text, block.id, usable), ...untaughtTerms(text, block.id, left));
     }
   });
+  for (const term of pending.filter((t) => !usable.has(normalize(t))))
+    issues.push({
+      code: "word/missing-card",
+      message: `"${term}" is new here: give it a word card (:::word{term="${term}"}) with what it means, in words the learner already holds, before the first time it is used.`,
+    });
   return issues;
+}
+
+/**
+ * A word card gives a word the learner doesn't hold, where this content teaches it: not a word they
+ * already hold, and not one of the track's terms that is taught somewhere else. A word the track
+ * doesn't list (a label the lesson coins) may have one.
+ */
+function cardIssues(
+  card: Extract<Block, { type: "word" }>,
+  terms: readonly TrackTerm[],
+  pending: readonly string[],
+  usable: ReadonlySet<string>,
+): Issue[] {
+  if (pending.some((term) => cardNames(card.term, term))) return [];
+  const listed = terms.find((t) => cardNames(card.term, t.term));
+  if (usable.has(normalize(card.term)) || (listed && USABLE.includes(listed.status)))
+    return [
+      {
+        code: "word/held",
+        message: `The learner already holds "${card.term}": use it without a word card.`,
+        blockId: card.id,
+      },
+    ];
+  if (listed)
+    return [
+      {
+        code: "word/not-here",
+        message: `"${listed.term}" isn't taught here: leave out its word card, and describe it in plain words until the step that teaches it.`,
+        blockId: card.id,
+      },
+    ];
+  return [];
 }
 
 /** Validates a lesson step, heading included, on the lesson surface. */
@@ -106,7 +161,13 @@ function walk(blocks: readonly Block[], visit: (block: Block) => void): void {
   for (const block of blocks) {
     visit(block);
     if (block.type === "list") for (const item of block.items) walk(item, visit);
-    if (block.type === "quote" || block.type === "check") walk(block.children, visit);
+    if (
+      block.type === "quote" ||
+      block.type === "check" ||
+      block.type === "word" ||
+      block.type === "about"
+    )
+      walk(block.children, visit);
   }
 }
 
@@ -200,16 +261,28 @@ function scaffolding(text: string, blockId: string, usable: Set<string>): Issue[
     );
 }
 
-function untaughtTerms(text: string, blockId: string, terms: readonly string[]): Issue[] {
+function untaughtTerms(
+  text: string,
+  blockId: string,
+  terms: readonly { term: string; carded: boolean }[],
+): Issue[] {
   return terms
-    .map((term) => ({ term, index: text.search(termPattern(term)) }))
+    .map((t) => ({ ...t, index: text.search(termPattern(t.term)) }))
     .filter(({ index }) => index !== -1)
     .sort((a, b) => a.index - b.index)
-    .map(({ term }) => ({
-      code: "term/untaught",
-      message: `"${term}" hasn't been taught yet; describe it in plain words, or introduce it where it earns its name.`,
-      blockId,
-    }));
+    .map(({ term, carded }) =>
+      carded
+        ? {
+            code: "word/before-card",
+            message: `"${term}" is used before its word card. Name it only from its card on, headings included: the idea first, in plain words, then the card, then the name.`,
+            blockId,
+          }
+        : {
+            code: "term/untaught",
+            message: `"${term}" hasn't been taught yet; describe it in plain words, or introduce it where it earns its name.`,
+            blockId,
+          },
+    );
 }
 
 function termPattern(term: string): RegExp {

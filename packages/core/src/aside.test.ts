@@ -48,7 +48,7 @@ describe("an aside's prompt", () => {
 
   it("lists the blocks an answer in the margin may use", () => {
     expect(asideBlocksLine()).toBe(
-      "Blocks you may use in this answer: paragraphs, lists, quotes, code, maths, tables, diagrams and steppers. Nothing else is shown.",
+      "Blocks you may use in this answer: paragraphs, lists, quotes, code, maths, tables, diagrams, steppers and preview cards (:::about) for a person, place or work. Nothing else is shown.",
     );
   });
 

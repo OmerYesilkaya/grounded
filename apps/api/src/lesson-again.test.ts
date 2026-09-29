@@ -44,12 +44,19 @@ const step = (heading: string, body: string, check?: string) =>
   check ? `## ${heading}\n\n${body}\n\n:::check\n${check}\n:::` : `## ${heading}\n\n${body}`;
 const S1 = step(
   "Adding one is three moves",
-  "The value is copied out into a working copy, changed, and put back.",
+  'The value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::',
   "What is in memory meanwhile?",
 );
-const S2 = step("Two workers", "Both copy 5, and one addition vanishes: a lost update.", "Why 6?");
+const S2 = step(
+  "Two workers",
+  'Both copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::',
+  "Why 6?",
+);
 // Without the check placed on it: it breaks a rule every time it is written.
-const BROKEN_S2 = step("Two workers", "Both copy 5, and one addition vanishes: a lost update.");
+const BROKEN_S2 = step(
+  "Two workers",
+  'Both copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::',
+);
 const S3 = step("Why it hides", "It only happens when the timing is just wrong.", "Why hidden?");
 
 const post = (cookie: string, sessionId: string, path: string) =>

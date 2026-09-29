@@ -3,6 +3,7 @@ export { parseLesson, splitLessonSteps, type ParseLessonOptions } from "./parse-
 export { createStreamParser } from "./stream-parser.js";
 export type { StreamParser } from "./stream-parser.js";
 export { ALLOWED_BLOCKS, validate, validateStep } from "./validate.js";
+export { cardNames, wordCards } from "./word-cards.js";
 export type { Surface, TermStatus, TrackTerm, ValidateContext } from "./validate.js";
 export type {
   Block,

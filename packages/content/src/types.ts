@@ -32,6 +32,17 @@ export type Block =
   | { id: string; type: "stepper"; frames: DiagramFrame[] }
   | { id: string; type: "chart"; spec: Record<string, unknown>; source: string | null }
   | { id: string; type: "check"; children: Block[] }
+  /**
+   * A word card (design §6.2): a term the learner doesn't hold yet, given with what it means in
+   * words they do hold, before the lesson uses it. `term` is written as the lesson names it.
+   */
+  | { id: string; type: "word"; term: string; children: Block[] }
+  /**
+   * A preview of a person, place or work the lesson leans on (design §6.2): who or what it is, in
+   * a paragraph at most. `track` is set when there is too much to it for a preview: the goal of a
+   * track of its own, which the learner can start from the card.
+   */
+  | { id: string; type: "about"; name: string; track: string | null; children: Block[] }
   | {
       id: string;
       type: "video";

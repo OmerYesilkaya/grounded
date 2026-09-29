@@ -241,14 +241,57 @@ export function convertContainerDirective(
   convertChildren: (prefix: string) => Block[],
 ): Block | null {
   const report = reporter(issues, id, node);
-  if (node.name !== "check") {
-    report("unknown-block", unknownBlock(node.name));
-    return null;
+  const attrs = node.attributes ?? {};
+  switch (node.name) {
+    case "check": {
+      const children = convertChildren(`${id}.`);
+      if (children.length === 0) {
+        report("check/empty", "A check needs its question inside it.");
+        return null;
+      }
+      return { id, type: "check", children };
+    }
+    case "word": {
+      const term = nonEmpty(attrs.term);
+      if (!term) {
+        report("word/missing-term", 'A word card names its word: :::word{term="…"}.');
+        return null;
+      }
+      const children = convertChildren(`${id}.`);
+      if (children.length === 0) {
+        report("word/empty", `The word card for "${term}" needs what the word means inside it.`);
+        return null;
+      }
+      if (!children.every((c) => DEFINITION.includes(c.type))) {
+        report(
+          "word/not-text",
+          `The word card for "${term}" holds only what the word means, in a sentence or two of text (maths allowed); drawings and examples go in the lesson around it.`,
+        );
+        return null;
+      }
+      return { id, type: "word", term, children };
+    }
+    case "about": {
+      const name = nonEmpty(attrs.name);
+      if (!name) {
+        report("about/missing-name", 'A preview card names its subject: :::about{name="…"}.');
+        return null;
+      }
+      const children = convertChildren(`${id}.`);
+      if (children.length !== 1 || children[0]?.type !== "paragraph") {
+        report(
+          "about/not-one-paragraph",
+          `The preview card for "${name}" is one paragraph at most. If there is more to it than that, keep the paragraph and add track="…" to offer a track of its own.`,
+        );
+        return null;
+      }
+      return { id, type: "about", name, track: nonEmpty(attrs.track), children };
+    }
+    default:
+      report("unknown-block", unknownBlock(node.name));
+      return null;
   }
-  const children = convertChildren(`${id}.`);
-  if (children.length === 0) {
-    report("check/empty", "A check needs its question inside it.");
-    return null;
-  }
-  return { id, type: "check", children };
 }
+
+/** What a word card's definition may be made of: text, never a drawing or a nested card. */
+const DEFINITION: readonly Block["type"][] = ["paragraph", "list", "math"];

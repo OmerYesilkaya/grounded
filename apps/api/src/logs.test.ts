@@ -73,8 +73,8 @@ const OUTLINE = {
   ],
 };
 const LESSON = [
-  "## Adding one is three moves\n\nThe value is copied out into a working copy, changed, and put back.\n\n:::check\nWhat is in memory meanwhile?\n:::",
-  "## Two workers\n\nBoth copy 5, and one addition vanishes: a lost update.\n\n:::check\nWhy 6 and not 7?\n:::",
+  '## Adding one is three moves\n\nThe value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::\n\n:::check\nWhat is in memory meanwhile?\n:::',
+  '## Two workers\n\nBoth copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::\n\n:::check\nWhy 6 and not 7?\n:::',
 ].join("\n\n");
 
 /** A signed-in learner with a key and a track; returns what the log must never show. */

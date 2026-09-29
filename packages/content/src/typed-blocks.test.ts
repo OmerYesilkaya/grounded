@@ -153,6 +153,60 @@ describe("parseBlocks: checks", () => {
   });
 });
 
+describe("parseBlocks: word and preview cards", () => {
+  const paragraph = (id: string, value: string) => ({
+    id,
+    type: "paragraph",
+    children: [{ type: "text", value }],
+  });
+
+  it("parses a word card: the word, and what it means", () => {
+    const { blocks, issues } = parseBlocks(
+      ':::word{term="ontology"}\nThe study of what there is.\n:::',
+    );
+    expect(issues).toEqual([]);
+    expect(blocks).toEqual([
+      {
+        id: "b1",
+        type: "word",
+        term: "ontology",
+        children: [paragraph("b1.1", "The study of what there is.")],
+      },
+    ]);
+  });
+
+  it("keeps a word card to text", () => {
+    const codes = (markdown: string) => parseBlocks(markdown).issues.map((i) => i.code);
+    expect(codes(":::word\nWhat it means.\n:::")).toEqual(["word/missing-term"]);
+    expect(codes(':::word{term="x"}\n:::')).toEqual(["word/empty"]);
+    expect(
+      codes(':::word{term="x"}\n```diagram\ncaption: c\n---\nflowchart TB\n  A\n```\n:::'),
+    ).toEqual(["word/not-text"]);
+  });
+
+  it("parses a preview card, with the track it offers when there is more to it", () => {
+    const { blocks, issues } = parseBlocks(
+      ':::about{name="Immanuel Kant" track="Kant: what he held and why it mattered"}\nA German philosopher (1724–1804).\n:::',
+    );
+    expect(issues).toEqual([]);
+    expect(blocks).toEqual([
+      {
+        id: "b1",
+        type: "about",
+        name: "Immanuel Kant",
+        track: "Kant: what he held and why it mattered",
+        children: [paragraph("b1.1", "A German philosopher (1724–1804).")],
+      },
+    ]);
+  });
+
+  it("keeps a preview card to one paragraph", () => {
+    const codes = (markdown: string) => parseBlocks(markdown).issues.map((i) => i.code);
+    expect(codes(":::about\nWho.\n:::")).toEqual(["about/missing-name"]);
+    expect(codes(':::about{name="Kant"}\nOne.\n\nTwo.\n:::')).toEqual(["about/not-one-paragraph"]);
+  });
+});
+
 describe("parseBlocks: media", () => {
   it("parses video, image, audio and link blocks", () => {
     const { blocks, issues } = parseBlocks(

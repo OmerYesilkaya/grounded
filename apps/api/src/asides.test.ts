@@ -46,15 +46,15 @@ const OUTLINE = {
   ],
 };
 const LESSON = [
-  "## Adding one is three moves\n\nThe value is copied out into a working copy, changed, and put back.\n\n:::check\nWhat is in memory meanwhile?\n:::",
-  "## Two workers\n\nBoth copy 5, and one addition vanishes: a lost update.\n\n:::check\nWhy 6 and not 7?\n:::",
+  '## Adding one is three moves\n\nThe value is copied out, changed, and put back.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::\n\n:::check\nWhat is in memory meanwhile?\n:::',
+  '## Two workers\n\nBoth copy 5, and one addition vanishes.\n\n:::word{term="lost update"}\nAn addition that vanishes because another copy was put back over it.\n:::\n\n:::check\nWhy 6 and not 7?\n:::',
 ].join("\n\n");
 
 const ANCHOR = {
   blockId: "s1.b2",
   quote: "copied out",
   prefix: "The value is ",
-  suffix: " into a working copy",
+  suffix: ", changed, and put back.",
 };
 const ANSWER =
   "The number stays where it is in memory; the part doing the sum works on a copy of it.";
@@ -182,10 +182,10 @@ describe("asking about a passage", () => {
       "### Step 2 (still locked: the learner hasn't reached it; don't spoil it)",
     );
     expect(prompt).toContain("Both copy 5, and one addition vanishes");
-    expect(prompt).toContain("…The value is «copied out» into a working copy…");
+    expect(prompt).toContain("…The value is «copied out», changed, and put back.…");
     expect(prompt).toContain('In step 1, \\"Adding one is three moves\\"');
-    expect(prompt).toContain("diagrams and steppers");
-    expect(prompt).toContain("| working copy | planned |");
+    expect(prompt).toContain("diagrams, steppers and preview cards");
+    expect(prompt).toContain("| working copy | taught |");
     expect(prompt).toContain("Copied out to where?");
   });
 
@@ -326,13 +326,13 @@ describe("what an aside records", () => {
     expect(events).toEqual([
       {
         term: "working copy",
-        from: "planned",
-        to: "planned",
+        from: "taught",
+        to: "taught",
         evidence: 'Asked where the value is copied: "copied out to where?"',
       },
     ]);
     const [term] = await t.db.select().from(terms).where(eq(terms.term, "working copy"));
-    expect(term?.status).toBe("planned");
+    expect(term?.status).toBe("taught");
   });
 
   it("offers a tangent, which the learner can save into the plan for a future session", async () => {

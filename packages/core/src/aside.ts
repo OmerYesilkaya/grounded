@@ -76,6 +76,7 @@ const BLOCK_NAMES: Partial<Record<BlockType, string>> = {
   table: "tables",
   diagram: "diagrams",
   stepper: "steppers",
+  about: "preview cards (:::about) for a person, place or work",
 };
 
 /** The blocks an answer in the margin may use (design §6.3), for its prompt. */

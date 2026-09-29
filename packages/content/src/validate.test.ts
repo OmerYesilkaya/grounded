@@ -159,3 +159,74 @@ describe("validateStep", () => {
     expect(issues).toMatchObject([{ code: "term/untaught", blockId: "s1.b1" }]);
   });
 });
+
+describe("validate: word cards", () => {
+  const terms: TrackTerm[] = [
+    { term: "memory", status: "confirmed" },
+    { term: "ontology", status: "planned" },
+    { term: "epistemology", status: "planned" },
+  ];
+  const lesson = (markdown: string) =>
+    validate(blocks(markdown), { surface: "lesson", terms, taughtHere: ["ontology"] }).map(
+      (i) => i.code,
+    );
+  const CARD = ':::word{term="ontology"}\nThe study of what there is.\n:::';
+
+  it("lets a word the content teaches be used from its card on, its definition included", () => {
+    expect(lesson(`What is there at all?\n\n${CARD}\n\nOntology asks it first.`)).toEqual([]);
+    expect(lesson(':::word{term="ontology"}\nOntology: the study of what there is.\n:::')).toEqual(
+      [],
+    );
+  });
+
+  it("rejects the word before its card, and a word taught here without one", () => {
+    expect(lesson(`Ontology comes first.\n\n${CARD}`)).toEqual(["word/before-card"]);
+    expect(lesson("What is there at all? Ontology asks.")).toEqual([
+      "word/before-card",
+      "word/missing-card",
+    ]);
+  });
+
+  it("keeps a card's definition to words the learner holds", () => {
+    expect(
+      lesson(':::word{term="ontology"}\nThe part of epistemology about what there is.\n:::'),
+    ).toEqual(["term/untaught"]);
+  });
+
+  it("gives no card to a word already held, or to a term taught elsewhere", () => {
+    expect(lesson(`${CARD}\n\n:::word{term="memory"}\nWhere values live.\n:::`)).toEqual([
+      "word/held",
+    ]);
+    expect(lesson(`${CARD}\n\n:::word{term="epistemology"}\nHow we know.\n:::`)).toEqual([
+      "word/not-here",
+    ]);
+    // A label the lesson coins isn't on the list, and may have one.
+    expect(lesson(`${CARD}\n\n:::word{term="the box"}\nThe memory cell we watch.\n:::`)).toEqual(
+      [],
+    );
+  });
+
+  it("finds a long term by the name before its colon", () => {
+    const long: TrackTerm[] = [{ term: "requests table row: one API request", status: "planned" }];
+    const card = ':::word{term="requests table row"}\nOne line per request.\n:::';
+    expect(
+      validate(blocks(card), {
+        surface: "lesson",
+        terms: long,
+        taughtHere: ["requests table row: one API request"],
+      }),
+    ).toEqual([]);
+  });
+
+  it("allows a word card only in a lesson, and a preview card in a lesson or an aside", () => {
+    const about = blocks(':::about{name="Immanuel Kant"}\nA German philosopher (1724–1804).\n:::');
+    expect(validate(blocks(CARD), { surface: "aside" }).map((i) => i.code)).toEqual([
+      "surface/not-allowed",
+    ]);
+    expect(validate(about, { surface: "lesson" })).toEqual([]);
+    expect(validate(about, { surface: "aside" })).toEqual([]);
+    expect(validate(about, { surface: "chat" }).map((i) => i.code)).toEqual([
+      "surface/not-allowed",
+    ]);
+  });
+});

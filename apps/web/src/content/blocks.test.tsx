@@ -68,3 +68,30 @@ describe("Blocks: maths and punctuation", () => {
     expect(container.textContent).toContain(" Then more.");
   });
 });
+
+describe("Blocks: cards", () => {
+  it("sets a word card apart: the word, then what it means", () => {
+    renderMarkdown(':::word{term="ontology"}\nThe study of what there is.\n:::');
+    const card = screen.getByRole("complementary", { name: "New word: ontology" });
+    expect(within(card).getByText("ontology")).toBeInTheDocument();
+    expect(within(card).getByText("The study of what there is.")).toBeInTheDocument();
+  });
+
+  it("offers a track of its own from a preview card with more to it, in a new tab", () => {
+    renderMarkdown(
+      ':::about{name="Immanuel Kant" track="Kant: what he held and why it mattered"}\nA German philosopher (1724–1804).\n:::',
+    );
+    const card = screen.getByRole("complementary", { name: "About Immanuel Kant" });
+    const link = within(card).getByRole("link", { name: "Make a track about this" });
+    expect(link).toHaveAttribute(
+      "href",
+      "/tracks/new?goal=Kant%3A%20what%20he%20held%20and%20why%20it%20mattered",
+    );
+    expect(link).toHaveAttribute("target", "_blank");
+  });
+
+  it("offers no track from a preview card that says it all", () => {
+    renderMarkdown(':::about{name="Nile"}\nThe river Egypt grew along.\n:::');
+    expect(screen.queryByRole("link")).toBeNull();
+  });
+});

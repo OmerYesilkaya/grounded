@@ -415,8 +415,8 @@ interface Planned {
   steps: LessonStepInfo[];
 }
 
-function introducedUpTo(outline: StoredLessonOutline, index: number): string[] {
-  return outline.steps.slice(0, index + 1).flatMap((s) => s.introduces);
+function introducedBefore(outline: StoredLessonOutline, index: number): string[] {
+  return outline.steps.slice(0, index).flatMap((s) => s.introduces);
 }
 
 /** Parses and validates a step, then verifies its media and links on the server. */
@@ -450,7 +450,9 @@ function stepErrors(
     ...checkPlacementErrors(step, planned.steps[index]?.check ?? null),
     ...validateStep(step, {
       terms: options.terms,
-      introduced: introducedUpTo(planned.outline, index),
+      // The step's own new terms each come with a word card, and are used only from it on.
+      introduced: introducedBefore(planned.outline, index),
+      taughtHere: planned.outline.steps[index]?.introduces ?? [],
       ...(options.glossary ? { glossary: options.glossary } : {}),
     }),
   ].filter((issue) => issue.severity !== "review");
@@ -552,7 +554,10 @@ function stepBrief(planned: Planned, index: number): string {
   const ending = placed
     ? `it ends with a check: ${checkBrief(placed)}`
     : "it ends without a check (nothing ahead rests on it yet; a later check covers it)";
-  return `"${step.heading}" establishes ${step.establishes}; introduces ${step.introduces.join(", ") || "nothing new"}; ${ending}`;
+  const introduces = step.introduces.length
+    ? `introduces ${step.introduces.join(" · ")} (each on its word card before it is used)`
+    : "introduces nothing new";
+  return `"${step.heading}" establishes ${step.establishes}; ${introduces}; ${ending}`;
 }
 
 /** What a placed check asks about, for the lesson's writer. */

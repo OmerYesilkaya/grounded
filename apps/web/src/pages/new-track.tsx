@@ -15,8 +15,8 @@ const MOD_KEY =
  * A new track from the learner's own words, as many as they like, and the files that show where
  * they start or where they are heading (design §9.5).
  */
-export function NewTrackPage() {
-  const [goal, setGoal] = useState("");
+export function NewTrackPage({ initialGoal = "" }: { initialGoal?: string | undefined }) {
+  const [goal, setGoal] = useState(initialGoal);
   const attachments = useAttachments();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
