@@ -2,9 +2,10 @@ import { awaitedJob } from "@grounded/core/session";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { ArrowDown } from "lucide-react";
-import { useLayoutEffect, useState } from "react";
+import { useLayoutEffect, useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
+import { PlanPicture } from "@/components/session-pictures";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
@@ -20,7 +21,8 @@ const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
   recap: "Recap",
 };
 
-function Message({ message }: { message: ChatMessage }) {
+/** `footer` ends a tutor message's card (the plan's picture). */
+function Message({ message, footer }: { message: ChatMessage; footer?: ReactNode }) {
   if (message.role === "learner") {
     return (
       <div className="max-w-[85%] self-end rounded-xl bg-muted px-3.5 py-2 text-[15px] leading-relaxed whitespace-pre-wrap">
@@ -28,10 +30,10 @@ function Message({ message }: { message: ChatMessage }) {
       </div>
     );
   }
-  return <TutorMessage message={message} />;
+  return <TutorMessage message={message} footer={footer} />;
 }
 
-function TutorMessage({ message }: { message: ChatMessage }) {
+function TutorMessage({ message, footer }: { message: ChatMessage; footer?: ReactNode }) {
   const revealed = useRevealedText(message.text ?? "", message.streaming === true);
   // The blocks wait for the reveal to finish, so the text doesn't jump ahead as it turns into them.
   const blocks = revealed.done ? message.blocks : null;
@@ -50,6 +52,7 @@ function TutorMessage({ message }: { message: ChatMessage }) {
       <div className="font-serif text-[17px] leading-[1.6] [&_p:last-child]:mb-0">
         {blocks ? <Blocks blocks={blocks} /> : <StreamedText revealed={revealed} />}
       </div>
+      {blocks && footer}
     </div>
   );
 }
@@ -123,7 +126,11 @@ export function ChatView({
     >
       <div className="flex flex-col gap-5">
         {model.messages.map((m) => (
-          <Message key={m.id} message={m} />
+          <Message
+            key={m.id}
+            message={m}
+            footer={m.kind === "plan" && <PlanPicture model={model} messageId={m.id} />}
+          />
         ))}
         <ActivityLine
           activities={model.activities}

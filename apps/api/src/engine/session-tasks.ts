@@ -69,6 +69,7 @@ import { createLessonMedia } from "../media/lesson-media.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { addLogContext, content, log } from "../log.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
+import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
 import {
   applyActions,
@@ -1064,6 +1065,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 errors: ["Record the plan's planned terms and place them in its arcs."],
               };
           if (applied.ok) {
+            // What the plan's picture is drawn around (term-map.ts).
+            await db
+              .update(sessionMessages)
+              .set({ planTerms: plannedIn(output.actions) })
+              .where(eq(sessionMessages.id, reply.messageId));
             await applyEvent(db, sessionId, { type: "plan-proposed" });
             return;
           }

@@ -474,7 +474,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                            |
 | `fix_list_items`                                 | the audit's misconceptions and their status                                                                                              |
 | `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized |
-| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees                                             |
+| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                             |
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
@@ -894,6 +894,23 @@ Three structurally different variants were explored
 - **Left: the track list**, collapsible (☰) for distraction-free reading.
 - **Top: a Chat / Lesson switch.** Chat holds the session's conversation (probe, plan with its picture
   and approval). Lesson is the reading view.
+- **The pictures of what rests on what** (decided 2026-09-29, #47; `apps/api/src/term-map.ts`,
+  `GET /api/sessions/:id/pictures`, drawn by `TermMapPicture` in `apps/web/src/components/term-map.tsx`).
+  All of them are drawn by the app from `term_dependencies`, never by the model, the same way: a
+  picture is drawn around some ideas (its focus) and shows them with what they rest on directly, one
+  level down, and only the focus's own lines. Each idea sits above what it rests on, so the ground
+  is the bottom row (layered by the longest chain under each idea, each row ordered to keep lines
+  short: `layers` in `apps/web/src/lib/term-map.ts`, deterministic). The focus is in full colour and
+  the ground paler; owned ideas are filled, those still settling outlined and those to come dashed,
+  with a key in the learner's words. Pointing at an idea follows its lines. A whole arc or the
+  track's whole map is too many ideas to read in one picture, so none shows more than its focus
+  and one level under it:
+  - **The plan** draws the ideas its record planned (`session_messages.plan_terms`, written when the
+    record applies), inside the latest plan's card under "What rests on what", once recorded. The
+    plan message names them already; the picture adds what rests on what.
+  - **The lesson's end**, after the last check (the session in homework or later), draws "What you
+    just built": the ideas the outline introduces. Never before: the lesson has no opener (§3.2).
+  - **The track page** (#45) will draw one arc at a time (§8).
 - **Lesson view:** one continuous scroll; steps stack as they unlock (no pages, no prev/next).
   A **step timeline in the empty left gutter** of the reading column — only in Lesson view — follows
   the scroll; clicking an unlocked step scrolls to it; locked steps show as `·····` (upcoming headings

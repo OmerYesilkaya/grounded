@@ -134,6 +134,13 @@
       "when": 1790636005909,
       "tag": "0018_borrowed_terms",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1790636540989,
+      "tag": "0019_plan_terms",
+      "breakpoints": true
     }
   ]
 }

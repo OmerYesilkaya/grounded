@@ -1,0 +1,1 @@
+ALTER TABLE "session_messages" ADD COLUMN "plan_terms" jsonb;

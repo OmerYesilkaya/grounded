@@ -3,6 +3,7 @@ import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { ActivityLine } from "@/components/activity-line";
 import { ContentProvider } from "@/content/environment";
+import { BuiltPicture } from "@/components/session-pictures";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
 import { api } from "@/lib/api";
 import { asideActions } from "@/lib/asides";
@@ -140,7 +141,13 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           onContinue={(stepId) => {
             post.mutate({ path: `/api/sessions/${sessionId}/steps/${stepId}/continue` });
           }}
-          after={lessonFailed && <LessonAgain model={model} className="mt-10" />}
+          after={
+            lessonFailed ? (
+              <LessonAgain model={model} className="mt-10" />
+            ) : (
+              <BuiltPicture model={model} />
+            )
+          }
           asides={{
             items: model.asides,
             hint: !model.hasAskedAside,

@@ -368,6 +368,11 @@ export const sessionMessages = pgTable("session_messages", {
     .$type<"message" | "plan" | "homework" | "recap">()
     .notNull()
     .default("message"),
+  /**
+   * A plan's terms, as its record planned them: what its picture of what rests on what is drawn
+   * around (design §9.1). Null for other messages, and for a plan whose record isn't written yet.
+   */
+  planTerms: jsonb("plan_terms").$type<string[]>(),
   createdAt: createdAt(),
 });
 
