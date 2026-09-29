@@ -1,7 +1,8 @@
-import { eq, users } from "@grounded/db";
+import { eq, users, verifications } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { invite, revoke } from "./allowlist.js";
 import { createAuth } from "./auth.js";
+import { createInviteLink, INVITE_LINK_LIFETIME_SECONDS } from "./invite-link.js";
 import { BASE_URL, createTestHarness } from "./test/harness.js";
 
 const t = createTestHarness();
@@ -59,6 +60,43 @@ describe("invite and revoke", () => {
       body: JSON.stringify({ email: "ada@example.com", callbackURL: "/" }),
     });
     expect(t.sent).toHaveLength(1);
+  });
+});
+
+describe("an invite link", () => {
+  const mint = (email: string) =>
+    createInviteLink({
+      db: t.db,
+      email,
+      appUrl: BASE_URL,
+      secret: "test-secret-that-is-long-enough-for-better-auth",
+    });
+
+  it("invites the email and signs them in once, without sending anything", async () => {
+    const link = await mint(" Ada@Example.com ");
+    expect(t.sent).toEqual([]);
+    expect(link.startsWith(`${BASE_URL}/api/auth/magic-link/verify?token=`)).toBe(true);
+
+    const first = await t.request(link, { redirect: "manual" });
+    const cookie = first.headers
+      .getSetCookie()
+      .map((c) => c.split(";")[0])
+      .join("; ");
+    const me = await t.request("/api/me", { cookie });
+    expect(me.status).toBe(200);
+    expect(await me.json()).toMatchObject({ email: "ada@example.com" });
+
+    const again = await t.request(link, { redirect: "manual" });
+    expect(again.headers.get("location")).toContain("error=INVALID_TOKEN");
+  });
+
+  it("stays valid for a week, not the five minutes of an emailed link", async () => {
+    const before = Date.now();
+    await mint("ada@example.com");
+    const [row] = await t.db.select().from(verifications);
+    const lifetime = (row?.expiresAt.getTime() ?? 0) - before;
+    expect(lifetime).toBeGreaterThan((INVITE_LINK_LIFETIME_SECONDS - 60) * 1000);
+    expect(lifetime).toBeLessThanOrEqual(INVITE_LINK_LIFETIME_SECONDS * 1000 + 60_000);
   });
 });
 

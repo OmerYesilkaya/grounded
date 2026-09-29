@@ -19,6 +19,8 @@ export interface AuthOptions {
   trustedProxies?: string[];
   /** Rate limiting is on in production by default; tests turn it on to check it. */
   rateLimit?: boolean;
+  /** How long a magic link stays valid, in seconds. Better Auth's five minutes by default. */
+  magicLinkExpiresIn?: number;
 }
 
 /**
@@ -50,6 +52,9 @@ export function createAuth(options: AuthOptions) {
     },
     plugins: [
       magicLink({
+        ...(options.magicLinkExpiresIn === undefined
+          ? {}
+          : { expiresIn: options.magicLinkExpiresIn }),
         sendMagicLink: async ({ email, url }) => {
           if (await isInvited(db, email)) await options.sendMagicLink(email, url);
         },
