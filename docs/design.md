@@ -291,7 +291,22 @@ about, test and debug.
   (a wrong verdict costs more than a few cents); a **cheaper** model for asides and small jobs.
 - **Research** replaces the `researcher` subagent: during planning (scoping the field, seeding planned
   terms) and whenever a fact is uncertain, the model runs with the provider's search tool on and
-  returns notes with sources, stored on the track.
+  returns notes with sources, stored on the track (`research_notes`, `engine/research.ts`; decided
+  2026-09-29, #53). It is always a call of its own, never a tool beside others: a search can't take
+  the place of the plan or the outline, and Gemini can't combine its search with function tools
+  (the outline's `find_image`). Two calls research: the first plan (scoping the field, as before)
+  and every lesson's outline (§7.2). The lesson's is asked to search only what it isn't sure of
+  (names, dates, figures, quotes, how a mechanism really works) and to reply "Nothing to check."
+  otherwise, so the model's own doubt decides when to search: "only when the outline says a fact is
+  uncertain" would cost an outline written twice, and a model that is wrongly sure never says so.
+  Notes are stored only when a search ran (notes without one are memory), with the queries. A
+  session's notes go to its later calls that need them: the plan's to the plan, both to the lesson's
+  outline and writing (the plan's research had reached only the plan) and to a lesson written again,
+  which searches nothing. Other sessions don't carry them: what matters of them is in the plan's
+  notes; the stored notes are the sources behind the facts (for the eval's judge and a track page
+  later). A lesson's research that fails is logged and the lesson is outlined without it. Research
+  runs on the strong model under the lesson's time limits, before "Outlining the lesson", as
+  "Checking the facts the lesson needs", with each search shown.
 - Errors surface plainly: invalid key, out of credit, rate limited, refusal — each with what to do.
 - **Time limits** on every model call, per purpose (`CALL_LIMITS` in `apps/api/src/engine/call-limits.ts`),
   applied in the middleware every model is wrapped in: a total for non-streamed calls; for streams a
@@ -465,7 +480,7 @@ about, test and debug.
 - **A learner can delete a track** (decided 2026-09-29, #26; `DELETE /api/tracks/:id`,
   `deleteTrack` in `apps/api/src/files/track-files.ts`). The track row goes, and by cascade
   everything in it: sessions with their messages, events, lessons and check threads, terms and their
-  events and edges, the fix-list, `track_files` rows, the imported lesson. Then its files' bytes are
+  events and edges, the fix-list, research notes, `track_files` rows, the imported lesson. Then its files' bytes are
   deleted from the store, which the database can't reach; rows first, so no row ever names bytes
   that are gone, and bytes that can't be deleted are logged and left, reachable by nothing.
   `usage_events` stay: they belong to the learner, not the track, and record what was spent.
@@ -495,6 +510,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
+| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                    |
 | `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                         |
 | `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                         |
 | `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
@@ -508,8 +524,7 @@ Planned for v1, not built yet:
 | `submissions`           | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
 | `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
 
-Research notes are not stored on the track yet; the first plan's notes go only into that plan's calls
-(#53). Which session closes each arc isn't recorded yet (#42).
+Which session closes each arc isn't recorded yet (#42).
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -785,7 +800,9 @@ given to the plan's calls, research included; when the learner skips ahead to th
 
 ### 7.2 Lesson generation pipeline
 
-1. **Research + outline** (search on): the lesson's title (the idea it builds, as a tutor would name
+1. **Research, then outline**: research checks on the web what the lesson will state and the model
+   isn't sure of (§4.4, a call of its own, searching only where it needs to); then the outline:
+   the lesson's title (the idea it builds, as a tutor would name
    it; the track list shows it, §9.2), steps, the motivation for each, the terms each introduces and
    rests on, the drawings needed. Validated against the term list before any writing (`fitOutline`),
    and written in the term list's spelling. The app then places the checks from what each step rests
@@ -1231,8 +1248,7 @@ progress, so a step is done when its issues are closed.
    cheap model's review (#52).
 4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
-   checks with repair and the gate, close with structured state edits. Owed: the opening review (#40),
-   the pictures of what rests on what (#47), research for the lesson (#53).
+   checks with repair and the gate, close with structured state edits. Owed: the opening review (#40).
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).

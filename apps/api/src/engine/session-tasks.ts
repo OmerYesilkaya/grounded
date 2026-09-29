@@ -1,4 +1,3 @@
-import type { LanguageModelV4 } from "@ai-sdk/provider";
 import {
   assembleSystemPrompt,
   checkVerdictSchema,
@@ -29,15 +28,7 @@ import {
   tracks,
   type Db,
 } from "@grounded/db";
-import {
-  generateText,
-  Output,
-  stepCountIs,
-  streamText,
-  type ModelMessage,
-  type SystemModelMessage,
-  type Tool,
-} from "ai";
+import { generateText, Output, type ModelMessage } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
@@ -74,6 +65,13 @@ import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./sessio
 import { markCardsTaught } from "./word-cards.js";
 import { createReviewer } from "./review.js";
 import {
+  LESSON_RESEARCH_PROMPT,
+  PLAN_RESEARCH_PROMPT,
+  research,
+  sessionResearch,
+  storeResearch,
+} from "./research.js";
+import {
   applyActions,
   applyValidActions,
   loadTrackContext,
@@ -100,8 +98,6 @@ interface SessionJob {
 const PLAN_ATTEMPTS = 3;
 const SWEEP_ATTEMPTS = 3;
 
-const RESEARCH_STEPS = 6;
-
 /** The phases after the lesson, whose calls carry what happened at its checks. */
 const AFTER_CHECKS_PHASES: readonly Phase[] = ["homework", "close"];
 
@@ -113,8 +109,6 @@ const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. An idea the plan leans on that the learner holds in another track (under \"Held in the learner's other tracks\", with the same meaning here) is borrowed with borrow-term instead of planned; planned terms may rest on it. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, name the first ones. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const SWEEP_REQUEST =
   "settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. Change the plan's notes a section at a time with edit-plan-notes: the section's heading line as the notes write it, and its new text (null removes the section; a heading no section has adds one at the end). Fold what was \"Noted while planning\" into the sections it belongs to, then remove that section. Change the arcs with set-plan, notes null to keep the notes as they are.";
-const RESEARCH_PROMPT =
-  "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
 /** What a call hears about its rejected track edits, to send them again corrected. */
 const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
@@ -633,6 +627,40 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "lesson",
         role: "strong",
       });
+      // Before an outline, what the lesson will state and the tutor isn't sure of is checked on the
+      // web (design §7.2): a call of its own, which searches only where it needs to. It is
+      // best-effort: without it, the lesson is written as it was before.
+      const search = resume ? undefined : await models.searchTool(session.userId);
+      if (search) {
+        try {
+          const found = await research({
+            db,
+            sessionId,
+            model: await models.model({
+              userId: session.userId,
+              trackId: session.trackId,
+              sessionId: session.id,
+              purpose: "lesson",
+              role: "strong",
+            }),
+            system,
+            messages,
+            search,
+            request: LESSON_RESEARCH_PROMPT,
+            label: "Checking the facts the lesson needs",
+          });
+          log.info({ searches: found.searches.length }, "lesson research done");
+          await storeResearch(db, { trackId: session.trackId, sessionId }, "lesson", found);
+        } catch (error) {
+          log.warn({ err: error }, "lesson research failed; outlining without it");
+        }
+      }
+      // This session's research, the plan's included, for the outline and the writing (and for a
+      // lesson written again, which searches nothing).
+      const researched = await sessionResearch(db, sessionId);
+      const notes = researched
+        ? `\n\nResearch notes from this session, with their sources (the learner hasn't seen them): state these facts as the sources do.\n\n${researched}`
+        : "";
       const outlining = resume
         ? undefined
         : await startActivity(db, sessionId, "Outlining the lesson");
@@ -642,7 +670,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const result = await generateLesson({
           model,
           system,
-          request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}`,
+          request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}${notes}`,
           terms,
           review: reviewerFor(session),
           ...(resume ? { resume } : {}),
@@ -1037,7 +1065,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         : [];
       const search =
         session.state.plan === "none" ? await models.searchTool(session.userId) : undefined;
-      const notes = search
+      const found = search
         ? await research({
             db,
             sessionId,
@@ -1045,8 +1073,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             system: systemFor("plan", { ...track, extra: probeFound }),
             messages,
             search,
+            request: PLAN_RESEARCH_PROMPT,
+            label: "Researching the subject",
           })
-        : "";
+        : undefined;
+      if (found) await storeResearch(db, { trackId: session.trackId, sessionId }, "plan", found);
+      const notes = found?.notes ?? "";
       const system = systemFor("plan", {
         ...track,
         extra: [
@@ -1135,58 +1167,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
     }),
   };
-}
-
-/** The planning research: the provider's web search, returned as notes for the plan's calls. */
-async function research(options: {
-  db: Db;
-  sessionId: string;
-  model: LanguageModelV4;
-  system: SystemModelMessage[];
-  messages: ModelMessage[];
-  search: Tool;
-}): Promise<string> {
-  const { db, sessionId } = options;
-  return withActivity(db, sessionId, "Researching the subject", async (researching) => {
-    const searches = new Map<string, Activity>();
-    try {
-      const reply = streamText({
-        model: options.model,
-        system: options.system,
-        messages: [...options.messages, { role: "user", content: RESEARCH_PROMPT }],
-        tools: { web_search: options.search },
-        stopWhen: stepCountIs(RESEARCH_STEPS),
-      });
-      for await (const part of reply.stream) {
-        if (part.type === "error") throw part.error;
-        if (part.type === "reasoning-delta") await researching.reasoning(part.text);
-        if (part.type === "tool-call" && part.toolName === "web_search") {
-          const label = searchLabel(searchQuery(part.input));
-          searches.set(part.toolCallId, await startActivity(db, sessionId, label));
-        }
-        if (part.type === "tool-result" && part.toolName === "web_search") {
-          const searching = searches.get(part.toolCallId);
-          const query = searchQuery(part.output);
-          if (query) await searching?.update({ label: searchLabel(query) });
-          await searching?.done();
-        }
-      }
-      return await reply.text;
-    } finally {
-      for (const searching of searches.values()) await searching.done();
-    }
-  });
-}
-
-const searchLabel = (query: string | undefined) =>
-  query ? `Searching the web for “${query}”` : "Searching the web";
-
-/** A search's query, where the provider reports it: in the call's input or the result's action. */
-function searchQuery(value: unknown): string | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  if ("query" in value && typeof value.query === "string") return value.query;
-  if ("action" in value) return searchQuery(value.action);
-  return undefined;
 }
 
 /** The track's context without what the learner brought, for a call that reads the files themselves. */

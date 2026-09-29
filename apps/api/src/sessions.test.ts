@@ -1,6 +1,15 @@
 import { invite } from "./allowlist.js";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { asc, eq, sessionEvents, sessionMessages, terms, tracks, users } from "@grounded/db";
+import {
+  asc,
+  eq,
+  researchNotes,
+  sessionEvents,
+  sessionMessages,
+  terms,
+  tracks,
+  users,
+} from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
 import { startActivity } from "./engine/events.js";
@@ -487,6 +496,9 @@ describe("probe and plan", () => {
     const planCall = planner?.model.doStreamCalls[0];
     expect(planCall?.tools).toBeUndefined();
     expect(JSON.stringify(planCall?.prompt)).toContain("NOTES: a lost update");
+    // The notes are kept on the track, with the searches they rest on.
+    const stored = await t.db.select().from(researchNotes);
+    expect(stored.map((r) => [r.kind, r.searches])).toEqual([["plan", ["lost update"]]]);
   });
 
   it("answers an out-of-order action with the state machine's reason", async () => {

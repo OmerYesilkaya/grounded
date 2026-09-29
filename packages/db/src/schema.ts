@@ -442,6 +442,30 @@ export const asides = pgTable(
   (table) => [index("asides_session").on(table.sessionId, table.createdAt)],
 );
 
+/**
+ * What the tutor found with the provider's web search (design §4.4): before a track's first plan,
+ * and before a lesson's outline where it wasn't sure of a fact. Notes for the model, with sources.
+ */
+export const researchNotes = pgTable(
+  "research_notes",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => learningSessions.id, { onDelete: "cascade" }),
+    /** What it was for: the plan's scoping of the field, or a lesson's facts. */
+    kind: text("kind").$type<"plan" | "lesson">().notNull(),
+    notes: text("notes").notNull(),
+    /** The searches the notes rest on, as the provider reported their queries. */
+    searches: jsonb("searches").$type<string[]>().notNull().default([]),
+    createdAt: createdAt(),
+  },
+  (table) => [index("research_notes_session").on(table.sessionId, table.createdAt)],
+);
+
 /** An aside's thread: the learner's question, the answer, and follow-ups. */
 export const asideMessages = pgTable(
   "aside_messages",

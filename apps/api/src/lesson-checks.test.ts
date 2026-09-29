@@ -1,4 +1,4 @@
-import { and, eq, termEvents, terms, tracks as tracksTable } from "@grounded/db";
+import { and, eq, researchNotes, termEvents, terms, tracks as tracksTable } from "@grounded/db";
 import { APICallError } from "@ai-sdk/provider";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -119,6 +119,73 @@ describe("the lesson", () => {
       "Writing step 2 of 3",
       "Writing step 3 of 3",
     ]);
+  });
+});
+
+describe("researching the lesson", () => {
+  const approve = async () => {
+    const session = await planned();
+    models.enableSearch();
+    return session;
+  };
+  const written = async (session: { cookie: string; sessionId: string }) => {
+    await t.request(`/api/sessions/${session.sessionId}/approve-plan`, {
+      method: "POST",
+      cookie: session.cookie,
+    });
+    await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 3);
+  };
+
+  it("checks what it isn't sure of on the web before outlining, keeps the notes on the track, and outlines with them", async () => {
+    const session = await approve();
+    models.script(
+      "lesson",
+      { text: LESSON, thenGenerate: [JSON.stringify(OUTLINE)] },
+      {
+        searches: ["lost update"],
+        text: "NOTES: the term dates from database papers of the 1970s.",
+      },
+    );
+    await written(session);
+
+    const [writer, researcher] = models.used.filter((u) => u.purpose === "lesson");
+    expect(researcher?.model.doStreamCalls[0]?.tools?.map((tool) => tool.name)).toEqual([
+      "web_search",
+    ]);
+    // The outline has its media tools, not the search: the research is a call of its own.
+    expect(writer?.model.doGenerateCalls[0]?.tools?.map((tool) => tool.name)).toEqual([
+      "find_image",
+      "find_audio",
+    ]);
+    expect(JSON.stringify(writer?.model.doGenerateCalls[0]?.prompt)).toContain(
+      "NOTES: the term dates from database papers",
+    );
+    expect(JSON.stringify(writer?.model.doStreamCalls[0]?.prompt)).toContain(
+      "NOTES: the term dates from database papers",
+    );
+    const stored = await t.db.select().from(researchNotes);
+    expect(stored.map((r) => [r.sessionId, r.kind, r.searches])).toEqual([
+      [session.sessionId, "lesson", ["lost update"]],
+    ]);
+    const labels = (await activities(session.sessionId)).map((a) => a.label);
+    expect(labels).toContain("Checking the facts the lesson needs");
+    expect(labels).toContain("Searching the web for “lost update”");
+  });
+
+  it("keeps nothing when it searched nothing", async () => {
+    const session = await approve();
+    models.script(
+      "lesson",
+      { text: LESSON, thenGenerate: [JSON.stringify(OUTLINE)] },
+      { text: "Nothing to check." },
+    );
+    await written(session);
+
+    expect(await t.db.select().from(researchNotes)).toEqual([]);
+    const [writer] = models.used.filter((u) => u.purpose === "lesson");
+    expect(JSON.stringify(writer?.model.doGenerateCalls[0]?.prompt)).not.toContain(
+      "Research notes",
+    );
   });
 });
 

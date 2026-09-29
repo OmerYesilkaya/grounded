@@ -153,6 +153,12 @@ const scenarios: Record<
           }),
         ],
       });
+      // The research before the outline (#53), with a search: its notes reach the outline too.
+      models.enableSearch();
+      models.script("lesson", {
+        searches: ["read committed"],
+        text: `NOTES: ${"Under read committed, a read sees only committed rows. ".repeat(20)}`,
+      });
     },
     job: "lesson",
   },
