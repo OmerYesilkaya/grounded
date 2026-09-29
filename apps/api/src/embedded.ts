@@ -47,6 +47,8 @@ export async function createFreshDatabase(
   });
   await admin.unsafe(`drop database if exists "${name}" with (force)`);
   await admin.unsafe(`create database "${name}"`);
+  // Postgres's notices (a truncate's "truncate cascades to …") would print to stdout.
+  await admin.unsafe(`alter database "${name}" set client_min_messages = warning`);
   await runMigrations(url.toString());
   return {
     url: url.toString(),
