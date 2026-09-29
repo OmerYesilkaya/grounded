@@ -73,6 +73,26 @@ export const MODELS: readonly ModelEntry[] = [
     price: { input: 0.3, cachedInput: 0.03, cacheWrite: 0.3, output: 2.5 },
     gate: "pending",
   },
+  {
+    // DeepSeek's prices are the standard (peak-hour) ones; off-peak (outside 01:00–04:00 and
+    // 06:00–10:00 UTC on weekdays) every rate is half, so the estimate errs high. Its cache is
+    // implicit, at no write premium.
+    id: "deepseek-v4-pro",
+    provider: "deepseek",
+    label: "DeepSeek V4 Pro",
+    roles: ["strong"],
+    price: { input: 1.32, cachedInput: 0.044, cacheWrite: 1.32, output: 3.96 },
+    gate: "pending",
+  },
+  {
+    // DeepSeek-V4.1-Flash, under its standing name.
+    id: "deepseek-flash",
+    provider: "deepseek",
+    label: "DeepSeek Flash",
+    roles: ["strong", "cheap"],
+    price: { input: 0.3, cachedInput: 0.006, cacheWrite: 0.3, output: 1.2 },
+    gate: "pending",
+  },
 ];
 
 export function findModel(id: string): ModelEntry | undefined {

@@ -126,7 +126,7 @@ apps/
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
   content/      block-tree types, markdown→tree parser, per-surface allowlists, validation (shared by web, api, worker, eval)
-  providers/    Vercel AI SDK adapters (Anthropic, OpenAI, Gemini), model list config, usage accounting
+  providers/    Vercel AI SDK adapters (Anthropic, OpenAI, Gemini, DeepSeek), model list config, usage accounting
   db/           Drizzle schema and migrations
   crypto/       envelope encryption behind a KeyVault interface
 tools/
@@ -289,7 +289,9 @@ about, test and debug.
 ### 4.4 Providers and models
 
 - **Vercel AI SDK** (the library only) hides provider differences for streaming, structured output,
-  token usage and each provider's own web search tool. v1: Anthropic, OpenAI, Gemini.
+  token usage and each provider's own web search tool. v1: Anthropic, OpenAI, Gemini; DeepSeek
+  (added 2026-09-29) through `@ai-sdk/deepseek`, whose API has no web search: a learner on it gets
+  no research (below), and the plan and every lesson come from the model's own knowledge.
 - **Model list in code** (`packages/providers/src/models.ts`), each entry next to its eval results.
   Adding a model is a reviewed change. Learners pick from the list for their provider; no free-form
   model ids.
@@ -439,11 +441,13 @@ about, test and debug.
   a step, working out an answer), and each read renews the hour. A cache write then costs 2x base
   input instead of 1.25x (a read stays about 0.1x), so a prefix pays off from its third use. All
   breakpoints share the lifetime because Anthropic requires longer-lived ones before shorter ones;
-  the 1-hour TTL needs no beta header. Google caches implicitly. For OpenAI and Google the parts
-  are joined back into one system message, so every provider reads exactly the assembled prompt.
+  the 1-hour TTL needs no beta header. Google and DeepSeek cache implicitly. For the providers other
+  than Anthropic the parts are joined back into one system message, so every provider reads exactly
+  the assembled prompt.
 - **Reasoning effort per purpose** (`REASONING` in `apps/api/src/engine/call-options.ts`), set in
   the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
-  effort, Anthropic's thinking effort or budget, Gemini's thinking level). The small structured
+  effort, Anthropic's thinking effort or budget, Gemini's thinking level, DeepSeek's reasoning
+  effort). The small structured
   records of what the conversation already showed think little (`low`): the probe's decision
   (`probe-decision`, its own purpose, apart from the probe's question and from `probe-summary`, which
   writes what the probe found once it is finished and keeps the default, since the plan is built on
@@ -1646,8 +1650,9 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - Omer's manual ChatGPT test of `test/method.md`: passed.
 - Omer's quality test of the Anthropic models (Opus 5.5, Sonnet 5.5, Haiku 4.5): passed (2026-09-28);
   they are offered in production.
-- Gemini (3.8 Flash; 3.5 Flash-Lite for the cheap role) is on the list untested (2026-09-29): offered
-  only where `ALLOW_UNGATED_MODELS` is set, in production once Omer's test passes.
+- Gemini (3.8 Flash; 3.5 Flash-Lite for the cheap role) and DeepSeek (V4 Pro; Flash, which also
+  takes the cheap role) are on the list untested (2026-09-29): offered only where
+  `ALLOW_UNGATED_MODELS` is set, in production once Omer's test passes.
 - The method changes in §3.2: approved.
 - Cost: Omer's measurement puts it at minimal with GPT-6 Luna; acceptable to proceed. Per-model cost is
   still recorded (§4.4) and reviewed as the model list grows.

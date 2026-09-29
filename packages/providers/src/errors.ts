@@ -1,9 +1,10 @@
-export type ProviderId = "anthropic" | "openai" | "google";
+export type ProviderId = "anthropic" | "openai" | "google" | "deepseek";
 
 export const PROVIDER_NAMES: Record<ProviderId, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",
+  deepseek: "DeepSeek",
 };
 
 /** The failures a learner can act on (design §4.4); everything else is "unknown". */
@@ -72,7 +73,14 @@ function classify({ status, body = "", timedOut }: ProviderFailure): ProviderErr
   if (timedOut) return "timeout";
   if (status === undefined) return "unreachable";
   const text = body.toLowerCase();
-  if (text.includes("insufficient_quota") || text.includes("credit balance")) return "no-credit";
+  // DeepSeek answers 402 "Insufficient Balance"; the others say so in the body.
+  if (
+    status === 402 ||
+    text.includes("insufficient_quota") ||
+    text.includes("insufficient balance") ||
+    text.includes("credit balance")
+  )
+    return "no-credit";
   if (
     status === 401 ||
     status === 403 ||

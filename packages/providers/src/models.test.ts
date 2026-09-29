@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MODELS, cheapModelFor, estimateCost, offeredModels } from "./index.js";
+import { MODELS, cheapModelFor, estimateCost, offeredModels, type ProviderId } from "./index.js";
+
+const PROVIDERS: readonly ProviderId[] = ["anthropic", "openai", "google", "deepseek"];
 
 describe("model list", () => {
   it("has unique ids, and a cheap model for every provider that offers any", () => {
     expect(new Set(MODELS.map((m) => m.id)).size).toBe(MODELS.length);
-    for (const provider of ["anthropic", "openai", "google"] as const) {
+    for (const provider of PROVIDERS) {
       if (offeredModels(provider, { includeUngated: true }).length > 0) {
         expect(cheapModelFor(provider)).toBeDefined();
       }
@@ -12,7 +14,7 @@ describe("model list", () => {
   });
 
   it("offers only evaluated models unless ungated ones are allowed", () => {
-    for (const provider of ["anthropic", "openai", "google"] as const) {
+    for (const provider of PROVIDERS) {
       const gated = offeredModels(provider, { includeUngated: false });
       const all = offeredModels(provider, { includeUngated: true });
       expect(gated.every((m) => m.gate !== "pending" && m.roles.includes("strong"))).toBe(true);
@@ -31,6 +33,12 @@ describe("model list", () => {
       "gemini-3.8-flash",
     ]);
     expect(cheapModelFor("google")?.id).toBe("gemini-3.5-flash-lite");
+    expect(offeredModels("deepseek", { includeUngated: false })).toEqual([]);
+    expect(offeredModels("deepseek", { includeUngated: true }).map((m) => m.id)).toEqual([
+      "deepseek-v4-pro",
+      "deepseek-flash",
+    ]);
+    expect(cheapModelFor("deepseek")?.id).toBe("deepseek-flash");
   });
 
   it("estimates cost from token usage, or null when the price is unknown", () => {

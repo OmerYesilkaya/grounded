@@ -19,6 +19,10 @@ const LIST_MODELS: Record<
     url: "https://generativelanguage.googleapis.com/v1beta/models",
     headers: { "x-goog-api-key": key },
   }),
+  deepseek: (key) => ({
+    url: "https://api.deepseek.com/models",
+    headers: { authorization: `Bearer ${key}` },
+  }),
 };
 
 /**

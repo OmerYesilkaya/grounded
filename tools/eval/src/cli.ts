@@ -42,6 +42,7 @@ const KEY_ENV: Record<ProviderId, string> = {
   anthropic: "ANTHROPIC_API_KEY",
   openai: "OPENAI_API_KEY",
   google: "GOOGLE_GENERATIVE_AI_API_KEY",
+  deepseek: "DEEPSEEK_API_KEY",
 };
 
 function modelFor(id: string) {

@@ -25,7 +25,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return body as T;
 }
 
-export type ProviderId = "anthropic" | "openai" | "google";
+export type ProviderId = "anthropic" | "openai" | "google" | "deepseek";
 
 export interface Credential {
   provider: ProviderId;
@@ -40,4 +40,5 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Google",
+  deepseek: "DeepSeek",
 };

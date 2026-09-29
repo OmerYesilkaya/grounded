@@ -53,7 +53,7 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
  * How hard the model thinks, per purpose (ModelRequest.purpose), where it differs from the
  * provider's default. Set through the AI SDK's provider-neutral `reasoning` option, which each
  * provider maps to its own: OpenAI's reasoning effort, Anthropic's thinking effort (or a thinking
- * budget on older models), Gemini's thinking level or budget.
+ * budget on older models), Gemini's thinking level or budget, DeepSeek's reasoning effort.
  * - probe-decision, opening-review-decision, audit-decision, teach-back-decision, term-sweep,
  *   aside-record, review-record: small
  *   structured records of what the conversation already showed. The thinking happened in the
@@ -96,7 +96,7 @@ export interface CallFacts {
  * - Caching. OpenAI: `promptCacheKey` is the track, so a track's calls reach the same cache.
  *   Anthropic: besides the breakpoints in the system prompt, the top-level `cacheControl` caches
  *   the whole prompt, so the next call of the conversation reuses it; it is left out when the
- *   prompt's own marks already fill MAX_CACHE_BREAKPOINTS. Google caches implicitly.
+ *   prompt's own marks already fill MAX_CACHE_BREAKPOINTS. Google and DeepSeek cache implicitly.
  * - Reasoning effort: the purpose's, from REASONING.
  */
 export function shapeCall(

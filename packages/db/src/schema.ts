@@ -105,7 +105,7 @@ export const allowlist = pgTable("allowlist", {
 // Credentials and usage
 // ---------------------------------------------------------------------------------------------
 
-export type ProviderId = "anthropic" | "openai" | "google";
+export type ProviderId = "anthropic" | "openai" | "google" | "deepseek";
 /** own_key: the learner's key. sponsored: someone else pays for this learner (design §4.3). */
 export type CredentialSource = "own_key" | "sponsored";
 

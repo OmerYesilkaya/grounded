@@ -35,7 +35,12 @@ interface Variables {
   user: { id: string; email: string; name: string };
 }
 
-const PROVIDERS = ["anthropic", "openai", "google"] as const satisfies readonly ProviderId[];
+const PROVIDERS = [
+  "anthropic",
+  "openai",
+  "google",
+  "deepseek",
+] as const satisfies readonly ProviderId[];
 
 const credentialInput = z.object({
   provider: z.enum(PROVIDERS),

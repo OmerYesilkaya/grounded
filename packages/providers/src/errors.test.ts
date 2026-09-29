@@ -83,6 +83,18 @@ describe("classifyProviderError", () => {
       http(429, { error: { code: 429, status: "RESOURCE_EXHAUSTED", message: "quota" } }),
       "rate-limited",
     ],
+    [
+      "deepseek",
+      http(401, { error: { message: "Authentication Fails, Your api key is invalid" } }),
+      "invalid-key",
+    ],
+    [
+      "deepseek",
+      http(402, { error: { message: "Insufficient Balance", type: "unknown_error" } }),
+      "no-credit",
+    ],
+    ["deepseek", http(429, { error: { message: "Rate limit reached" } }), "rate-limited"],
+    ["deepseek", http(503, { error: { message: "Server overloaded" } }), "unreachable"],
     ["openai", http(503, "upstream down"), "unreachable"],
     ["openai", { cause: new TypeError("fetch failed") }, "unreachable"],
     ["openai", { timedOut: true }, "timeout"],
@@ -102,6 +114,9 @@ describe("classifyProviderError", () => {
     );
     expect(classifyProviderError("google", http(429, {})).message).toBe(
       "Google is limiting requests right now. Wait a minute, then try again.",
+    );
+    expect(classifyProviderError("deepseek", http(402, {})).message).toBe(
+      "Your DeepSeek account is out of credit. Add credit or raise your spending limit on DeepSeek's site.",
     );
     expect(classifyProviderError("openai", { cause: new Error("ECONNRESET") }).message).toBe(
       "OpenAI couldn't be reached. Try again in a moment.",

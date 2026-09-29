@@ -17,6 +17,7 @@ describe("validateKey", () => {
       "https://generativelanguage.googleapis.com/v1beta/models",
       { "x-goog-api-key": "sk-test" },
     ],
+    ["deepseek", "https://api.deepseek.com/models", { authorization: "Bearer sk-test" }],
   ] as const)(
     "asks %s to list models with the key in a header, never the URL",
     async (provider, url, headers) => {
