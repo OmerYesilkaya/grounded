@@ -509,8 +509,9 @@ ends. Decide whether those ideas are solid from their words, not from how confid
   from, so the app can add a marked "after the check" note under the check; the lesson's original text
   is never rewritten.
 - **Still shaky after a repair:** say so kindly and stop repairing. The app offers the learner a choice to
-  pause here (the next session opens with a fresh question on this idea) or to continue with the step
-  marked as still settling; its terms stay `taught`, and homework and the next session come back to it.
+  pause here (the lesson waits, and picks up with a fresh question on this idea when they come back) or
+  to continue with the step marked as still settling; its terms stay `taught`, and homework and the next
+  session's review come back to it.
 - A step they got right needs no commentary beyond moving on.
 - **"I already knew this."** When the learner says so, or their answer plainly shows it, believe them:
   record the terms it shows as `confirmed`, and record what they already held (the app keeps it for the
