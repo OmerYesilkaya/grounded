@@ -54,6 +54,25 @@ export const MODELS: readonly ModelEntry[] = [
     price: null,
     gate: "manual",
   },
+  {
+    // Google's stable Flash line; the Pro model is a preview (gemini-3.1-pro-preview) and could be
+    // withdrawn under a learner. Prices are the introductory ones, to 2026-12-31; they double from
+    // 2027-01-01 ($1.50 in, $0.15 cached, $7.50 out). Gemini caches implicitly at no write premium.
+    id: "gemini-3.8-flash",
+    provider: "google",
+    label: "Gemini 3.8 Flash",
+    roles: ["strong"],
+    price: { input: 0.75, cachedInput: 0.075, cacheWrite: 0.75, output: 3.75 },
+    gate: "pending",
+  },
+  {
+    id: "gemini-3.5-flash-lite",
+    provider: "google",
+    label: "Gemini 3.5 Flash-Lite",
+    roles: ["cheap"],
+    price: { input: 0.3, cachedInput: 0.03, cacheWrite: 0.3, output: 2.5 },
+    gate: "pending",
+  },
 ];
 
 export function findModel(id: string): ModelEntry | undefined {

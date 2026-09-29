@@ -25,6 +25,12 @@ describe("model list", () => {
     expect(offeredModels("openai", { includeUngated: false }).map((m) => m.id)).toContain(
       "gpt-6-luna",
     );
+    // Not yet tested by Omer: development only.
+    expect(offeredModels("google", { includeUngated: false })).toEqual([]);
+    expect(offeredModels("google", { includeUngated: true }).map((m) => m.id)).toEqual([
+      "gemini-3.8-flash",
+    ]);
+    expect(cheapModelFor("google")?.id).toBe("gemini-3.5-flash-lite");
   });
 
   it("estimates cost from token usage, or null when the price is unknown", () => {
