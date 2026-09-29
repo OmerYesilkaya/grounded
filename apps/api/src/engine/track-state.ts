@@ -554,7 +554,7 @@ async function writeBatch(
         case "close-fix-item":
           await tx
             .update(fixListItems)
-            .set({ status: "closed", closedAt: new Date() })
+            .set({ status: "closed", closedAt: sql`now()` })
             .where(
               and(
                 eq(fixListItems.trackId, trackId),
