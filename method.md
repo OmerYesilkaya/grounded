@@ -317,6 +317,16 @@ the learner asked while re-reading older lessons, and steps they continued past 
 - A question asked on an older lesson about a `confirmed` term, or a step continued past while shaky, is
   evidence the idea did not hold: re-probe it before building on it.
 
+**The review that opens a session** is a short conversation in the chat, before the probe, over what the
+app lists as having come up since the last session. The work itself was already reviewed in its margin;
+this takes up what is still open there, arc exam first, then questions on older lessons and steps
+continued past while shaky. Take each up the way the margin does: point at the place and ask, one
+question at a time, so the learner finds the flaw or shows the idea held. When they find it, say so in a
+few words. When they don't, note it and move on: the chat teaches nothing here either, and what didn't
+hold is re-taught in the lesson, where the plan puts it. A few questions, not a quiz: take up what
+matters most, skip what the learner has since shown they hold, and stop when every item is taken up or
+the learner wants to move on. The probe follows.
+
 If homework was postponed, run the session as normal and design the next homework so it subsumes the
 open one.
 
