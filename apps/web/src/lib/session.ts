@@ -6,6 +6,7 @@ import type { Aside } from "@/lesson/types";
 import { api } from "./api";
 import type { AssignmentSummary } from "./assignments";
 import { ASIDE_EVENT_TYPES, reduceAsides } from "./asides";
+import { followSession, type StreamEvent } from "./session-stream";
 
 export interface ChatMessage {
   id: string;
@@ -81,16 +82,10 @@ export type SessionSnapshot = Omit<SessionModel, "error" | "activities"> & {
   activities: { id: string; label: string; detail: string | null; state: "running" | "done" }[];
 };
 
-interface Event {
-  type: string;
-  id: number;
-  data: unknown;
-}
-
 const emptyLesson = { steps: [], totalSteps: 0, failedSteps: [], notes: {} };
 
 /** Folds one stream event into the session. Replays may repeat events; everything is keyed by id. */
-export function reduceSession(model: SessionModel, event: Event): SessionModel {
+export function reduceSession(model: SessionModel, event: StreamEvent): SessionModel {
   if (event.id <= model.lastEventId) return model;
   const next = { ...model, lastEventId: event.id };
   const data = event.data as Record<string, unknown>;
@@ -261,9 +256,7 @@ const EVENT_TYPES = [
   "error",
 ];
 
-const RECONNECT_MS = 3000;
-
-type Action = { kind: "snapshot"; model: SessionModel } | { kind: "event"; event: Event };
+type Action = { kind: "snapshot"; model: SessionModel } | { kind: "event"; event: StreamEvent };
 
 /** The session: a snapshot, then live events from the stream (which resumes by itself). */
 export function useSessionModel(sessionId: string): SessionModel | undefined {
@@ -291,33 +284,9 @@ export function useSessionModel(sessionId: string): SessionModel | undefined {
   const after = snapshot.data?.lastEventId;
   useEffect(() => {
     if (after === undefined) return;
-    let lastSeen = after;
-    let source: EventSource | undefined;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const listener = (e: MessageEvent<string>) => {
-      // The browser's own connection errors arrive as "error" events without data; they aren't ours.
-      if (typeof e.data !== "string") return;
-      const id = Number(e.lastEventId);
-      lastSeen = Math.max(lastSeen, id);
-      dispatch({ kind: "event", event: { type: e.type, id, data: JSON.parse(e.data) as unknown } });
-    };
-    const open = () => {
-      const current = new EventSource(
-        `/api/sessions/${sessionId}/stream?after=${String(lastSeen)}`,
-      );
-      for (const type of EVENT_TYPES) current.addEventListener(type, listener);
-      // EventSource reconnects a dropped stream by itself, but gives up for good when a reconnect gets
-      // an error response (a 502 while the API restarts); then open a new one from the last event.
-      current.addEventListener("error", () => {
-        if (current.readyState === EventSource.CLOSED) retry = setTimeout(open, RECONNECT_MS);
-      });
-      source = current;
-    };
-    open();
-    return () => {
-      clearTimeout(retry);
-      source?.close();
-    };
+    return followSession(sessionId, after, EVENT_TYPES, (event) => {
+      dispatch({ kind: "event", event });
+    });
   }, [sessionId, after]);
 
   return model;
