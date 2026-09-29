@@ -58,6 +58,8 @@ export function useAnswers(assignment: Assignment) {
 
   const change = (taskId: string, key: string, value: string) => {
     const answer = current.current[taskId] ?? EMPTY;
+    // An editor reports its text as it opens: nothing to save when nothing changed.
+    if ((answer.fields[key] ?? "") === value) return;
     put(taskId, { ...answer, fields: { ...answer.fields, [key]: value } });
     unsaved.current.add(taskId);
     setStatus("saving");
