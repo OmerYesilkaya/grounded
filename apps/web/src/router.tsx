@@ -15,6 +15,7 @@ import { ImportedLessonPage } from "./pages/imported-lesson";
 import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
 import { SignInPage } from "./pages/sign-in";
+import { TeachingNotesPage } from "./pages/teaching-notes";
 import { TrackPage } from "./pages/track";
 import { UsagePage } from "./pages/usage";
 
@@ -89,6 +90,12 @@ const usageRoute = createRoute({
   component: UsagePage,
 });
 
+const teachingNotesRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/teaching-notes",
+  component: TeachingNotesPage,
+});
+
 const importedLessonRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/tracks/$trackId/last-lesson",
@@ -131,6 +138,7 @@ export const router = createRouter({
       importedLessonRoute,
       sessionRoute,
       usageRoute,
+      teachingNotesRoute,
     ]),
     signInRoute,
     keySettingsRoute,

@@ -4,6 +4,7 @@ import {
   ChevronsUpDown,
   KeyRound,
   LogOut,
+  NotebookPen,
   Monitor,
   Moon,
   Sun,
@@ -53,6 +54,12 @@ export function AccountMenu({ email }: { email: string }) {
       >
         <DropdownMenuLabel className="truncate">{email}</DropdownMenuLabel>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild>
+          <Link to="/teaching-notes">
+            <NotebookPen />
+            How you learn
+          </Link>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/settings/key">
             <KeyRound />

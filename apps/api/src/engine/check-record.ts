@@ -1,4 +1,5 @@
-import type { LessonStepInfo } from "@grounded/core";
+import type { LessonStepInfo, SessionState } from "@grounded/core";
+import { asc, checkMessages, eq, lessons, type Db } from "@grounded/db";
 
 /** One message of a check thread, as stored. */
 export interface ThreadMessage {
@@ -48,6 +49,28 @@ export function checkRecord(input: CheckRecordInput): string | null {
     return [lines.join("\n")];
   });
   return entries.length ? entries.join("\n\n") : null;
+}
+
+/** A session's check record, or null when it has no lesson or no answered check yet. */
+export async function loadCheckRecord(
+  db: Db,
+  sessionId: string,
+  state: Pick<SessionState, "lesson">,
+): Promise<string | null> {
+  const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, sessionId));
+  if (!lesson) return null;
+  return checkRecord({
+    steps: state.lesson.steps,
+    headings: (lesson.outline?.steps ?? []).map((s) => s.heading),
+    sources: lesson.stepSources,
+    threads: await db
+      .select()
+      .from(checkMessages)
+      .where(eq(checkMessages.sessionId, sessionId))
+      .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id)),
+    notes: lesson.notes,
+    alreadyHeld: lesson.alreadyHeld,
+  });
 }
 
 /** What the learner showed they already held, earlier in the lesson, for the checks after it. */

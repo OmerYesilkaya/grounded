@@ -28,6 +28,7 @@ import {
 } from "@grounded/db";
 import type { TrackTerm } from "@grounded/content";
 import { content, log } from "../log.js";
+import { loadTeachingNotes } from "./profile.js";
 
 export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
 
@@ -630,7 +631,7 @@ function addedNotes(notes: string, added: string): string {
 export interface TrackContext
   extends
     Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
-    Pick<PromptContext, "termsNotListed" | "brought" | "heldElsewhere"> {
+    Pick<PromptContext, "termsNotListed" | "brought" | "heldElsewhere" | "teachingNotes"> {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
   /** What the learner wrote they want to learn, as typed (the session's opening turn). */
@@ -800,6 +801,8 @@ export async function loadTrackContext(
     fixList: fixItems,
     current,
     borrowed,
+    // How this learner learns, across their tracks (design §8): in every call.
+    teachingNotes: await loadTeachingNotes(db, track.userId),
   };
   if (!options.sessionId) return whole;
 

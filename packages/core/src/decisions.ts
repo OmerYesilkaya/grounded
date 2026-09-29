@@ -41,3 +41,39 @@ export const trackActionsSchema = z.object({
 export const sweepActionsSchema = z.object({
   actions: z.array(closeActionSchema),
 });
+
+/**
+ * A refresh of the learner's teaching notes (design §8): the whole set as it should now stand. A
+ * current note left out is removed; one kept may be revised.
+ */
+export const teachingNotesSchema = z.object({
+  notes: z
+    .array(
+      z.object({
+        keeps: z
+          .string()
+          .nullable()
+          .describe(
+            "The current note this one keeps or revises, by its label (N1, N2…); null for a new note.",
+          ),
+        text: z
+          .string()
+          .describe(
+            "Guidance about teaching this learner, in plain words they would recognize. Never a judgment of ability; nothing about vocabulary or terms.",
+          ),
+        evidence: z
+          .array(
+            z.object({
+              session: z.string().describe("The session, by its label (S1, S2…)."),
+              what: z.string().describe("What in it showed the pattern, in a short plain phrase."),
+            }),
+          )
+          .describe(
+            "The sessions since the last refresh that show it. A new note needs at least three separate sessions.",
+          ),
+      }),
+    )
+    .describe("Every note as it should now stand: about a dozen at most."),
+});
+
+export type TeachingNotesRefresh = z.infer<typeof teachingNotesSchema>;

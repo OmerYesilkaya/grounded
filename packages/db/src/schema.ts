@@ -498,3 +498,55 @@ export const sessionEvents = pgTable(
   },
   (table) => [index("session_events_session").on(table.sessionId, table.id)],
 );
+
+// ---------------------------------------------------------------------------------------------
+// The learner's teaching notes (design §8): how this person learns, across their tracks.
+// ---------------------------------------------------------------------------------------------
+
+/** What a teaching note rests on: a session, and what in it showed the pattern. */
+export interface NoteEvidence {
+  sessionId: string;
+  /** In plain words, e.g. "the check on step 2 landed only after the worked example". */
+  what: string;
+}
+
+/**
+ * A teaching note: guidance about teaching this learner, never a judgment of ability. The profile
+ * job revises, removes and adds them at a session close; the learner reads and edits them.
+ */
+export const learnerProfileNotes = pgTable(
+  "learner_profile_notes",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    text: text("text").notNull(),
+    /** The sessions it rests on; none for a note the learner wrote themselves. */
+    evidence: jsonb("evidence").$type<NoteEvidence[]>().notNull().default([]),
+    createdAt: createdAt(),
+    /** When its text last changed, by a refresh or by the learner. */
+    revisedAt: timestamp("revised_at", { withTimezone: true }).notNull().defaultNow(),
+    /** The learner wrote it, or edited it since a refresh last did: a refresh keeps its sense. */
+    byLearner: boolean("by_learner").notNull().default(false),
+  },
+  (table) => [index("learner_profile_notes_user").on(table.userId, table.createdAt)],
+);
+
+/**
+ * Each refresh of a learner's teaching notes, whether it changed them or not: the next is due some
+ * sessions after the last (design §8), and it reads the evidence since.
+ */
+export const profileRefreshes = pgTable(
+  "profile_refreshes",
+  {
+    id: id(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    /** The session whose close it ran at. */
+    sessionId: uuid("session_id").references(() => learningSessions.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (table) => [index("profile_refreshes_user").on(table.userId, table.createdAt)],
+);

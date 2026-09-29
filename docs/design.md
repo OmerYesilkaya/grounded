@@ -494,35 +494,36 @@ about, test and debug.
 
 The schema is `packages/db/src/schema.ts`. Tables that exist:
 
-| Table                                            | Holds                                                                                                                                    |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                              |
-| `allowlist`                                      | who may sign in                                                                                                                          |
-| `credentials`                                    | provider, encrypted key, credential source                                                                                               |
-| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off   |
-| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                             |
-| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                  |
-| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                             |
-| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                            |
-| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                              |
-| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized |
-| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                             |
-| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                  |
-| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held      |
-| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                    |
-| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                    |
-| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                         |
-| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                         |
-| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                           |
+| Table                                            | Holds                                                                                                                                     |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                               |
+| `allowlist`                                      | who may sign in                                                                                                                           |
+| `credentials`                                    | provider, encrypted key, credential source                                                                                                |
+| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off    |
+| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                              |
+| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                   |
+| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                              |
+| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                             |
+| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                               |
+| `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized  |
+| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                              |
+| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                   |
+| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held       |
+| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                     |
+| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                     |
+| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                          |
+| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                          |
+| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                            |
+| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it |
+| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                   |
 
 Planned for v1, not built yet:
 
-| Table                   | Holds                                                                                                 | Issue    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------- | -------- |
-| `learner_profile_notes` | teaching notes: text, evidence refs, created/revised at; editable by the learner                      | #44      |
-| `assignments`           | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
-| `submissions`           | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
-| `reviews`               | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
+| Table         | Holds                                                                                                 | Issue    |
+| ------------- | ----------------------------------------------------------------------------------------------------- | -------- |
+| `assignments` | homework or arc exam: kind, prompt blocks, "what a good answer shows" checklist, status, snooze-until | #38, #42 |
+| `submissions` | typed fields (prediction with lock timestamp, reconciliation, steps, text), images                    | #38      |
+| `reviews`     | margin comments on a submission, checklist outcome (held / leaked / missing)                          | #39      |
 
 Which session closes each arc isn't recorded yet (#42).
 
@@ -951,6 +952,30 @@ How it is built (#37, decided 2026-09-29):
   appended. Built on evidence: the first after ~6 sessions (across tracks), a note needs a pattern in
   ≥3 sessions, refreshed ~every 5 sessions, at a session close (the learner is present). Always in
   context, kept to about a dozen notes. Visible and editable by the learner. No vocabulary in it.
+  How it is built (#44, decided 2026-09-29; `apps/api/src/engine/profile.ts`):
+  - **When**: after the recap, the close queues the `profile` job if a refresh is due: 6 closed
+    sessions across tracks and no refresh yet, or 5 closed since the last. Every refresh is recorded
+    (`profile_refreshes`), changed or not, so "since the last" is exact; a failed one (key,
+    provider) records nothing and the next close tries again.
+  - **Evidence**: each session closed since the last refresh (all of them for the first), labelled
+    S1, S2…: its check record (checks, repairs, where it leaked, what was already held), its
+    asides, and its chat from the homework on (the homework, the learner's replies, the recap).
+    Homework reviews and the forms chosen (#38, #39) join here as they are built.
+  - **The call**: strong model, the `profile` phase's method; the current notes labelled N1, N2…
+    with what they rested on, marked when the learner wrote or edited them. It returns every note
+    as it should now stand (`teachingNotesSchema`): a note keeping one of the current ones revises
+    it and adds its new evidence to the old; one left out is removed; a new one must cite at least
+    three sessions of the evidence, or it is dropped; past 12, new ones are dropped. So notes are
+    revised or removed, never merely appended.
+  - **Race-safe**: the write holds a per-learner advisory lock, and is dropped if another refresh
+    finished meanwhile (two tracks closing at once); a note the learner edited while the call ran
+    is left as they left it.
+  - **In every call**: `loadTrackContext` carries the notes (`teachingNotes`), so every session
+    call has them, in the track's part of the prompt.
+  - **The learner's page**: "How you learn" (`/teaching-notes`, from the account menu): each note
+    with the sessions it rests on ("Seen in 3 sessions", each a link); the learner edits, removes
+    and adds notes (at most 12). A note they write or edit is marked theirs until a refresh
+    revises it; a refresh keeps its sense unless the evidence clearly disagrees.
 - **Stats per track (v1):** ideas you own, ideas still settling (each clickable, in plain words),
   sessions done, open homework and exams, and the track's map. Learner-facing text never uses the
   method's scaffolding words — "ideas you own / still settling / to revisit", not
@@ -1252,7 +1277,7 @@ progress, so a step is done when its issues are closed.
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).
 7. Homework (typed kinds, Tiptap, images, review on submit, Later/snooze), arc exams, the final
    (#38, #39, #41, #42, #43).
-8. Learner profile, per-track stats (#44, #45); the usage display is built (#46).
+8. Learner profile (teaching notes, #44), per-track stats (#45), the usage display (#46).
 9. Eval harness (built, §11); fill the model list with its results (#48).
 10. Phone pass (#49); deploy; invite the first people. The track list's search (#55) and the sign-up
     sentence (#56) are built.

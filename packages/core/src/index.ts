@@ -59,7 +59,9 @@ export {
   planActionsSchema,
   probeDecisionSchema,
   sweepActionsSchema,
+  teachingNotesSchema,
   trackActionsSchema,
+  type TeachingNotesRefresh,
 } from "./decisions.js";
 export {
   ASIDE_LIMITS,

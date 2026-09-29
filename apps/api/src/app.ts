@@ -12,6 +12,7 @@ import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
 import { registerAsideRoutes } from "./routes/asides.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
+import { registerProfileRoutes } from "./routes/profile.js";
 import { registerProgressRoutes } from "./routes/progress.js";
 import { registerTrackRoutes } from "./routes/tracks.js";
 import { registerUsageRoutes } from "./routes/usage.js";
@@ -181,6 +182,7 @@ export function createApp(deps: AppDependencies) {
   registerAsideRoutes(app, { db, queue: deps.queue });
   registerUsageRoutes(app, { db });
   registerProgressRoutes(app, { db });
+  registerProfileRoutes(app, { db });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

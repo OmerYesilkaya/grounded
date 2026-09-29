@@ -148,6 +148,13 @@
       "when": 1790667755959,
       "tag": "0020_research_notes",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1790668312134,
+      "tag": "0021_teaching_notes",
+      "breakpoints": true
     }
   ]
 }

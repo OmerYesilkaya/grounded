@@ -32,7 +32,7 @@ import { generateText, Output, type ModelMessage } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
-import { alreadyHeldSoFar, checkRecord } from "./check-record.js";
+import { alreadyHeldSoFar, loadCheckRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
   conversationFor,
@@ -59,6 +59,7 @@ import type { FileStore } from "../files/store.js";
 import { createLessonMedia } from "../media/lesson-media.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { addLogContext, content, log } from "../log.js";
+import { profileDue } from "./profile.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { plannedIn } from "../term-map.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "./session-store.js";
@@ -198,7 +199,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // The calls after the lesson hear what happened at its checks: the answers, what leaked, and what
     // the learner showed they already held.
     const after = AFTER_CHECKS_PHASES.includes(phase);
-    const checks = after ? await checksSoFar(sessionId, session) : null;
+    const checks = after ? await loadCheckRecord(db, sessionId, session.state) : null;
     // And the questions asked in the margin, which the close carries on to the next session.
     const asked = after ? await asidesRecord(db, sessionId) : null;
     const extra = [
@@ -278,20 +279,6 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .from(checkMessages)
       .where(eq(checkMessages.sessionId, sessionId))
       .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
-
-  /** The lesson's check record (check-record.ts), or null when there is no lesson or no answer yet. */
-  const checksSoFar = async (sessionId: string, session: { state: SessionState }) => {
-    const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, sessionId));
-    if (!lesson) return null;
-    return checkRecord({
-      steps: session.state.lesson.steps,
-      headings: (lesson.outline?.steps ?? []).map((s) => s.heading),
-      sources: lesson.stepSources,
-      threads: await threadsOf(sessionId),
-      notes: lesson.notes,
-      alreadyHeld: lesson.alreadyHeld,
-    });
-  };
 
   /** The prompt for grading or re-asking a step: the check phase's method plus the step and its thread. */
   const checkPrompt = async (sessionId: string, stepId: string, state: SessionState) => {
@@ -1040,6 +1027,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         await db.update(tracks).set({ leftOff: null }).where(eq(tracks.id, session.trackId));
       }
       await applyEvent(db, sessionId, { type: "recap-done" });
+      // Every few closes, the learner's teaching notes are refreshed (profile.ts).
+      if (await profileDue(db, session.userId)) await queue.enqueue("profile", { sessionId });
     }),
 
     plan: guarded(async ({ sessionId }) => {
