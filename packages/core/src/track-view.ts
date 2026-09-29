@@ -17,7 +17,7 @@ export const NOTES_PHASES: readonly Phase[] = ["close"];
 export interface TrackViewInput {
   /** Every term of the track, in the term list's order. */
   terms: readonly TermRow[];
-  arcs: readonly { title: string; terms: readonly string[] }[];
+  arcs: readonly { title: string; terms: readonly string[]; closedIn?: string | undefined }[];
   /** Terms touched recently (design §4.4), by name. */
   touched: Iterable<string>;
   wholePlan: boolean;
@@ -60,6 +60,7 @@ export function selectTrackView(input: TrackViewInput): TrackView {
       title: arc.title,
       terms: arc.terms,
       ...(i === current ? { current: true } : {}),
+      ...(arc.closedIn ? { closed: true } : {}),
     };
     if (input.wholePlan || i === current) return shown;
     const statuses = arc.terms.flatMap((term) => byKey.get(key(term)) ?? []);

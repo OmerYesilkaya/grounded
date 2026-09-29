@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { describeItem, MANY_TRACKS, searchTracks, shortList } from "./track-list";
-import type { HomeworkItem, SessionItem, TrackSummary } from "./tracks";
+import type { ExamItem, HomeworkItem, SessionItem, TrackSummary } from "./tracks";
 
 const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem => ({
   kind: "session",
@@ -47,6 +47,27 @@ describe("an item's row", () => {
     expect(describeItem({ ...homework, done: true, foldedInto: 6 }).meta).toBe(
       "Homework · session 4 · folded into session 6",
     );
+  });
+
+  it("says an arc exam's name over the session that set it, and is found by its arcs", () => {
+    const exam: ExamItem = {
+      kind: "exam",
+      id: "e1",
+      session: 4,
+      title: "Counters everywhere",
+      arcs: ["Two workers, one counter"],
+      parts: 4,
+      done: false,
+      activeAt: "2026-09-29T00:00:00.000Z",
+      due: null,
+    };
+    expect(describeItem(exam)).toEqual({
+      title: "Counters everywhere",
+      meta: "Arc exam · session 4",
+    });
+    expect(describeItem({ ...exam, done: true }).meta).toBe("Arc exam · session 4 · handed in");
+    const concurrency = { ...track("t1", "Concurrency"), items: [exam] };
+    expect(searchTracks([concurrency], "arc exam workers")[0]?.items).toEqual([exam]);
   });
 
   it("says what the session's lesson teaches, over its number and phase", () => {

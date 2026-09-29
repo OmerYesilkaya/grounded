@@ -23,9 +23,9 @@ export interface TrackSummary {
 
 /**
  * Something inside a track (api: track-list.ts). Every kind has an id, `done` and `activeAt`; each
- * adds what its row says. Sessions and their homework; arc exams join as a kind (#42).
+ * adds what its row says. Sessions, their homework and arc exams.
  */
-export type TrackItem = SessionItem | HomeworkItem;
+export type TrackItem = SessionItem | HomeworkItem | ExamItem;
 
 export interface SessionItem {
   kind: "session";
@@ -61,9 +61,36 @@ export interface HomeworkItem {
   foldedInto: number | null;
 }
 
-/** Homework whose snooze has run out: due now (design §9.2, "1 due"). */
-export const isDue = (item: TrackItem, now: Date): item is HomeworkItem & { due: string } =>
-  item.kind === "homework" && !item.done && item.due !== null && new Date(item.due) <= now;
+/**
+ * An arc exam (design §7.4), listed after its session's homework: open (not `done`) until it is
+ * handed in, whole.
+ */
+export interface ExamItem {
+  kind: "exam";
+  id: string;
+  done: boolean;
+  activeAt: string;
+  /** The number of the session that closed its arc and set it. */
+  session: number;
+  /** A few words naming it. */
+  title: string;
+  /** The arcs it covers. */
+  arcs: string[];
+  /** How many parts it has. */
+  parts: number;
+  /** Put off with a snooze: when it is due again, for its tag (design §9.2); null otherwise. */
+  due: string | null;
+}
+
+/** Homework or an arc exam: what is assigned, done on its own page. */
+export type AssignedItem = HomeworkItem | ExamItem;
+
+export const isAssigned = (item: TrackItem): item is AssignedItem =>
+  item.kind === "homework" || item.kind === "exam";
+
+/** Homework or an exam whose snooze has run out: due now (design §9.2, "1 due"). */
+export const isDue = (item: TrackItem, now: Date): item is AssignedItem & { due: string } =>
+  isAssigned(item) && !item.done && item.due !== null && new Date(item.due) <= now;
 
 export interface TrackFile {
   id: string;

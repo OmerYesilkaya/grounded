@@ -35,7 +35,7 @@ export interface ChatMessageOptions {
   model: LanguageModelV4;
   system: Instructions;
   messages: ModelMessage[];
-  kind: "message" | "plan" | "homework" | "recap";
+  kind: "message" | "plan" | "homework" | "exam" | "recap";
   terms: readonly TrackTerm[];
   surface?: Surface;
   /** Where the message's links are verified before it is stored (design §6.4). */
@@ -262,7 +262,7 @@ async function rewritten(
 interface MessageMark {
   id: string;
   role: "learner" | "tutor";
-  kind: "message" | "plan" | "homework" | "recap";
+  kind: "message" | "plan" | "homework" | "exam" | "recap";
 }
 
 /**

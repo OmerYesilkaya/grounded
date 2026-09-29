@@ -256,8 +256,9 @@ export interface OpenLeak {
 }
 
 /**
- * The track's open leaks, oldest first (design §7.4: unresolved leaks carry into the next session's
- * review). What #40's review phase reads, and resolves with resolveLeaks once it has dealt with them.
+ * The track's open leaks (design §7.4: unresolved leaks carry into the next session's review): an
+ * arc exam's first, as the review takes an exam first (method.md, "Review"), then oldest first.
+ * What #40's review phase reads, and resolves with resolveLeaks once it has dealt with them.
  */
 export async function openLeaks(db: Db, trackId: string): Promise<OpenLeak[]> {
   const rows = await db
@@ -272,7 +273,12 @@ export async function openLeaks(db: Db, trackId: string): Promise<OpenLeak[]> {
         isNull(reviewComments.resolvedAt),
       ),
     )
-    .orderBy(asc(assignments.createdAt), asc(assignments.id), asc(reviewComments.position));
+    .orderBy(
+      sql`${assignments.kind} = 'exam' desc`,
+      asc(assignments.createdAt),
+      asc(assignments.id),
+      asc(reviewComments.position),
+    );
   const comments = await commentsOf(db, [...new Set(rows.map((r) => r.reviewId))]);
   return rows.flatMap(({ id, assignment }) => {
     const comment = comments.find((c) => c.id === id);

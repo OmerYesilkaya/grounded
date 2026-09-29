@@ -15,6 +15,7 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import { warnOfOpenExam } from "../engine/arc-exams.js";
 import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
 import { assignmentSummary, sessionAssignments } from "../engine/assignments.js";
 import { messagesBeingWritten } from "../engine/chat.js";
@@ -76,6 +77,18 @@ export function registerSessionRoutes(
       .where(and(eq(learningSessions.trackId, trackId), isNull(learningSessions.closedAt)));
     if (open)
       return c.json({ error: "This track already has an open session.", sessionId: open.id }, 409);
+    // An arc exam still open: said once, before the next arc starts on top of it (design §7.4).
+    // Asked again, the session starts, and its probe takes up the exam's re-tests.
+    const exam = await warnOfOpenExam(db, trackId);
+    if (exam)
+      return c.json(
+        {
+          error: `Your arc exam “${exam.title}” is still open.`,
+          code: "exam-open",
+          exam,
+        },
+        409,
+      );
 
     const [session] = await db
       .insert(learningSessions)

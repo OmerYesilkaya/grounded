@@ -179,7 +179,11 @@ export const usageEvents = pgTable(
 export type TermStatus = "planned" | "taught" | "confirmed" | "assumed";
 
 export interface TrackPlan {
-  arcs: { title: string; terms: string[] }[];
+  /**
+   * In order. `closedIn`: the session that closed the arc and set its exam (design §7.4); absent
+   * while it is open.
+   */
+  arcs: { title: string; terms: string[]; closedIn?: string }[];
   /** Reorders and detours, in plain words. */
   notes: string;
 }
@@ -365,7 +369,7 @@ export const learningSessions = pgTable(
   ],
 );
 
-/** The session chat: probe, plan, homework and recap. */
+/** The session chat: probe, plan, homework (and an arc exam) and recap. */
 export const sessionMessages = pgTable("session_messages", {
   id: id(),
   sessionId: uuid("session_id")
@@ -376,7 +380,7 @@ export const sessionMessages = pgTable("session_messages", {
   text: text("text"),
   blocks: jsonb("blocks").$type<Block[]>(),
   kind: text("kind")
-    .$type<"message" | "plan" | "homework" | "recap">()
+    .$type<"message" | "plan" | "homework" | "exam" | "recap">()
     .notNull()
     .default("message"),
   /**
@@ -532,6 +536,11 @@ export const assignments = pgTable(
     subsumedBy: uuid("subsumed_by").references((): AnyPgColumn => assignments.id, {
       onDelete: "set null",
     }),
+    /**
+     * An arc exam: when starting a later session warned that it is still open (design §7.4), the
+     * one warning it gets; null until then.
+     */
+    warnedAt: timestamp("warned_at", { withTimezone: true }),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },

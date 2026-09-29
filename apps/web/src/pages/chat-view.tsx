@@ -1,12 +1,12 @@
 import { awaitedJob } from "@grounded/core/session";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useMutation } from "@tanstack/react-query";
 import { ArrowDown } from "lucide-react";
 import { useLayoutEffect, useState, type ReactNode } from "react";
 import { Composer } from "@/components/composer";
 import { ActivityLine } from "@/components/activity-line";
 import { HomeworkFooter } from "@/components/homework-footer";
 import { PlanPicture } from "@/components/session-pictures";
+import { ExamOpenWarning, useStartSession } from "@/components/start-session";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
@@ -20,6 +20,7 @@ import { LessonAgain } from "./lesson-again";
 const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
   plan: "The plan",
   homework: "Homework",
+  exam: "Arc exam",
   recap: "Recap",
 };
 
@@ -95,16 +96,7 @@ export function ChatView({
   const approve = useMutation({
     mutationFn: () => api(`/api/sessions/${model.id}/approve-plan`, { method: "POST" }),
   });
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
-  const next = useMutation({
-    mutationFn: () =>
-      api<{ id: string }>(`/api/tracks/${model.trackId}/sessions`, { method: "POST" }),
-    onSuccess: async ({ id }) => {
-      await queryClient.invalidateQueries({ queryKey: ["tracks"] });
-      void navigate({ to: "/sessions/$sessionId", params: { sessionId: id } });
-    },
-  });
+  const next = useStartSession(model.trackId);
 
   const [content, setContent] = useState<HTMLDivElement | null>(null);
   const [bar, setBar] = useState<HTMLDivElement | null>(null);
@@ -136,7 +128,7 @@ export function ChatView({
             footer={
               m.kind === "plan" ? (
                 <PlanPicture model={model} messageId={m.id} />
-              ) : m.kind === "homework" ? (
+              ) : m.kind === "homework" || m.kind === "exam" ? (
                 <HomeworkFooter model={model} messageId={m.id} />
               ) : null
             }
@@ -165,17 +157,22 @@ export function ChatView({
           </div>
         )}
         {phase === "closed" && (
-          <div className="flex items-center gap-3 border-t pt-5">
-            <span className="text-sm text-muted-foreground">This session is done.</span>
-            <Button
-              size="sm"
-              disabled={next.isPending}
-              onClick={() => {
-                next.mutate();
-              }}
-            >
-              Start the next session
-            </Button>
+          <div className="border-t pt-5">
+            {next.examOpen ? (
+              <ExamOpenWarning
+                exam={next.examOpen}
+                pending={next.pending}
+                onStartAnyway={next.start}
+              />
+            ) : (
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">This session is done.</span>
+                <Button size="sm" disabled={next.pending} onClick={next.start}>
+                  Start the next session
+                </Button>
+              </div>
+            )}
+            {next.error && <p className="mt-3 text-sm text-destructive">{next.error}</p>}
           </div>
         )}
         {stuck ? (

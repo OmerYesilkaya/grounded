@@ -60,6 +60,8 @@ export interface PlanArc {
   terms: readonly string[];
   /** The arc the track has reached (design §4.4). */
   current?: boolean;
+  /** A session closed it and set its arc exam (design §7.4). */
+  closed?: boolean;
   /** Shown in place of the arc's terms: how many it has at each status. */
   tally?: Partial<Record<TermStatus, number>>;
 }
@@ -262,7 +264,11 @@ function counted(counts: Partial<Record<TermStatus, number>>) {
 }
 
 function arcLine(arc: PlanArc): string {
-  const title = arc.current ? `${arc.title} (the current arc)` : arc.title;
+  const state = [
+    ...(arc.current ? ["the current arc"] : []),
+    ...(arc.closed ? ["closed: its arc exam is set"] : []),
+  ];
+  const title = state.length ? `${arc.title} (${state.join("; ")})` : arc.title;
   if (!arc.tally) return `${title}: ${termNames(arc.terms)}`;
   const { text } = counted(arc.tally);
   return `${title}: ${String(arc.terms.length)} terms${text ? ` (${text})` : ""}`;

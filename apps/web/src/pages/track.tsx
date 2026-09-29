@@ -1,24 +1,15 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { PhoneBar } from "@/components/page-bar";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { AttachmentChip } from "@/components/attachment-chip";
+import { ExamOpenWarning, useStartSession } from "@/components/start-session";
 import { OpenWork, TrackProgressView } from "@/components/track-progress";
 import { Button } from "@/components/ui/button";
-import { api, ApiError } from "@/lib/api";
 import { useTracks } from "@/lib/tracks";
 
 export function TrackPage({ trackId }: { trackId: string }) {
-  const queryClient = useQueryClient();
-  const navigate = useNavigate();
   const tracks = useTracks();
   const track = tracks.data?.find((t) => t.id === trackId);
-  const start = useMutation({
-    mutationFn: () => api<{ id: string }>(`/api/tracks/${trackId}/sessions`, { method: "POST" }),
-    onSuccess: async ({ id }) => {
-      await queryClient.invalidateQueries({ queryKey: ["tracks"] });
-      void navigate({ to: "/sessions/$sessionId", params: { sessionId: id } });
-    },
-  });
+  const start = useStartSession(trackId);
 
   if (!track) return null;
   const open = track.items.filter((item) => !item.done);
@@ -39,21 +30,19 @@ export function TrackPage({ trackId }: { trackId: string }) {
               <OpenWork items={open} />
             </section>
           )}
-          {!track.openSession && (
-            <Button
-              disabled={start.isPending}
-              onClick={() => {
-                start.mutate();
-              }}
-            >
-              Start a session
-            </Button>
-          )}
-          {start.error && (
-            <p className="mt-3 text-sm text-destructive">
-              {start.error instanceof ApiError ? start.error.message : "Couldn't start."}
-            </p>
-          )}
+          {!track.openSession &&
+            (start.examOpen ? (
+              <ExamOpenWarning
+                exam={start.examOpen}
+                pending={start.pending}
+                onStartAnyway={start.start}
+              />
+            ) : (
+              <Button disabled={start.pending} onClick={start.start}>
+                Start a session
+              </Button>
+            ))}
+          {start.error && <p className="mt-3 text-sm text-destructive">{start.error}</p>}
         </div>
         <TrackProgressView trackId={trackId} items={track.items} />
         {track.files.length > 0 && (

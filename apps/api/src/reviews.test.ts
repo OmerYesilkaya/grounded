@@ -223,4 +223,40 @@ describe("the review of handed-in homework", () => {
     await recoverReviews(t.db, 30_000);
     expect((await reviewOf(cookie, id))?.status).toBe("failed");
   });
+
+  it("gives an arc exam's open leaks first, as the next session's review takes an exam first", async () => {
+    const { cookie, id, trackId } = await written({ ...initialSession(), phase: "closed" });
+    const [homework] = await t.db.select().from(assignments).where(eq(assignments.id, id));
+    if (!homework) throw new Error("no homework");
+    const [exam] = await t.db
+      .insert(assignments)
+      .values({
+        trackId,
+        userId: homework.userId,
+        sessionId: homework.sessionId,
+        kind: "exam",
+        title: "Counters everywhere",
+        tasks: homework.tasks,
+        checklist: homework.checklist,
+        messageId: crypto.randomUUID(),
+      })
+      .returning();
+    const examId = exam?.id ?? "";
+    await t.request(`/api/assignments/${examId}/answers`, {
+      method: "PUT",
+      cookie,
+      body: JSON.stringify({ taskId: "t1", fields: { text: ANSWER } }),
+    });
+    models.script("review", { thenGenerate: [JSON.stringify(REVIEW)] });
+    await post(cookie, `/api/assignments/${id}/submit`);
+    await reviewed(cookie, id);
+    models.script("review", { thenGenerate: [JSON.stringify(REVIEW)] });
+    await post(cookie, `/api/assignments/${examId}/submit`);
+    await reviewed(cookie, examId);
+    const leaks = await openLeaks(t.db, trackId);
+    expect(leaks.map((leak) => leak.assignment.kind)).toEqual(["exam", "homework"]);
+    expect((await openLeaksRecord(t.db, trackId))?.text).toMatch(
+      /^L1: in their arc exam "Counters everywhere"/,
+    );
+  });
 });

@@ -9,6 +9,7 @@ import {
   placeChecks,
   sweepActionsSchema,
   trackActionsSchema,
+  type AssignmentKind,
   type Method,
   type OutlineProblem,
   type Phase,
@@ -39,6 +40,16 @@ import {
   openHomeworkRecord,
   recordAssignment,
 } from "./assignments.js";
+import {
+  arcsClosing,
+  EXAM_ARCS,
+  EXAM_RECORD_PROMPT,
+  EXAM_REQUEST,
+  examArcsRecord,
+  markArcsClosed,
+  OPEN_EXAM,
+  openExamRecord,
+} from "./arc-exams.js";
 import { alreadyHeldSoFar, loadCheckRecord } from "./check-record.js";
 import { writeChatMessage } from "./chat.js";
 import {
@@ -187,7 +198,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       sessionId: session.id,
     });
 
-  const contextFor = async (sessionId: string, phase: Phase) => {
+  const contextFor = async (
+    sessionId: string,
+    phase: Phase,
+    /** What this call carries besides its phase's (the arcs an exam covers). */
+    more: readonly { heading: string; body: string }[] = [],
+  ) => {
     const session = await loadSession(db, sessionId);
     const loaded = await loadTrackContext(db, session.trackId, { sessionId, phase });
     // The first session's probe and plan read the files themselves, in the opening turn; every
@@ -210,11 +226,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       phase === "homework" ? await openHomeworkRecord(db, session.trackId, sessionId) : null;
     // The close hears the review of the homework handed in, which it waited for (design §7.4).
     const reviewed = phase === "close" ? await sessionReviewRecord(db, sessionId) : null;
+    // The probe folds an arc exam still open into its questions (method.md, "The arc exam").
+    const examOpen =
+      phase === "probe" ? await openExamRecord(db, session.trackId, sessionId) : null;
     const extra = [
       ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
       ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
       ...(reviewed ? [{ heading: HOMEWORK_REVIEWED, body: reviewed }] : []),
       ...(putOff ? [{ heading: OPEN_HOMEWORK, body: putOff }] : []),
+      ...(examOpen ? [{ heading: OPEN_EXAM, body: examOpen }] : []),
+      ...more,
     ];
     const track = extra.length ? { ...brought, extra } : brought;
     const terms: TrackTerm[] = track.current;
@@ -268,7 +289,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
   };
 
   /** The session's homework or recap, if it has been written. */
-  const writtenMessage = async (sessionId: string, kind: "homework" | "recap") => {
+  const writtenMessage = async (sessionId: string, kind: "homework" | "exam" | "recap") => {
     const [row] = await db
       .select({
         id: sessionMessages.id,
@@ -279,6 +300,59 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .where(and(eq(sessionMessages.sessionId, sessionId), eq(sessionMessages.kind, kind)))
       .limit(1);
     return row ? { id: row.id, text: row.text ?? "", blocks: row.blocks ?? [] } : null;
+  };
+
+  /**
+   * An assignment written as a chat message the learner watches, then recorded (its tasks' kinds,
+   * a name, what a good answer demonstrates) and kept as an assignment of its own (design §7.4).
+   * A message already written stands: the record goes on from it.
+   */
+  const writeAssignment = async (
+    sessionId: string,
+    kind: AssignmentKind,
+    request: string,
+    recordPrompt: string,
+    more: readonly { heading: string; body: string }[] = [],
+  ) => {
+    const context = await contextFor(sessionId, "homework", more);
+    const { session, terms, system } = context;
+    const model = await models.model({
+      userId: session.userId,
+      trackId: session.trackId,
+      sessionId: session.id,
+      purpose: kind,
+      role: "strong",
+    });
+    const written = await writtenMessage(sessionId, kind);
+    // The message is the conversation's last turn once written.
+    const messages = written ? context.messages.slice(0, -1) : context.messages;
+    const asking: ModelMessage[] = [...messages, { role: "user", content: request }];
+    let message = written;
+    if (!message) {
+      const reply = await writeChatMessage({
+        db,
+        media: deps.media,
+        review: reviewerFor(session),
+        sessionId,
+        model,
+        system,
+        messages: asking,
+        terms,
+        kind,
+        surface: "homework",
+      });
+      message = { id: reply.messageId, text: reply.text, blocks: reply.blocks };
+    }
+    const record = await withActivity(db, sessionId, "Noting what a good answer shows", () =>
+      recordAssignment({
+        model,
+        system,
+        messages: [...asking, { role: "assistant", content: message.text }],
+        request: recordPrompt,
+        terms,
+      }),
+    );
+    await createAssignment(db, { session, kind, message, record });
   };
 
   const lessonRow = async (sessionId: string) => {
@@ -869,48 +943,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // The homework is written as a chat message the learner watches, then recorded as an
     // assignment of its own (its kind and what a good answer demonstrates), which outlives the
     // session. The session then waits for the learner to hand it in or put it off (design §7.4).
+    // A session that closes an arc then sets its arc exam the same way, over the whole arc; the
+    // exam never holds the session.
     homework: guarded(async ({ sessionId }) => {
-      // Tried again after it failed past its message or its record (retry.ts): what was written stands.
-      if (!(await assignmentOf(db, sessionId, "homework"))) {
-        const context = await contextFor(sessionId, "homework");
-        const { session, terms, system } = context;
-        const model = await models.model({
-          userId: session.userId,
-          trackId: session.trackId,
-          sessionId: session.id,
-          purpose: "homework",
-          role: "strong",
-        });
-        const written = await writtenMessage(sessionId, "homework");
-        // The message is the conversation's last turn once written.
-        const messages = written ? context.messages.slice(0, -1) : context.messages;
-        const asking: ModelMessage[] = [...messages, { role: "user", content: HOMEWORK_REQUEST }];
-        let message = written;
-        if (!message) {
-          const reply = await writeChatMessage({
-            db,
-            media: deps.media,
-            review: reviewerFor(session),
-            sessionId,
-            model,
-            system,
-            messages: asking,
-            terms,
-            kind: "homework",
-            surface: "homework",
-          });
-          message = { id: reply.messageId, text: reply.text, blocks: reply.blocks };
+      // Tried again after it failed past a message or a record (retry.ts): what was written stands.
+      if (!(await assignmentOf(db, sessionId, "homework")))
+        await writeAssignment(sessionId, "homework", HOMEWORK_REQUEST, HOMEWORK_RECORD_PROMPT);
+      const session = await loadSession(db, sessionId);
+      const closing = await arcsClosing(db, session);
+      if (closing.length > 0) {
+        if (!(await assignmentOf(db, sessionId, "exam"))) {
+          const arcs = await examArcsRecord(db, session.trackId, closing);
+          await writeAssignment(sessionId, "exam", EXAM_REQUEST, EXAM_RECORD_PROMPT, [
+            { heading: EXAM_ARCS, body: arcs },
+          ]);
         }
-        const record = await withActivity(db, sessionId, "Noting what a good answer shows", () =>
-          recordAssignment({
-            model,
-            system,
-            messages: [...asking, { role: "assistant", content: message.text }],
-            request: HOMEWORK_RECORD_PROMPT,
-            terms,
-          }),
-        );
-        await createAssignment(db, { session, kind: "homework", message, record });
+        await markArcsClosed(db, session, closing);
       }
       // The learner's turn now: the close follows their handing it in or putting it off.
       await applyEvent(db, sessionId, { type: "homework-assigned" });

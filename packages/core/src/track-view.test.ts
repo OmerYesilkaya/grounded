@@ -43,6 +43,13 @@ describe("selectTrackView", () => {
     expect(next.arcs.map((a) => a.current ?? false)).toEqual([false, false, true]);
   });
 
+  it("marks the arcs a session closed", () => {
+    const closed = arcs.map((arc, i) => (i === 0 ? { ...arc, closedIn: "s2" } : arc));
+    const view = selectTrackView({ terms, arcs: closed, touched: [], wholePlan: true });
+    expect(view.arcs.map((a) => a.closed ?? false)).toEqual([true, false, false]);
+    expect(view.arcs[0]).not.toHaveProperty("closedIn");
+  });
+
   it("lists the terms touched recently, with what they rest on, whatever their arc", () => {
     const view = selectTrackView({ terms, arcs, touched: ["TCP"], wholePlan: false });
     expect(view.terms.map((t) => t.term)).toContain("TCP");

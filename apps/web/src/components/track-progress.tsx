@@ -4,10 +4,10 @@ import { ArrowRight, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { progressQuery, type Idea, type TrackProgress } from "@/lib/progress";
 import { describeItem } from "@/lib/track-list";
-import type { TrackItem } from "@/lib/tracks";
+import { isAssigned, type TrackItem } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
 import { TermMapPicture } from "./term-map";
-import { itemLink } from "./track-list";
+import { DueTag, itemLink } from "./track-list";
 
 /**
  * What the learner owns and what is still settling, what the tutor will come back to, and the
@@ -96,7 +96,7 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
 
 /**
  * What is open in the track, each a row as the track list says it (design §9.2) that goes on with
- * it: the open session, and homework not handed in yet (arc exams join as a kind, #42).
+ * it: the open session, and homework and arc exams not handed in yet, with when they are due.
  */
 export function OpenWork({ items }: { items: readonly TrackItem[] }) {
   return (
@@ -110,7 +110,10 @@ export function OpenWork({ items }: { items: readonly TrackItem[] }) {
               className="group flex items-center gap-4 px-4 py-3 transition-colors first:rounded-t-lg last:rounded-b-lg hover:bg-muted"
             >
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14.5px] font-medium">{title}</span>
+                <span className="flex items-start gap-2">
+                  <span className="min-w-0 truncate text-[14.5px] font-medium">{title}</span>
+                  {isAssigned(item) && item.due && <DueTag due={item.due} />}
+                </span>
                 <span className="mt-0.5 block text-[12.5px] text-subtle-foreground">{meta}</span>
               </span>
               <ArrowRight className="size-4 shrink-0 text-subtle-foreground transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" />

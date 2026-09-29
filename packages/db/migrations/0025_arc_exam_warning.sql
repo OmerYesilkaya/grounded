@@ -1,0 +1,1 @@
+ALTER TABLE "assignments" ADD COLUMN "warned_at" timestamp with time zone;

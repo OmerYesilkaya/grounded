@@ -11,7 +11,7 @@ import { followSession, type StreamEvent } from "./session-stream";
 export interface ChatMessage {
   id: string;
   role: "learner" | "tutor";
-  kind: "message" | "plan" | "homework" | "recap";
+  kind: "message" | "plan" | "homework" | "exam" | "recap";
   text: string | null;
   blocks: Block[] | null;
   /** Still arriving: `text` grows until the message is done. */

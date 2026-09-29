@@ -69,6 +69,8 @@ export function transcriptOf(record: RunRecord): string {
   });
 
   out.push("## Homework (chat)", "", chat(["homework"]) || "(none)", "");
+  const exam = chat(["exam"]);
+  if (exam) out.push("## Arc exam (chat)", "", exam, "");
   out.push("## Recap (chat)", "", chat(["recap"]) || "(none)", "");
   out.push("## Where you left off (hidden)", "", record.leftOff ?? "(none)", "");
   out.push("## Terms at the end", "", ...record.terms.map((t) => `- ${t.term}: ${t.status}`), "");

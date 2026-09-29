@@ -228,6 +228,28 @@ describe("applyActions", () => {
   });
 });
 
+describe("applyActions: set-plan", () => {
+  it("keeps an arc a session closed closed, under its title", async () => {
+    const trackId = await newTrack();
+    await applyActions(t.db, trackId, [{ type: "add-planned-term", term: "memory", restsOn: [] }], {
+      source: "plan",
+    });
+    const closedIn = "0199a000-0000-7000-8000-000000000000";
+    await t.db
+      .update(tracks)
+      .set({ plan: { arcs: [{ title: "Memory", terms: ["memory"], closedIn }], notes: "" } })
+      .where(eq(tracks.id, trackId));
+    await applyActions(
+      t.db,
+      trackId,
+      [{ type: "set-plan", arcs: [{ title: "memory", terms: ["memory"] }], notes: null }],
+      { source: "close", rewritePlan: true },
+    );
+    const [track] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
+    expect(track?.plan.arcs).toEqual([{ title: "memory", terms: ["memory"], closedIn }]);
+  });
+});
+
 describe("applyActions: from a call that may not rewrite the plan", () => {
   it("leaves out a set-plan and applies the rest of the batch", async () => {
     const trackId = await newTrack();

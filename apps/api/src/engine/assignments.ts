@@ -190,22 +190,27 @@ export function tasksOf(
     if (last && !(block.type === "heading" && block.depth === 2)) last.push(block);
     else parts.push([block]);
   }
-  // Words before an exam's first part go with it.
-  const [intro, next] = parts;
-  if (intro && next && intro[0]?.type !== "heading") parts.splice(0, 2, [...intro, ...next]);
+  // Words before an exam's first part go with it, under its heading.
+  const lead = parts[0]?.[0]?.type === "heading" ? [] : (parts.shift() ?? []);
   const sources = kind === "exam" ? splitLessonSteps(message.text) : [];
   const whole = kind !== "exam" || sources.length < 2 || sources.length !== parts.length;
-  const tasks = whole ? [[...message.blocks]] : parts;
-  return tasks.map((blocks, i) => {
-    const first = blocks[0];
-    const title = !whole && first?.type === "heading" ? plain(first.children).trim() : null;
+  if (whole) {
+    const form = forms[0] ?? "explain";
+    return [
+      { id: "t1", title: null, form, blocks: [...message.blocks], source: message.text.trim() },
+    ];
+  }
+  const leadText = message.text.slice(0, message.text.indexOf(sources[0] ?? "")).trim();
+  return parts.map((blocks, i) => {
+    const [heading, ...rest] = blocks;
+    const source = sources[i] ?? "";
     return {
       id: `t${String(i + 1)}`,
-      title,
+      title: heading?.type === "heading" ? plain(heading.children).trim() : null,
       form: forms[i] ?? forms.at(-1) ?? "explain",
       // The heading is shown as the task's title, not again in its text.
-      blocks: title === null ? blocks : blocks.slice(1),
-      source: whole ? message.text.trim() : (sources[i] ?? ""),
+      blocks: i === 0 ? [...lead, ...rest] : rest,
+      source: i === 0 && leadText ? `${leadText}\n\n${source}` : source,
     };
   });
 }

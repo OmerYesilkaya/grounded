@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 import { LaterMenu } from "@/homework/later-menu";
 import { assignmentApi } from "@/lib/assignments";
 import { useNow } from "@/lib/snooze";
-import { isDue, useTracks, type HomeworkItem } from "@/lib/tracks";
+import { isDue, useTracks, type AssignedItem } from "@/lib/tracks";
 
 /** A reminder dismissed in this tab stays dismissed until the homework is put off again. */
 const DISMISSED_KEY = "grounded:reminders-dismissed";
-const reminderKey = (item: HomeworkItem) => `${item.id}@${String(item.due)}`;
+const reminderKey = (item: AssignedItem) => `${item.id}@${String(item.due)}`;
 
 function dismissed(): string[] {
   try {
@@ -23,9 +23,9 @@ function dismissed(): string[] {
 }
 
 /**
- * The reminder on the next visit (design §7.4, in-app in v1): homework put off whose time has come,
- * in a card at the foot of the page until the learner opens it, puts it off again or dismisses it
- * for this visit. Not on the homework's own page.
+ * The reminder on the next visit (design §7.4, in-app in v1): homework or an arc exam put off whose
+ * time has come, in a card at the foot of the page until the learner opens it, puts it off again or
+ * dismisses it for this visit. Not on its own page.
  */
 export function HomeworkReminder() {
   const tracks = useTracks();
@@ -52,6 +52,7 @@ export function HomeworkReminder() {
   const [first] = shown;
   if (!first) return null;
   const { item, track } = first;
+  const what = item.kind === "exam" ? "Arc exam" : "Homework";
 
   const dismiss = () => {
     const next = [...hidden, ...shown.map(({ item: i }) => reminderKey(i))];
@@ -65,13 +66,13 @@ export function HomeworkReminder() {
 
   return (
     <aside
-      aria-label="Homework due"
+      aria-label={`${what} due`}
       className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-40 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg sm:left-auto sm:w-[360px]"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-            Homework due
+            {what} due
           </p>
           <p className="mt-1 font-serif text-[16px] leading-snug font-semibold">{item.title}</p>
           <p className="mt-0.5 text-[12.5px] text-subtle-foreground">

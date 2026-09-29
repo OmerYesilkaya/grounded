@@ -254,7 +254,7 @@ const PHASE_OF: Record<string, BudgetedPhase> = {
 const withinBudgets = () => {
   const sizes = promptSizes();
   for (const { purpose, chars } of sizes) {
-    const phase = PHASE_OF[purpose] ?? (purpose as BudgetedPhase | "wording-review");
+    const phase = PHASE_OF[purpose] ?? (purpose as keyof typeof PROMPT_BUDGETS);
     expect(estimateTokens(chars), purpose).toBeLessThanOrEqual(PROMPT_BUDGETS[phase]);
   }
   return [...new Set(sizes.map((s) => s.purpose))];
@@ -287,6 +287,32 @@ describe("prompt budgets on a large track", () => {
       expect(withinBudgets()).toEqual(purposes[phase as BudgetedPhase]);
     });
   }
+
+  it("keeps the arc exam within budget, the arc it covers carried whole", async () => {
+    const { sessionId } = await createLargeTrack(t.db, {
+      conversation: CONVERSATION,
+      leftOff: LEFT_OFF,
+    });
+    await t.db
+      .update(learningSessions)
+      .set({ state: { ...lesson, phase: "homework" } })
+      .where(eq(learningSessions.id, sessionId));
+    // The lesson teaches the rest of the current arc, which closes it.
+    const rest = Array.from({ length: 8 }, (_, i) => termName(CURRENT_ARC, 9 + i));
+    await t.db
+      .update(lessons)
+      .set({
+        outline: {
+          title: "Isolation, all of it",
+          steps: [{ heading: "The rest", establishes: "", introduces: rest, restsOn: [] }],
+        },
+      })
+      .where(eq(lessons.sessionId, sessionId));
+    models.script("homework", homework("Predict what the second read shows."));
+    models.script("exam", homework("## Two readers\n\nPredict.\n\n## One writer\n\nExplain."));
+    await run("homework", { sessionId });
+    expect(withinBudgets()).toEqual(["homework", "exam"]);
+  });
 
   it("keeps the wording review of a message within budget: the whole term list, and the text", async () => {
     const { sessionId } = await createLargeTrack(t.db, {

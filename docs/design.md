@@ -413,7 +413,8 @@ about, test and debug.
   (18–24 KB per phase), and they are the part every call reuses from the cache. An aside (#37)
   carries the whole lesson: ~13,300 with six steps of a real one's size (about 20 KB) and two
   earlier asides, budget 16,000. The wording review (#52, §3.3) carries the whole term list by name
-  and one text: ~4,600 for a probe question, budget 7,000.
+  and one text: ~4,600 for a probe question, budget 7,000. The arc exam (#42) carries the homework's
+  call, its message and the whole arc it covers: ~13,200, budget 16,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
   `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
   the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
@@ -509,7 +510,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                          |
 | `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                            |
 | `learning_sessions`                              | track, kind (normal / final), the state machine's state (phase, plan, lesson, steps), open/closed, probe summary, older turns summarized               |
-| `session_messages`                               | the session chat (probe, plan, homework, recap): the learner's text, the tutor's block trees, a plan's terms                                           |
+| `session_messages`                               | the chat (probe, plan, homework, arc exam, recap): the learner's text, the tutor's block trees, a plan's terms                                         |
 | `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                |
 | `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                    |
 | `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                  |
@@ -519,16 +520,20 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                         |
 | `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it              |
 | `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                |
-| `assignments`                                    | homework (an arc exam later, #42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
+| `assignments`                                    | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at |
 | `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                           |
 | `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                 |
 | `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked held / leaked / missing                          |
 | `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads       |
 
-An assignment also holds when it is snoozed until (`snoozed_until`, "Later") and the later homework
-it was folded into (`subsumed_by`), §7.4.
+An assignment also holds when it is snoozed until (`snoozed_until`, "Later"), the later homework
+it was folded into (`subsumed_by`) and, for an arc exam, when starting a session warned it was
+still open (`warned_at`), §7.4.
 
-Which session closes each arc isn't recorded yet (#42).
+Which session closed each arc is on the plan's arc (`tracks.plan.arcs[].closedIn`, the session's
+id; absent while the arc is open), set when that session's exam is kept (§7.4, decided 2026-09-29,
+#42). A `set-plan` keeps it: an arc stays closed under its title, or renamed with the same terms
+(`keepClosedArcs`), and prompts show a closed arc as "closed: its arc exam is set".
 
 The model never rewrites state. It returns small structured edits (promote term X with this evidence,
 add planned term Y resting on Z, close fix-list item N) that the server validates and applies.
@@ -903,7 +908,8 @@ HTML/SVG). To be measured, then adjusted.
   the next visit); email in v2 (#30). "Rework" is hidden until v2. How it is built below.
 - **Arc exams** follow the method (transfer problems, cross-session questions, one build, re-tested
   misconceptions — never recall). Never taken halfway; "Later" allowed. Starting the next arc with an
-  exam open gives one warning, and its re-tests fold into the next session's probe.
+  exam open gives one warning, and its re-tests fold into the next session's probe. How it is built
+  below (#42).
 - **The final** is a session kind with no homework: a fresh audit (new fix-list compared with the
   original) and a teach-back where the model plays a skeptical friend asking only "why?" and "what if?".
 
@@ -1062,6 +1068,58 @@ trackId)` gives the track's comments on done reviews not resolved yet, oldest fi
   comment level with its field; below it each field's comments are closed cards under it, and
   one opens in the aside's bottom sheet. Clicking a marked passage opens its comment. The chat's
   homework footer says "the review is on its way" while the session waits for it.
+
+How arc exams are built (#42, decided 2026-09-29; `packages/core/src/arc-exam.ts`,
+`apps/api/src/engine/arc-exams.ts`):
+
+- **The app works out which session closes an arc**, as it places the checks (§7.3): nothing to
+  ask the model, and testable (`arcsClosedBy`). At the homework, a session closes an arc still
+  open when, once its lesson has taught what its outline introduces, none of the arc's terms is
+  `planned`, and when the session began the arc was under way but not done (one of its terms was
+  planned, and one wasn't; statuses as the session began, from `term_events`, a term added since
+  counting as planned). So only the session that finished the arc closes it; an arc taught before
+  the app kept arcs (an imported track's) isn't closed by a lesson teaching one of its terms again;
+  and **an arc one session teaches whole gets no exam** (decided): its homework covers that ground,
+  and there are no sessions to connect (method.md: arcs group sessions where a subject is larger
+  than one). The session records it on the arc (`closedIn`, §5) once its exam is kept; a closed
+  arc is never closed again.
+- **Written after the homework, in the same job**, the same way (prose first, §7.1): the exam's
+  call (purpose `exam`, the strong model, the homework phase's method, which holds "The arc
+  exam") is told the arcs it covers under "The arc this exam covers" (each term with its status
+  and what it rests on, and the sessions whose lessons taught them, by number and title), and to
+  write three to five `##` parts, each one task of one kind, beginning with the first part's
+  heading; its record gives each part's kind, a name and the checklist over the whole exam. It is
+  a chat message (`kind` `exam`) under the homework's, and an assignment of kind `exam`, one task
+  per part (`tasksOf`: words before the first heading go into the first part, under its title).
+  One exam per session, covering every arc it closed. A job tried again goes on from what was
+  written, like the homework's. Budget: ~13,200 tokens on the large track, 16,000 (§4.4).
+- **It never holds its session**: the session waits for its homework only, and the exam's
+  hand-in and Later move no session. It is never folded into homework (§7.4, above).
+- **Never taken halfway** (decided): what is written is saved as it is written, like homework's,
+  but it is handed in only whole (every field of every part, each prediction locked; the first
+  gap is named, with its part's title), and nothing is reviewed until then, so there is no partial
+  review. The page says to take it in one sitting when there is room, and Later (with the snooze)
+  is offered from its page, its chat card and the reminder, whenever it is open.
+- **One warning** (decided): `POST /api/tracks/:id/sessions` with an exam open that hasn't been
+  warned about answers 409 `{ code: "exam-open", exam: { id, title } }` and marks it warned
+  (`warned_at`); the page shows "Arc exam still open" with "Take the exam" and "Start the session
+  anyway", which starts it. Each exam is warned about once.
+- **Its re-tests fold into the next session's probe**: while an exam an earlier session set is
+  open, the probe's calls (the question and the decision) carry its parts under "The arc exam the
+  learner hasn't taken yet", told to fold its misconception re-tests and cross-session questions
+  into the probe in fresh settings and their own words, never handing over its questions or
+  naming it (`openExamRecord`). The exam stays open, to be taken whole.
+- **The page** (`/homework/:assignmentId`): "Arc exam · N parts", its name and session, the
+  one-sitting note, the checklist (or, reviewed, "What your answer shows"), then each part: "Part
+  2 · Derivation", its title, what it asks, and its own answer boxes (or, handed in, its answer
+  with the review's comments, which find their words across every part). The chat shows the exam's
+  message with "Open the exam" and Later.
+- **For the review phase (#40)**: an exam is reviewed on hand-in like homework (§7.4, the review),
+  with source `exam` on its term events. `openLeaks` gives an exam's open leaks first, then the
+  rest oldest first, so `openLeaksRecord`'s L1, L2… put the exam first, as the method's review
+  does. `openExamsOf(db, trackId)` gives the exams not handed in; the review phase should review an
+  exam handed in since the last session first (its `reviews` row, `sessionReviewRecord`), and if
+  the review shows the arc didn't hold, say so to the plan (method.md: the next arc waits).
 
 ### 7.5 Asides
 
@@ -1275,9 +1333,12 @@ and marked the current track with bolder text):
   kind's row says), so ordering, folding, counting and search don't depend on the kind. Sessions
   and homework are built (#38): a homework item follows the session that assigned it, says its name
   over "Homework · session 4" ("· handed in" once it is), is done once handed in, and is active when
-  it or its answers last changed; its row opens its page. Arc exams (#42) join the same way ("Arc
-  exam · Arc 2"). Homework put off adds a `due` (snoozed until, for the "tonight" / "tomorrow"
-  tag, §7.4) and homework folded into a later one a `foldedInto` (that one's session); a due item
+  it or its answers last changed; its row opens its page. An arc exam (#42) is an item of its own
+  kind after its session's homework: its name over "Arc exam · session 4" ("· handed in"), the arcs
+  it covers (search finds it by them) and how many parts it has, done once handed in. Homework or
+  an exam put off adds a `due` (snoozed until, for the "tonight" / "tomorrow" tag, §7.4, in the
+  sidebar and on the track page's "Open now") and homework folded into a later one a `foldedInto`
+  (that one's session); a due item
   counts as "1 due" on a closed track and sorts the track by its due time once it has come
   too.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API

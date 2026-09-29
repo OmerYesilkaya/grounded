@@ -1,4 +1,5 @@
 import {
+  keepClosedArcs,
   NOTES_PHASES,
   selectTrackView,
   WHOLE_PLAN_PHASES,
@@ -587,7 +588,11 @@ async function writeBatch(
           break;
         }
         case "set-plan":
-          plan = { arcs: action.arcs, notes: action.notes ?? plan.notes };
+          // An arc closed by a session stays closed, renamed or not (design §7.4).
+          plan = {
+            arcs: keepClosedArcs(plan.arcs, action.arcs),
+            notes: action.notes ?? plan.notes,
+          };
           planChanged = true;
           break;
         case "edit-plan-notes": {

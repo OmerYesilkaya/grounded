@@ -115,6 +115,7 @@ export type {
   ReviewedAssignment,
   ReviewMark,
 } from "./assignment-review.js";
+export { arcsClosedBy, keepClosedArcs, type ArcOfPlan } from "./arc-exam.js";
 export { allowedBlocksLine } from "./blocks-line.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";

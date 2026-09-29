@@ -16,8 +16,8 @@ import { filesOf } from "./files/track-files.js";
 /**
  * Something inside a track, listed under it in the track list (design §9.2). Every kind shares
  * these fields, so the list can order, fold and count items without knowing their kind; each kind
- * adds what its row says: sessions and their homework (arc exams join as a kind of their own, #42;
- * homework put off with a snooze has a `due` for its "tonight" tag).
+ * adds what its row says: sessions, their homework and arc exams (put off with a snooze, either
+ * has a `due` for its "tonight" tag).
  */
 interface ItemBase {
   kind: string;
@@ -56,7 +56,25 @@ export interface HomeworkItem extends ItemBase {
   foldedInto: number | null;
 }
 
-export type TrackItem = SessionItem | HomeworkItem;
+/**
+ * An arc exam (design §7.4), listed after its session's homework: open until it is handed in. It
+ * is never folded into anything.
+ */
+export interface ExamItem extends ItemBase {
+  kind: "exam";
+  /** The number of the session that closed its arc and set it. */
+  session: number;
+  /** A few words naming it. */
+  title: string;
+  /** The arcs it covers: the ones its session closed. */
+  arcs: string[];
+  /** How many parts it has. */
+  parts: number;
+  /** Put off with a snooze: when it is due again (ISO time), for its tag; null otherwise or once done. */
+  due: string | null;
+}
+
+export type TrackItem = SessionItem | HomeworkItem | ExamItem;
 
 export interface TrackSummary {
   id: string;
@@ -70,6 +88,10 @@ export interface TrackSummary {
   importedLesson: { title: string } | null;
   files: { id: string; name: string; kind: string; sizeBytes: number }[];
 }
+
+/** When something last happened on an assignment: changed, or its answers written. */
+const lastActive = (a: { updatedAt: Date; answeredAt: Date | null }) =>
+  (a.answeredAt && a.answeredAt > a.updatedAt ? a.answeredAt : a.updatedAt).toISOString();
 
 /** The learner's tracks with their items, the most recently active first (design §9.2). */
 export async function trackList(db: Db, userId: string): Promise<TrackSummary[]> {
@@ -95,9 +117,10 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
         .where(inArray(importedLessons.trackId, ids))
     : [];
   const attached = await filesOf(db, ids);
-  const homework = await db
+  const assigned = await db
     .select({
       id: assignments.id,
+      kind: assignments.kind,
       sessionId: assignments.sessionId,
       title: assignments.title,
       tasks: assignments.tasks,
@@ -112,6 +135,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
     .leftJoin(submissions, eq(submissions.assignmentId, assignments.id))
     .where(eq(assignments.userId, userId))
     .orderBy(asc(assignments.createdAt), asc(assignments.id));
+  const homework = assigned.filter((a) => a.kind === "homework");
 
   const now = new Date();
   const list = rows.map((track): TrackSummary => {
@@ -122,7 +146,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       return trackSessions.findIndex((s) => s.id === assigning) + 1 || null;
     };
     // A due homework counts as activity once its time comes, so its track rises in the list.
-    const dueTimes = homework
+    const dueTimes = assigned
       .filter((h) => trackSessions.some((s) => s.id === h.sessionId))
       .flatMap((h) =>
         h.snoozedUntil && h.snoozedUntil <= now && !h.submittedAt && !h.subsumedBy
@@ -151,10 +175,20 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
           done: h.submittedAt !== null || h.subsumedBy !== null,
           due: h.submittedAt || h.subsumedBy ? null : (h.snoozedUntil?.toISOString() ?? null),
           foldedInto: h.subsumedBy ? sessionOf(h.subsumedBy) : null,
-          activeAt: (h.answeredAt && h.answeredAt > h.updatedAt
-            ? h.answeredAt
-            : h.updatedAt
-          ).toISOString(),
+          activeAt: lastActive(h),
+        })),
+      ...assigned
+        .filter((e) => e.kind === "exam" && e.sessionId === s.id)
+        .map((e): ExamItem => ({
+          kind: "exam",
+          id: e.id,
+          session: index + 1,
+          title: e.title,
+          arcs: track.plan.arcs.filter((arc) => arc.closedIn === s.id).map((arc) => arc.title),
+          parts: e.tasks.length,
+          done: e.submittedAt !== null,
+          due: e.submittedAt ? null : (e.snoozedUntil?.toISOString() ?? null),
+          activeAt: lastActive(e),
         })),
     ]);
     const open = items.find((item): item is SessionItem => item.kind === "session" && !item.done);

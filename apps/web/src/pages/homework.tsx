@@ -9,12 +9,12 @@ import { PageBar } from "@/components/page-bar";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { ContentProvider } from "@/content/environment";
-import { AnswerView, fieldScope } from "@/homework/answer-view";
+import { fieldScope } from "@/homework/answer-view";
 import { SelfCheck, useSelfCheck } from "@/homework/checklist";
 import { LaterMenu } from "@/homework/later-menu";
 import { ReviewCards, ReviewLayer } from "@/homework/review-layer";
 import { ReviewSummary } from "@/homework/review-summary";
-import { TaskFields } from "@/homework/task-fields";
+import { ExamPart, TaskAnswerArea } from "@/homework/task-part";
 import { useAnswers, type SaveStatus } from "@/homework/use-answers";
 import { useReview } from "@/homework/use-review";
 import { assignmentApi, useAssignment, type Assignment } from "@/lib/assignments";
@@ -45,10 +45,11 @@ const when = (iso: string) =>
   });
 
 /**
- * Homework on a page of its own (design §7.4): what it asks, the answer boxes of its kind, what a
- * good answer shows to check against, and handing it in, whole. It can be put off ("Later") till
- * tonight or tomorrow, which closes its session while that waits for it; it stays open in the track
- * list either way, until it is handed in or folded into a later homework.
+ * Homework or an arc exam on a page of its own (design §7.4): what it asks, the answer boxes of
+ * its kind (an exam's parts each with their own), what a good answer shows to check against, and
+ * handing it in, whole. It can be put off ("Later") till tonight or tomorrow, which closes the
+ * session while that waits for its homework; it stays open in the track list either way, until it
+ * is handed in or (homework) folded into a later homework.
  */
 export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   const queryClient = useQueryClient();
@@ -62,6 +63,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   // Folded into a later homework: closed, read only, and that one is the one to do.
   const closed = handedIn || assignment.subsumedBy !== null;
   const [task] = assignment.tasks;
+  const exam = assignment.kind === "exam";
 
   // The review, once handed in: comments beside the answer, in the margin where there is room.
   const review = useReview(assignment);
@@ -138,6 +140,25 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
     }
   };
 
+  /** A task's answer: its boxes, or once handed in, what was written with the review's comments. */
+  const answerArea = (of: Assignment["tasks"][number]) => (
+    <TaskAnswerArea
+      task={of}
+      answer={answers[of.id]}
+      handedIn={handedIn}
+      readOnly={closed}
+      onChange={(key, value) => {
+        change(of.id, key, value);
+      }}
+      onLock={() => lock(of.id)}
+      upload={(file) => assignmentApi.picture(assignment.id, file)}
+      onError={setError}
+      after={
+        comments.length && !wide ? (scope) => <ReviewCards {...cards} scope={scope} /> : undefined
+      }
+    />
+  );
+
   if (!task) return null;
   return (
     <ContentProvider>
@@ -148,7 +169,9 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
       >
         <main className="col-start-2 min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-            Homework · {TASK_FORM_SPECS[task.form].label}
+            {exam
+              ? `Arc exam · ${String(assignment.tasks.length)} parts`
+              : `Homework · ${TASK_FORM_SPECS[task.form].label}`}
           </p>
           <h1 className="mt-2 font-serif text-[30px] leading-tight font-semibold tracking-tight text-balance">
             {assignment.title}
@@ -158,9 +181,13 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             {when(assignment.createdAt)}
           </p>
 
-          <article className="mt-8 font-serif text-[17px] leading-[1.7] text-foreground">
-            <Blocks blocks={task.blocks} />
-          </article>
+          {exam ? (
+            !closed && <OneSitting />
+          ) : (
+            <article className="mt-8 font-serif text-[17px] leading-[1.7] text-foreground">
+              <Blocks blocks={task.blocks} />
+            </article>
+          )}
 
           {review ? (
             <div className="mt-8">
@@ -184,42 +211,26 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             </div>
           )}
 
-          <section ref={answer} aria-label="Your answer" className="mt-10 border-t pt-8">
-            {handedIn ? (
-              <>
-                <h2 className="mb-5 text-[11px] font-semibold tracking-[0.12em] text-subtle-foreground uppercase">
-                  Your answer
-                </h2>
-                <AnswerView
-                  taskId={task.id}
-                  form={task.form}
-                  answer={answers[task.id]}
-                  after={
-                    comments.length && !wide
-                      ? (scope) => <ReviewCards {...cards} scope={scope} />
-                      : undefined
-                  }
-                />
-              </>
-            ) : (
-              <TaskFields
-                form={task.form}
-                answer={answers[task.id]}
-                readOnly={closed}
-                onChange={(key, value) => {
-                  change(task.id, key, value);
-                }}
-                onLock={() => lock(task.id)}
-                upload={(file) => assignmentApi.picture(assignment.id, file)}
-                onError={setError}
-              />
-            )}
-          </section>
+          {exam ? (
+            // Every part, each with its own boxes; the review's comments find their words in all.
+            <article ref={answer} aria-label="The exam">
+              {assignment.tasks.map((part, i) => (
+                <ExamPart key={part.id} task={part} number={i + 1}>
+                  {answerArea(part)}
+                </ExamPart>
+              ))}
+            </article>
+          ) : (
+            <section ref={answer} aria-label="Your answer" className="mt-10 border-t pt-8">
+              {answerArea(task)}
+            </section>
+          )}
 
           {assignment.subsumedBy ? (
             <Folded into={assignment.subsumedBy} />
           ) : (
             <HandIn
+              exam={exam}
               submittedAt={submittedAt}
               snoozedUntil={snoozedUntil}
               waiting={waiting}
@@ -254,7 +265,11 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             answer={answer}
             margin={margin}
             wide={wide}
-            fieldLabel={(comment) => fieldLabel(task.form, comment.anchor.field)}
+            fieldLabel={(comment) => {
+              const on = assignment.tasks.find((t) => t.id === comment.anchor.taskId) ?? task;
+              const label = fieldLabel(on.form, comment.anchor.field);
+              return on.title ? `${on.title}: ${label}` : label;
+            }}
           />
         )}
       </div>
@@ -299,6 +314,20 @@ function TopBar({ assignment, status }: { assignment: Assignment; status: SaveSt
   );
 }
 
+/**
+ * How an arc exam is taken (method.md, "The arc exam"): in one sitting, whole. What is written is
+ * kept as it is written, but nothing is handed in, or reviewed, until every part is answered.
+ */
+function OneSitting() {
+  return (
+    <p className="mt-6 border-l-2 border-primary/50 pl-4 text-[14.5px] leading-relaxed text-muted-foreground">
+      Everything here is new ground, built from the whole arc. Take it in one sitting, when you have
+      room for it: your answers are kept as you write, and it is handed in, and reviewed, only once
+      every part is answered. If now isn't the time, put it off with Later.
+    </p>
+  );
+}
+
 /** Folded into a later homework (method.md, "Homework"): that one covers this one's ground. */
 function Folded({ into }: { into: { id: string; title: string } }) {
   return (
@@ -321,6 +350,7 @@ function Folded({ into }: { into: { id: string; title: string } }) {
  * closes the session while it waits for this, and can put the homework off again after.
  */
 function HandIn(props: {
+  exam: boolean;
   submittedAt: string | null;
   snoozedUntil: string | null;
   waiting: boolean;
@@ -349,7 +379,7 @@ function HandIn(props: {
         <span className="text-[12.5px] text-subtle-foreground">
           {props.waiting
             ? "Later closes the session; the homework waits in your track until then."
-            : `${props.snoozedUntil ? dueWords(props.snoozedUntil, now) : "Open:"} it waits in your track until you hand it in.`}
+            : `${props.snoozedUntil ? dueWords(props.snoozedUntil, now) : "Open:"} it waits in your track until you hand it in${props.exam ? ", every part answered" : ""}.`}
         </span>
       </div>
       {props.error && (

@@ -156,11 +156,16 @@ describe("assemblePrompt", () => {
     });
   });
 
-  it("marks the current arc, tallies arcs shown without their terms, and counts terms not listed", () => {
+  it("marks the current arc and the closed ones, tallies arcs shown without their terms, and counts terms not listed", () => {
     const prompt = assemblePrompt(method, "probe", {
       plan: {
         arcs: [
-          { title: "Memory", terms: ["bit", "memory"], tally: { confirmed: 1, assumed: 1 } },
+          {
+            title: "Memory",
+            terms: ["bit", "memory"],
+            tally: { confirmed: 1, assumed: 1 },
+            closed: true,
+          },
           { title: "Concurrency", terms: ["race condition"], current: true },
           { title: "Networks", terms: ["packet", "TCP", "QUIC"], tally: { planned: 3 } },
         ],
@@ -170,7 +175,7 @@ describe("assemblePrompt", () => {
     });
     expect(prompt).toContain(
       [
-        "1. Memory: 2 terms (1 confirmed, 1 assumed)",
+        "1. Memory (closed: its arc exam is set): 2 terms (1 confirmed, 1 assumed)",
         "2. Concurrency (the current arc): race condition",
         "3. Networks: 3 terms (3 planned)",
       ].join("\n"),

@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { tagOf, useNow } from "@/lib/snooze";
 import { describeItem } from "@/lib/track-list";
-import { isDue, type TrackItem, type TrackSummary } from "@/lib/tracks";
+import { isAssigned, isDue, type TrackItem, type TrackSummary } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,7 +28,7 @@ export function TrackGroup(props: {
   const { track, current, currentItemId, expanded, onToggle } = props;
   const now = useNow();
   const waiting = track.items.filter((item) => !item.done).length;
-  // Homework whose snooze ran out is what is waiting most (design §9.2).
+  // Homework or an exam whose snooze ran out is what is waiting most (design §9.2).
   const due = track.items.filter((item) => isDue(item, now)).length;
   return (
     <li>
@@ -142,9 +142,9 @@ function ItemList({ track, children }: { track: TrackSummary; children: ReactNod
   );
 }
 
-/** Where an item's row goes: its session, or its homework's page. */
+/** Where an item's row goes: its session, or the page of its homework or exam. */
 export const itemLink = (item: TrackItem) =>
-  item.kind === "homework"
+  isAssigned(item)
     ? ({ to: "/homework/$assignmentId", params: { assignmentId: item.id } } as const)
     : ({ to: "/sessions/$sessionId", params: { sessionId: item.id } } as const);
 
@@ -169,7 +169,7 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
           <span className="line-clamp-2 min-w-0 flex-1 text-[13px] leading-snug" title={title}>
             {title}
           </span>
-          {item.kind === "homework" && !item.done && item.due && <DueTag due={item.due} />}
+          {isAssigned(item) && !item.done && item.due && <DueTag due={item.due} />}
         </span>
         <span className="block text-[10px] leading-snug tracking-widest text-subtle-foreground uppercase">
           {meta}
@@ -179,8 +179,8 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
   );
 }
 
-/** When homework put off is due (design §9.2): "tonight", "tomorrow"; "due" once it is. */
-function DueTag({ due }: { due: string }) {
+/** When homework or an exam put off is due (design §9.2): "tonight", "tomorrow"; "due" once it is. */
+export function DueTag({ due }: { due: string }) {
   const now = useNow();
   const tag = tagOf(due, now);
   return (
