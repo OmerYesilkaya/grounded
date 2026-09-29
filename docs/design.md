@@ -121,8 +121,8 @@ apps/
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
                 worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
-                the CLI (`src/cli.ts`: `pnpm invite`, `pnpm revoke`) and the track import
-                (`src/import`, `pnpm import-track`)
+                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli link`, `pnpm cli revoke`) and
+                the track import (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
   content/      block-tree types, markdown→tree parser, per-surface allowlists, validation (shared by web, api, worker, eval)
@@ -477,7 +477,11 @@ about, test and debug.
   contents say, not its name: image and PDF signatures are checked (an image's media type comes from
   its bytes), text must be UTF-8, a PDF must open and not be password-protected. Word documents and
   text files are sent as their text (at most 50,000 characters each, taken out with `mammoth` for
-  Word and stored in `track_files.text`); images and PDFs go to the model as they are.
+  Word and stored in `track_files.text`); images and PDFs go to the model as they are. A model
+  that doesn't read a kind (`reads` on the model list; DeepSeek V4 Pro reads neither images nor
+  PDFs, DeepSeek Flash reads images) gets a line in the file's place, put there by the model
+  middleware (`shapeCall`), naming the file and saying the model doesn't read it, so the tutor can
+  ask for its text; the same rules for attaching apply to every learner.
 - **Creating a track with files is one request** (`POST /api/tracks` as a form, `goal` and `files`;
   JSON `{ goal }` without files), bounded by a body limit. The bytes are stored first, then the track
   and its `track_files` rows in one transaction; if anything fails, the bytes already stored are
@@ -1576,7 +1580,9 @@ every other page usable (tried at 360–430px wide, in both themes).
 
 ## 10. Operating without an admin page
 
-- Allowlist: `pnpm invite a@b.com`, `pnpm revoke a@b.com`.
+- Allowlist: `pnpm cli invite a@b.com`, `pnpm cli revoke a@b.com`. `pnpm cli link a@b.com` invites and
+  prints a sign-in link to hand over by any channel: minted by the magic-link endpoint itself, valid
+  a week rather than an emailed link's five minutes, single use, and it signs in whoever opens it.
 - Model list: `packages/providers/src/models.ts` in the repo, reviewed with its eval results.
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:

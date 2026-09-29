@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MODELS, cheapModelFor, estimateCost, offeredModels, type ProviderId } from "./index.js";
+import {
+  MODELS,
+  cheapModelFor,
+  estimateCost,
+  modelReads,
+  offeredModels,
+  type ProviderId,
+} from "./index.js";
 
 const PROVIDERS: readonly ProviderId[] = ["anthropic", "openai", "google", "deepseek"];
 
@@ -39,6 +46,16 @@ describe("model list", () => {
       "deepseek-flash",
     ]);
     expect(cheapModelFor("deepseek")?.id).toBe("deepseek-flash");
+  });
+
+  it("says which files a model reads as they are", () => {
+    expect(modelReads("claude-opus-5-5", "application/pdf")).toBe(true);
+    expect(modelReads("deepseek-flash", "image/png")).toBe(true);
+    expect(modelReads("deepseek-flash", "application/pdf")).toBe(false);
+    expect(modelReads("deepseek-v4-pro", "image/jpeg")).toBe(false);
+    // Text goes as text on every model, and a model off the list is trusted.
+    expect(modelReads("deepseek-v4-pro", "text/plain")).toBe(true);
+    expect(modelReads("no-such-model", "application/pdf")).toBe(true);
   });
 
   it("estimates cost from token usage, or null when the price is unknown", () => {

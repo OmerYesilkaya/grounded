@@ -15,7 +15,14 @@ export interface ModelEntry {
   price: { input: number; cachedInput: number; cacheWrite: number; output: number } | null;
   /** passed: eval harness · manual: tested by hand · pending: not evaluated (development only). */
   gate: "passed" | "manual" | "pending";
+  /**
+   * The attached files the model reads as they are (design §4.5). A file of a kind it doesn't read
+   * is replaced, in the model middleware, by a line saying so.
+   */
+  reads: { images: boolean; pdfs: boolean };
 }
+
+const READS_ALL = { images: true, pdfs: true } as const;
 
 export const MODELS: readonly ModelEntry[] = [
   {
@@ -26,6 +33,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong"],
     price: { input: 4, cachedInput: 0.2, cacheWrite: 8, output: 20 },
     gate: "manual",
+    reads: READS_ALL,
   },
   {
     // Passed Omer's quality test (2026-09-28).
@@ -35,6 +43,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong"],
     price: { input: 2, cachedInput: 0.2, cacheWrite: 4, output: 10 },
     gate: "manual",
+    reads: READS_ALL,
   },
   {
     // Passed Omer's quality test (2026-09-28).
@@ -44,6 +53,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["cheap"],
     price: { input: 1, cachedInput: 0.1, cacheWrite: 2, output: 5 },
     gate: "manual",
+    reads: READS_ALL,
   },
   {
     // Tested by Omer with the chat-app method and costed as acceptable (2026-09-27).
@@ -53,6 +63,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong", "cheap"],
     price: null,
     gate: "manual",
+    reads: READS_ALL,
   },
   {
     // Google's stable Flash line; the Pro model is a preview (gemini-3.1-pro-preview) and could be
@@ -64,6 +75,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong"],
     price: { input: 0.75, cachedInput: 0.075, cacheWrite: 0.75, output: 3.75 },
     gate: "pending",
+    reads: READS_ALL,
   },
   {
     id: "gemini-3.5-flash-lite",
@@ -72,6 +84,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["cheap"],
     price: { input: 0.3, cachedInput: 0.03, cacheWrite: 0.3, output: 2.5 },
     gate: "pending",
+    reads: READS_ALL,
   },
   {
     // DeepSeek's prices are the standard (peak-hour) ones; off-peak (outside 01:00–04:00 and
@@ -83,6 +96,8 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong"],
     price: { input: 1.32, cachedInput: 0.044, cacheWrite: 1.32, output: 3.96 },
     gate: "pending",
+    // Text only; DeepSeek's API takes PDFs on neither model.
+    reads: { images: false, pdfs: false },
   },
   {
     // DeepSeek-V4.1-Flash, under its standing name.
@@ -92,6 +107,7 @@ export const MODELS: readonly ModelEntry[] = [
     roles: ["strong", "cheap"],
     price: { input: 0.3, cachedInput: 0.006, cacheWrite: 0.3, output: 1.2 },
     gate: "pending",
+    reads: { images: true, pdfs: false },
   },
 ];
 
@@ -114,6 +130,23 @@ export function offeredModels(
 
 export function cheapModelFor(provider: ProviderId): ModelEntry | undefined {
   return MODELS.find((m) => m.provider === provider && m.roles.includes("cheap"));
+}
+
+/** The kinds of file a model may not read (design §4.5); anything else goes as text. */
+export type FileKind = "image" | "pdf";
+
+export function fileKindOf(mediaType: string): FileKind | null {
+  if (mediaType.startsWith("image/")) return "image";
+  if (mediaType === "application/pdf") return "pdf";
+  return null;
+}
+
+/** Whether the model reads a file of this media type as it is; a model not on the list is trusted to. */
+export function modelReads(modelId: string, mediaType: string): boolean {
+  const entry = findModel(modelId);
+  const kind = fileKindOf(mediaType);
+  if (!entry || !kind) return true;
+  return kind === "image" ? entry.reads.images : entry.reads.pdfs;
 }
 
 export interface TokenUsage {

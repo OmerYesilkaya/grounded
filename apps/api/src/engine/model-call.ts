@@ -228,7 +228,10 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           specificationVersion: "v4",
           transformParams: ({ params }) =>
             Promise.resolve(
-              shapeCall({ provider, purpose: request.purpose, trackId: request.trackId }, params),
+              shapeCall(
+                { provider, modelId, purpose: request.purpose, trackId: request.trackId },
+                params,
+              ),
             ),
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);

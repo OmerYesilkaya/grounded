@@ -4,7 +4,7 @@ import type {
   SharedV4ProviderOptions,
 } from "@ai-sdk/provider";
 import type { SystemPrompt } from "@grounded/core";
-import type { ProviderId } from "@grounded/providers";
+import { fileKindOf, findModel, modelReads, type ProviderId } from "@grounded/providers";
 import type { SystemModelMessage } from "ai";
 
 /**
@@ -83,6 +83,8 @@ export const REASONING: Readonly<
 /** What a call is for and about, as the middleware sees it (ModelRequest). */
 export interface CallFacts {
   provider: ProviderId;
+  /** The model the call goes to: what it reads (modelReads) decides which files go as they are. */
+  modelId: string;
   purpose: string;
   /** The track the call is about, when there is one: its calls share one cache. */
   trackId?: string | undefined;
@@ -98,6 +100,9 @@ export interface CallFacts {
  *   the whole prompt, so the next call of the conversation reuses it; it is left out when the
  *   prompt's own marks already fill MAX_CACHE_BREAKPOINTS. Google and DeepSeek cache implicitly.
  * - Reasoning effort: the purpose's, from REASONING.
+ * - Files the model doesn't read (design §4.5): an image or PDF a DeepSeek model can't take is
+ *   replaced by a line naming it and saying so, so the tutor can ask for its text instead of the
+ *   provider dropping it unseen or refusing the call.
  */
 export function shapeCall(
   facts: CallFacts,
@@ -111,10 +116,37 @@ export function shapeCall(
   const reasoning = params.reasoning ?? REASONING[facts.purpose];
   return {
     ...params,
-    prompt: separateSystemParts(params.prompt, facts.provider === "anthropic"),
+    prompt: separateSystemParts(
+      withoutUnreadFiles(params.prompt, facts.modelId),
+      facts.provider === "anthropic",
+    ),
     providerOptions: mergeProviderOptions(hints, params.providerOptions),
     ...(reasoning ? { reasoning } : {}),
   };
+}
+
+/** The prompt with each file the model doesn't read replaced by a line saying which and why. */
+function withoutUnreadFiles(prompt: LanguageModelV4Prompt, modelId: string): LanguageModelV4Prompt {
+  return prompt.map((message) => {
+    if (message.role !== "user") return message;
+    if (
+      !message.content.some((part) => part.type === "file" && !modelReads(modelId, part.mediaType))
+    )
+      return message;
+    const model = findModel(modelId)?.label ?? modelId;
+    return {
+      ...message,
+      content: message.content.map((part) => {
+        if (part.type !== "file" || modelReads(modelId, part.mediaType)) return part;
+        const kind = fileKindOf(part.mediaType) === "pdf" ? "PDFs" : "images";
+        const name = part.filename ? `"${part.filename}"` : "a file";
+        return {
+          type: "text",
+          text: `(${name} was attached here but left out: ${model} doesn't read ${kind}. Ask the learner for what it says if the teaching needs it.)`,
+        };
+      }),
+    };
+  });
 }
 
 /** The leading system messages, as blocks ending in the parts' separator, or joined into one. */

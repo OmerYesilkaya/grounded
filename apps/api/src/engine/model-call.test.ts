@@ -28,7 +28,7 @@ const reply = (text: string): LanguageModelV4GenerateResult => ({
   warnings: [],
 });
 
-async function userWithKey(provider: "openai" | "anthropic", model: string) {
+async function userWithKey(provider: "openai" | "anthropic" | "deepseek", model: string) {
   const [user] = await t.db
     .insert(users)
     .values({ name: "Ada", email: "ada@example.com" })
@@ -679,6 +679,40 @@ describe("provider cache hints", () => {
     expect(call?.prompt.filter((m) => m.role === "system")).toEqual([
       { role: "system", content: joinSystemPrompt(prompt) },
     ]);
+  });
+
+  it("replaces a file the model doesn't read with a line saying so, and keeps the ones it does", async () => {
+    const userId = await userWithKey("deepseek", "deepseek-flash");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "track-brief", role: "strong" });
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    await generateText({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "They attached these 2 files: cv.pdf, whiteboard.png." },
+            { type: "file", data: bytes, mediaType: "application/pdf", filename: "cv.pdf" },
+            { type: "file", data: bytes, mediaType: "image/png", filename: "whiteboard.png" },
+            { type: "text", text: "Summarize these files." },
+          ],
+        },
+      ],
+    });
+
+    const [call] = mock.doGenerateCalls;
+    const user = call?.prompt.find((m) => m.role === "user");
+    expect(user?.content.map((part) => (part.type === "file" ? part.filename : part.text))).toEqual(
+      [
+        "They attached these 2 files: cv.pdf, whiteboard.png.",
+        '("cv.pdf" was attached here but left out: DeepSeek Flash doesn\'t read PDFs. Ask the learner for what it says if the teaching needs it.)',
+        "whiteboard.png",
+        "Summarize these files.",
+      ],
+    );
   });
 
   it("sets no cache key for a call about no track", async () => {
