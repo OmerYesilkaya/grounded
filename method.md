@@ -740,3 +740,5 @@ across all tracks.
   new evidence — people grow, and a note must never keep them where they were.
 - Keep it to about a dozen notes. Nothing about vocabulary or terms; those belong to the tracks.
 - The learner can read and edit these notes, so write them in plain words they would recognize.
+- A note marked as the learner's (they wrote or edited it) is how they see their own learning: keep what
+  it says, and change it only when the evidence clearly disagrees.
