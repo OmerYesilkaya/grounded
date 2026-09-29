@@ -19,7 +19,7 @@ import { useAnswers, type SaveStatus } from "@/homework/use-answers";
 import { useReview } from "@/homework/use-review";
 import { assignmentApi, useAssignment, type Assignment } from "@/lib/assignments";
 import { useMediaQuery } from "@/lib/media-query";
-import { scrollBehavior } from "@/lib/motion";
+import { scrollBehavior, scrollIntoViewThen } from "@/lib/motion";
 import { dueWords, useNow } from "@/lib/snooze";
 import { cn } from "@/lib/utils";
 
@@ -86,12 +86,19 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   const showComment = (itemId: string) => {
     const comment = comments.find((c) => c.items.includes(itemId));
     if (!comment) return;
-    setActive(comment.id);
     const { taskId, field } = comment.anchor;
-    const target = wide
-      ? document.querySelector(`[data-step="${fieldScope(taskId, field)}"]`)
-      : document.querySelector(`[data-review-card="${comment.id}"]`);
-    target?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+    const words = document.querySelector(`[data-step="${fieldScope(taskId, field)}"]`);
+    if (wide || !words) {
+      setActive(comment.id);
+      words?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      return;
+    }
+    // On a phone the comment opens in a sheet over the foot of the screen: its words go to the
+    // top, above the sheet, and the sheet opens once the page is there.
+    setActive(null);
+    scrollIntoViewThen(words, "start", () => {
+      setActive(comment.id);
+    });
   };
 
   const refresh = async () => {

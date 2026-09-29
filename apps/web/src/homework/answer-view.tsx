@@ -29,7 +29,7 @@ export function AnswerView(props: {
       <>
         <section
           data-step={scope}
-          className="font-serif text-[17px] leading-[1.7] text-foreground [&_p:last-child]:mb-0"
+          className="scroll-mt-24 font-serif text-[17px] leading-[1.7] text-foreground [&_p:last-child]:mb-0"
         >
           <Blocks blocks={parseAnswer(answer?.fields[key] ?? "", { idPrefix: `${scope}.b` })} />
         </section>

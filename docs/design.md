@@ -1119,7 +1119,9 @@ sessionId)`, `resolved_in_session`; a card's resolution leaves it null). A leak 
   one stronger. The grid is the lesson's: on a wide screen (1100 px) the comments are margin cards
   (the aside's `MarginCard`, `placeCards` and connector), level with their words, a whole-field
   comment level with its field; below it each field's comments are closed cards under it, and
-  one opens in the aside's bottom sheet. Clicking a marked passage opens its comment. The chat's
+  one opens in the aside's bottom sheet ("See the comment" there brings the field's words to the
+  top first, above the sheet, and opens it once the page has stopped: opening it at once cut the
+  glide short). Clicking a marked passage opens its comment. The chat's
   homework footer says "the review is on its way" while the session waits for it.
 
 How arc exams are built (#42, decided 2026-09-29; `packages/core/src/arc-exam.ts`,
