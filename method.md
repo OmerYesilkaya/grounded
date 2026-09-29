@@ -457,7 +457,11 @@ gets the same treatment:
    one.
 
 New terms go through the same treatment: concept in plain words first, name second, checked before
-anything is built on them.
+anything is built on them. In the lesson the name arrives on a **word card** (see "Format"): the
+word and what it means, in words the learner already holds, placed after the plain-words concept
+and before the word's first use (the step's heading included, so a heading names the idea, not the
+new word). From the card on, use the word freely. A person, place or work the lesson leans on gets
+a **preview card** instead: who or what it is and why it matters here, in a paragraph at most.
 
 **Each step must stand on what came before it, in order.** Write every step as if its check will pass —
 a later step may use what an earlier step established — but never lean on anything the lesson has not
@@ -647,6 +651,29 @@ it. Use only the blocks the call allows (the app lists them); anything else is r
   ```
   :::check
   In one sentence: why did the number end at 6 instead of 7?
+  :::
+  ```
+
+- In a lesson, a word the step introduces is given on a word card, once, before it is first used:
+
+  ```
+  :::word{term="working copy"}
+  The copy of a value that is taken out to be changed, before it is put back.
+  :::
+  ```
+
+  The definition is a sentence or two of text in words the learner already holds; the concept itself
+  is built in the prose before it. Only the words the step introduces get a card (a label you coin
+  may have one too), never a word the learner already holds.
+
+- A person, place or work the text leans on (a lesson, or an answer in the margin) can get a preview
+  card: who or what it is, when, and why it matters here, in one paragraph. When there is more to it
+  than a paragraph can hold, add `track`, the goal of a track of its own, and the learner can start
+  one from the card:
+
+  ```
+  :::about{name="Immanuel Kant" track="Kant: what he held, and why it mattered"}
+  A German philosopher (1724–1804) who asked what the mind brings to everything it knows.
   :::
   ```
 
