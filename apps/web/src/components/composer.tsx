@@ -248,7 +248,12 @@ export function Composer({
             <ArrowUp />
           </Button>
         ) : (
-          <Button type="submit" size="sm" disabled={!canSubmit}>
+          <Button
+            type="submit"
+            size="sm"
+            disabled={!canSubmit}
+            className={cn(stackActions && "max-sm:h-11 max-sm:text-[15px]")}
+          >
             {submitLabel}
           </Button>
         )}

@@ -17,6 +17,10 @@ export interface CheckCardProps {
   onContinue: () => void;
 }
 
+/** A button of the card, stacked full width below the small breakpoint: a finger tall, and wrapping. */
+const STACKED =
+  "max-sm:h-auto max-sm:min-h-11 max-sm:py-2 max-sm:text-[15px] max-sm:whitespace-normal";
+
 export function CheckCard({
   check,
   progress,
@@ -92,14 +96,15 @@ export function CheckCard({
       )}
 
       {progress.status === "open" && progress.offerGate && (
-        <div className="flex flex-wrap gap-2 border-t px-4.5 py-3">
+        // Below the small breakpoint the choices stack, full width and a finger tall (design §9.4).
+        <div className="flex flex-wrap gap-2 border-t px-4.5 py-3 max-sm:flex-col">
           <p className="w-full text-[12.5px] text-subtle-foreground">
             This idea is still settling, and the next step rests on it.
           </p>
-          <Button variant="outline" size="sm" onClick={onPause}>
+          <Button variant="outline" size="sm" onClick={onPause} className={STACKED}>
             Pause here — try a fresh question next time
           </Button>
-          <Button variant="outline" size="sm" onClick={onContinue}>
+          <Button variant="outline" size="sm" onClick={onContinue} className={STACKED}>
             Continue anyway
           </Button>
         </div>
@@ -133,7 +138,7 @@ export function CheckCard({
                 size="sm"
                 disabled={progress.grading}
                 onClick={onDontKnow}
-                className="text-muted-foreground max-sm:border max-sm:border-input"
+                className={cn(STACKED, "text-muted-foreground max-sm:border max-sm:border-input")}
               >
                 I don&apos;t know
               </Button>
