@@ -819,12 +819,14 @@ session (method.md, "Review"):
 
 - **What waits for it**: the reviews of handed-in work (§7.4) no session has taken up yet, an arc
   exam's first, then oldest first: each item with its mark and each comment with its thread, the
-  comments still open labelled L1, L2… (`reviewRecord` with labels); then the steps the last session
-  continued past while still shaky (`settling`, §7.3), each with its check thread (`checkRecord`).
-  Starting a session **takes up** the reviews there are (`reviews.taken_up_in`, one session each),
-  done or still under way, so the next review never goes over them again; a failed review started
-  again is left for the next session. A review with every item held and nothing open in its margin
-  leaves nothing to take up.
+  comments still open labelled L1, L2… (`reviewRecord` with labels); then the questions asked (or
+  followed up) on older lessons after their session closed, lesson by lesson, each with its step,
+  quote and thread (§7.5; its close never heard them); then the steps the last session continued
+  past while still shaky (`settling`, §7.3), each with its check thread (`checkRecord`). Starting a
+  session **takes up** the reviews there are, done or still under way, and those asides
+  (`taken_up_in`, one session each), so the next review never goes over them again; a failed review
+  started again is left for the next session. A review with every item held and nothing open in its
+  margin leaves nothing to take up.
 - **Nothing waiting, no review**: the session then opens with the probe, as it did before, with no
   model call (`sinceLastSession`, asked before the session is made, chooses `initialSession("review")`
   or the probe). What waits is worked out again as each turn begins, so work taken up in its margin
@@ -1186,9 +1188,10 @@ How it is built (#37, decided 2026-09-29):
 - **Asking** (`apps/api/src/routes/asides.ts`): `POST /api/sessions/:id/asides` with the anchor
   (`blockId`, `quote`, and up to 64 characters of `prefix` and `suffix`, `AsideAnchor` in
   `@grounded/core`) and the question; follow-ups go to `…/asides/:asideId/messages`. Only a step the
-  learner can read takes questions (every check before it landed or was continued past), and only
-  while the session is open: asides feed its checks and its close, and a closed session has none to
-  feed. One question at a time per card: a follow-up waits for the answer.
+  learner can read takes questions (every check before it landed or was continued past). A closed
+  session's lesson takes them too (#40): re-reading an older lesson is where the method finds an
+  idea that didn't hold, and the next session's opening review takes them up (§7.1). One question
+  at a time per card: a follow-up waits for the answer.
 - **The answer** is a job (`aside`, `apps/api/src/engine/aside-tasks.ts`): the cheap model, purpose
   `aside`, streamed into the card (`aside-delta` events, replying to the question's id) and then
   validated like a chat message (`composeReply` in `chat.ts`), against the aside allowlist and the
@@ -1211,7 +1214,8 @@ How it is built (#37, decided 2026-09-29):
   into the plan and "where you left off", so a later session's plan hears it. Once per aside.
 - **Where asides go**: the check on the steps they were asked on, and the homework, the recap, the
   term sweep and "where you left off" (so the next session), under "Questions the learner asked in
-  the margin of the lesson", each with its step, quote and thread.
+  the margin of the lesson", each with its step, quote and thread; one asked after the session
+  closed, the next session's opening review.
 - **Recovery**: an aside still waiting when its job died is told so in its card (§4.2).
 
 ## 8. Learner profile and stats

@@ -1,5 +1,6 @@
 import { initialSession, type SessionState } from "@grounded/core";
 import {
+  asides,
   assignments,
   checkMessages,
   eq,
@@ -7,9 +8,11 @@ import {
   lessons,
   reviewComments,
   reviews,
+  sql,
   terms,
 } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
+import { createAside, recordAsideMessage } from "./engine/asides.js";
 import { createFlows, FIRST_QUESTION, planAttempt, storedMessages } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -260,6 +263,43 @@ describe("the review that opens a session", () => {
       'Steps the learner continued past while still shaky, in session 1\'s lesson \\"Why a counter loses updates\\"',
     );
     expect(opening).toContain("Learner: They both add one.");
+  });
+
+  it("takes up the questions asked on an older lesson after its session closed", async () => {
+    const first = await afterFirstSession();
+    const anchor = { blockId: "s1.b2", quote: "copied out", prefix: "", suffix: "" };
+    const ask = async (question: string) => {
+      const { aside } = await createAside(t.db, first.firstSession, {
+        stepId: "s1",
+        anchor,
+        question,
+      });
+      await recordAsideMessage(t.db, first.firstSession, aside.id, {
+        role: "tutor",
+        text: "To the part that does the adding.",
+      });
+      return aside.id;
+    };
+    // One asked during the lesson, which its close heard; then the session closes, and one after.
+    const during = await ask("Copied out during the lesson?");
+    await t.db
+      .update(learningSessions)
+      .set({ closedAt: sql`now()` })
+      .where(eq(learningSessions.id, first.firstSession));
+    const after = await ask("Copied out to where, again?");
+    models.script("opening-review", { text: "You asked where the value is copied out to." });
+    const sessionId = await startSession(first.cookie, first.trackId);
+    await until(first.cookie, sessionId, storedMessages(1));
+    expect((await snapshot(first.cookie, sessionId)).state.phase).toBe("review");
+    const opening = promptOf("opening-review");
+    expect(opening).toContain(
+      "Questions the learner asked on session 1's lesson, after it closed:",
+    );
+    expect(opening).toContain("Learner: Copied out to where, again?");
+    expect(opening).not.toContain("Copied out during the lesson?");
+    const taken = await t.db.select().from(asides);
+    expect(taken.find((a) => a.id === after)?.takenUpIn).toBe(sessionId);
+    expect(taken.find((a) => a.id === during)?.takenUpIn).toBeNull();
   });
 
   it("takes a few answers at most, then goes on to the probe", async () => {

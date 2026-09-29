@@ -456,6 +456,11 @@ export const asides = pgTable(
     tangent: text("tangent"),
     /** When the learner saved the tangent (it is then in the plan's notes); null until they do. */
     savedAt: timestamp("saved_at", { withTimezone: true }),
+    /**
+     * Asked or followed up on after its session closed: the later session whose opening review
+     * takes it up (design §7.1), claimed as that session starts; null until one does.
+     */
+    takenUpIn: uuid("taken_up_in").references(() => learningSessions.id, { onDelete: "set null" }),
     createdAt: createdAt(),
   },
   (table) => [index("asides_session").on(table.sessionId, table.createdAt)],

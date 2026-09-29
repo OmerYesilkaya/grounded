@@ -102,7 +102,7 @@ export function registerSessionRoutes(
       .returning();
     if (!session) throw new Error("session insert returned nothing");
     addLogContext({ sessionId: session.id });
-    await claimForReview(db, session.id, since.reviewIds);
+    await claimForReview(db, session.id, since);
     await publish(db, session.id, "state", session.state);
     await queue.enqueue(opening === "review" ? "opening-review" : "probe-turn", {
       sessionId: session.id,

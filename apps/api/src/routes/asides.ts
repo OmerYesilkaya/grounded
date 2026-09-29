@@ -31,8 +31,11 @@ const QUESTION_REQUIRED = "Write your question first.";
 export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQueue }) {
   const { db, queue } = deps;
 
-  /** The learner's open session: asides feed its checks and its close, so a closed one takes none. */
-  const openSession = async (userId: string, sessionId: string) => {
+  /**
+   * The learner's session. Asides on an open one feed its checks and its close; one asked on a
+   * closed session's lesson waits for the next session's opening review (design §7.1).
+   */
+  const ownSession = async (userId: string, sessionId: string) => {
     if (!z.uuid().safeParse(sessionId).success)
       return { error: "Not found.", status: 404 as const };
     const [session] = await db
@@ -41,8 +44,6 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
       .where(and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, userId)));
     if (!session) return { error: "Not found.", status: 404 as const };
     addLogContext({ sessionId: session.id, trackId: session.trackId });
-    if (session.closedAt !== null)
-      return { error: "This session is closed.", status: 409 as const };
     return { session };
   };
 
@@ -54,7 +55,7 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
   };
 
   app.post("/api/sessions/:id/asides", async (c) => {
-    const found = await openSession(c.get("user").id, c.req.param("id"));
+    const found = await ownSession(c.get("user").id, c.req.param("id"));
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const { session } = found;
     const parsed = askInput.safeParse(await c.req.json().catch(() => null));
@@ -75,7 +76,7 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
   });
 
   app.post("/api/sessions/:id/asides/:asideId/messages", async (c) => {
-    const found = await openSession(c.get("user").id, c.req.param("id"));
+    const found = await ownSession(c.get("user").id, c.req.param("id"));
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const aside = await ownAside(found.session.id, c.req.param("asideId"));
     if (!aside) return c.json({ error: "Not found." }, 404);
@@ -94,7 +95,7 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
   // The tangent goes into the plan's notes, which the close folds into the plan and into "where
   // you left off", so a later session's plan hears it (design §7.5).
   app.post("/api/sessions/:id/asides/:asideId/save", async (c) => {
-    const found = await openSession(c.get("user").id, c.req.param("id"));
+    const found = await ownSession(c.get("user").id, c.req.param("id"));
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const { session } = found;
     const aside = await ownAside(session.id, c.req.param("asideId"));

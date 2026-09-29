@@ -1,6 +1,8 @@
-import { reviewRecord, type SessionState } from "@grounded/core";
+import { asideRecord, reviewRecord, type SessionState } from "@grounded/core";
 import {
   and,
+  asideMessages,
+  asides,
   asc,
   assignments,
   checkMessages,
@@ -13,16 +15,18 @@ import {
   sql,
   type Db,
 } from "@grounded/db";
+import { asThreads, loadAsides, stepNumber } from "./asides.js";
 import { checkRecord } from "./check-record.js";
 import { jobWaiting, type JobQueue } from "./queue.js";
 import { reviewedAssignment } from "./reviews.js";
 
 /*
  * The review that opens a session (design §7.1): before the probe, the session takes up what came
- * up since the last one. The reviews of handed-in work (an arc exam first) are claimed by the session
- * as it starts, each by one session only (`reviews.taken_up_in`), so a review finished after that
- * waits for the next session; the steps the last session continued past while still shaky are read
- * from its state. When nothing waits, the session opens with the probe.
+ * up since the last one. The reviews of handed-in work (an arc exam first) and the questions asked on
+ * older lessons after their session closed are claimed by the session as it starts, each by one
+ * session only (`taken_up_in`), so what comes after that waits for the next session; the steps the
+ * last session continued past while still shaky are read from its state. When nothing waits, the
+ * session opens with the probe.
  */
 
 /** The heading what waits for the review goes under in its calls. */
@@ -72,21 +76,32 @@ async function leaveSomething(db: Db, rows: ReviewRows): Promise<boolean> {
 const settlingSteps = (state: SessionState) =>
   state.lesson.steps.filter((s) => state.steps[s.id]?.status === "settling").map((s) => s.id);
 
-/** The track's session closed last, with its number on the track; null before the first closes. */
-async function lastClosed(db: Db, trackId: string) {
-  const sessions = await db
+/** The track's sessions in order, each with its number on the track and its lesson's title. */
+async function trackSessions(db: Db, trackId: string) {
+  const rows = await db
     .select({
       id: learningSessions.id,
       state: learningSessions.state,
       closedAt: learningSessions.closedAt,
+      outline: lessons.outline,
     })
     .from(learningSessions)
+    .leftJoin(lessons, eq(lessons.sessionId, learningSessions.id))
     .where(eq(learningSessions.trackId, trackId))
     .orderBy(asc(learningSessions.createdAt), asc(learningSessions.id));
-  const closed = sessions.filter((s) => s.closedAt !== null);
-  const last = closed.at(-1);
-  return last ? { ...last, number: sessions.indexOf(last) + 1 } : null;
+  return rows.map((row, i) => ({ ...row, number: i + 1 }));
 }
+
+type TrackSession = Awaited<ReturnType<typeof trackSessions>>[number];
+
+/** The track's session closed last; null before the first closes. */
+async function lastClosed(db: Db, trackId: string) {
+  return (await trackSessions(db, trackId)).filter((s) => s.closedAt !== null).at(-1) ?? null;
+}
+
+/** "session 3's lesson "Why a counter loses updates"", as a record names a lesson. */
+const lessonOf = (session: TrackSession) =>
+  `session ${String(session.number)}'s lesson${session.outline?.title ? ` "${session.outline.title}"` : ""}`;
 
 /** What came up on a track since its last session, for the next session to take up. */
 export interface SinceLastSession {
@@ -94,35 +109,60 @@ export interface SinceLastSession {
   waiting: boolean;
   /** The reviews of handed-in work no session has taken up yet, done or under way. */
   reviewIds: string[];
+  /** The questions asked on the track's older lessons, after their session closed, not taken up. */
+  asideIds: string[];
 }
 
 /**
  * What came up on the track since its last session, asked before a session is made to choose its
  * opening: something waits for the review when a review of handed-in work no session has taken up
- * leaves something open, or the last session continued past a step while still shaky.
+ * leaves something open, the learner asked on an older lesson, or the last session continued past a
+ * step while still shaky.
  */
 export async function sinceLastSession(db: Db, trackId: string): Promise<SinceLastSession> {
   const untaken = await reviewsWhere(db, untakenOn(trackId));
   const reviewIds = untaken.map((r) => r.review.id);
-  if (await leaveSomething(db, untaken)) return { waiting: true, reviewIds };
+  // Asked, or followed up, after the lesson's session closed: its close didn't hear it.
+  const asked = await db
+    .selectDistinct({ id: asides.id })
+    .from(asides)
+    .innerJoin(learningSessions, eq(learningSessions.id, asides.sessionId))
+    .innerJoin(asideMessages, eq(asideMessages.asideId, asides.id))
+    .where(
+      and(
+        eq(learningSessions.trackId, trackId),
+        isNull(asides.takenUpIn),
+        eq(asideMessages.role, "learner"),
+        sql`${asideMessages.createdAt} > ${learningSessions.closedAt}`,
+      ),
+    );
+  const asideIds = asked.map((a) => a.id);
+  const since = { reviewIds, asideIds };
+  if (asideIds.length > 0 || (await leaveSomething(db, untaken)))
+    return { waiting: true, ...since };
   const last = await lastClosed(db, trackId);
-  return { waiting: last !== null && settlingSteps(last.state).length > 0, reviewIds };
+  return { waiting: last !== null && settlingSteps(last.state).length > 0, ...since };
 }
 
 /**
- * Takes up these reviews in the session: its review goes over them (or, opening with the probe,
- * there was nothing in them to go over), and no later session's does.
+ * Takes up what came up in the session: its review goes over it (or, opening with the probe, there
+ * was nothing in it to go over), and no later session's does.
  */
 export async function claimForReview(
   db: Db,
   sessionId: string,
-  reviewIds: readonly string[],
+  { reviewIds, asideIds }: Omit<SinceLastSession, "waiting">,
 ): Promise<void> {
-  if (reviewIds.length === 0) return;
-  await db
-    .update(reviews)
-    .set({ takenUpIn: sessionId })
-    .where(and(inArray(reviews.id, [...reviewIds]), isNull(reviews.takenUpIn)));
+  if (reviewIds.length > 0)
+    await db
+      .update(reviews)
+      .set({ takenUpIn: sessionId })
+      .where(and(inArray(reviews.id, reviewIds), isNull(reviews.takenUpIn)));
+  if (asideIds.length > 0)
+    await db
+      .update(asides)
+      .set({ takenUpIn: sessionId })
+      .where(and(inArray(asides.id, asideIds), isNull(asides.takenUpIn)));
 }
 
 /**
@@ -185,7 +225,21 @@ export async function openingReviewRecord(
     parts.push(reviewRecord({ ...reviewed, comments }));
   }
 
-  const last = await lastClosed(db, session.trackId);
+  // Questions asked on older lessons after their session closed, lesson by lesson.
+  const sessions = await trackSessions(db, session.trackId);
+  const taken = await db
+    .selectDistinct({ sessionId: asides.sessionId })
+    .from(asides)
+    .where(eq(asides.takenUpIn, session.id));
+  for (const older of sessions.filter((s) => taken.some((a) => a.sessionId === s.id))) {
+    const asked = (await loadAsides(db, older.id)).filter((a) => a.takenUpIn === session.id);
+    const record = asideRecord(asThreads(asked), stepNumber);
+    if (!record) continue;
+    parts.push(`Questions the learner asked on ${lessonOf(older)}, after it closed:\n\n${record}`);
+    open = true;
+  }
+
+  const last = sessions.filter((s) => s.closedAt !== null).at(-1);
   const shaky = last ? settlingSteps(last.state) : [];
   if (last && shaky.length > 0) {
     const [lesson] = await db.select().from(lessons).where(eq(lessons.sessionId, last.id));
@@ -202,10 +256,9 @@ export async function openingReviewRecord(
       notes: lesson?.notes ?? {},
       alreadyHeld: {},
     });
-    const title = lesson?.outline?.title ? ` "${lesson.outline.title}"` : "";
     if (record) {
       parts.push(
-        `Steps the learner continued past while still shaky, in session ${String(last.number)}'s lesson${title}:\n\n${record}`,
+        `Steps the learner continued past while still shaky, in ${lessonOf(last)}:\n\n${record}`,
       );
       open = true;
     }

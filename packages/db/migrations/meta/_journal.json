@@ -190,6 +190,13 @@
       "when": 1790679022043,
       "tag": "0026_opening_review",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790680447228,
+      "tag": "0027_older_lesson_asides",
+      "breakpoints": true
     }
   ]
 }

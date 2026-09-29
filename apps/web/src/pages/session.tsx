@@ -169,7 +169,8 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           asides={{
             items: model.asides,
             hint: !model.hasAskedAside,
-            canAsk: model.state.phase !== "closed",
+            // A closed session's lesson takes questions too, for the next session's review.
+            canAsk: true,
             ...asideActions(sessionId),
           }}
         />

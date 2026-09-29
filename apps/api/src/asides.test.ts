@@ -457,7 +457,11 @@ describe("asides after the lesson", () => {
     for (const purpose of ["homework", "close", "term-sweep", "left-off"])
       expect(promptOf(purpose), purpose).toContain("### On step 1: «copied out»");
 
-    // The session is closed: its lesson takes no more questions.
-    expect((await ask(cookie, sessionId, { anchor: ANCHOR, text: "One more?" })).status).toBe(409);
+    // The session is closed: its lesson still takes questions, which wait for the next session's
+    // opening review (design §7.1).
+    models.script("aside", answerScript(ANSWER));
+    models.script("aside-record", answerScript(""));
+    expect((await ask(cookie, sessionId, { anchor: ANCHOR, text: "One more?" })).status).toBe(201);
+    await settled(2);
   });
 });
