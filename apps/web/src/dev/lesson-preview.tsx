@@ -122,10 +122,15 @@ export function LessonPreview() {
       const missed = misses[stepId] ?? 0;
       if (text === null || (stepId === "s2" && missed === 0)) {
         setMisses((m) => ({ ...m, [stepId]: missed + 1 }));
+        const offerGate = text === null && missed >= 1;
+        const repair =
+          stepId === "s2"
+            ? "Close, but that describes what happened, not why. Worker B copied the value out **before** worker A put its 6 back, so B was adding one to a stale 5."
+            : "Thanks, that's useful to know. Think about which value each worker is holding at the moment it puts its result back.";
         update(stepId, (p) => ({
           ...p,
           grading: false,
-          offerGate: text === null && missed >= 1,
+          offerGate,
           ...(stepId === "s2"
             ? {
                 note: "The second worker copied the value out before the first put its result back, so it worked from a stale copy.",
@@ -133,14 +138,13 @@ export function LessonPreview() {
             : {}),
           thread: [
             ...p.thread,
+            // The repair and the fresh question are one turn; offering pause or continue, the
+            // question is withheld (design §7.3).
             tutor(
-              stepId === "s2"
-                ? "Close, but that describes what happened, not why. Worker B copied the value out **before** worker A put its 6 back, so B was adding one to a stale 5."
-                : "Thanks, that's useful to know. Think about which value each worker is holding at the moment it puts its result back.",
+              offerGate
+                ? repair
+                : `${repair}\n\n**Try this one:** two workers each take 1 away from a balance of 10 at the same time, using the same three moves. What is the worst final value, and why?`,
               "missed",
-            ),
-            tutor(
-              "**Try this one:** two workers each take 1 away from a balance of 10 at the same time, using the same three moves. What is the worst final value, and why?",
             ),
           ],
         }));

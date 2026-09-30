@@ -276,7 +276,7 @@ describe("checks", () => {
     expect(again).toContain("isn't in the term list");
   });
 
-  it("repairs a miss with a fresh question, and notes where the step leaked", async () => {
+  it("repairs a miss with a fresh question in one turn, and notes where the step leaked", async () => {
     const { cookie, sessionId } = await inLesson();
     models.script(
       "check",
@@ -288,19 +288,54 @@ describe("checks", () => {
       }),
     );
     await answer(cookie, sessionId, "s1", { text: "the new value" });
-    // The note is written after the fresh question.
+    // The note is written after the reply.
     await until(
       cookie,
       sessionId,
-      (s) => tutorReplies(s, "s1").length === 2 && s.lesson?.notes.s1 !== undefined,
+      (s) => tutorReplies(s, "s1").length === 1 && s.lesson?.notes.s1 !== undefined,
     );
 
     const s = await snapshot(cookie, sessionId);
-    expect(tutorReplies(s, "s1").map((m) => m.verdict)).toEqual(["missed", null]);
+    expect(tutorReplies(s, "s1").map((m) => [m.verdict, m.text])).toEqual([
+      [
+        "missed",
+        "Close. Memory keeps the **old** value until the copy is put back.\n\nTwo workers each copy 10. What does memory hold while they work?",
+      ],
+    ]);
     expect(s.state.steps.s1).toEqual({ status: "open", misses: 1, offerGate: false });
     expect(s.lesson?.notes.s1).toBe(
       "The value in memory doesn't change until the copy is put back.",
     );
+  });
+
+  it("grades again once when the repair still asks a question besides the fresh one", async () => {
+    const { cookie, sessionId } = await inLesson();
+    const fresh = "Two workers each copy 10. What does memory hold while they work?";
+    const graded = (reply: string) =>
+      JSON.stringify({
+        verdict: "missed",
+        reply,
+        freshQuestion: fresh,
+        note: null,
+        alreadyHeld: null,
+        actions: [],
+      });
+    // One grading job, graded twice: the second time with the broken rule fed back.
+    models.script("check", {
+      thenGenerate: [
+        graded("Close. Memory keeps the old value. So what does it hold meanwhile?"),
+        graded("Close. Memory keeps the old value."),
+      ],
+    });
+    await answer(cookie, sessionId, "s1", { text: "the new value" });
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
+
+    const calls = models.used.find((u) => u.purpose === "check")?.model.doGenerateCalls;
+    expect(calls).toHaveLength(2);
+    expect(JSON.stringify(calls?.[1]?.prompt)).toContain("The reply ends with a question");
+    expect(tutorReplies(await snapshot(cookie, sessionId), "s1").map((m) => m.text)).toEqual([
+      `Close. Memory keeps the old value.\n\n${fresh}`,
+    ]);
   });
 
   it("offers pause or continue after a second miss when the next step rests on this one", async () => {
@@ -308,12 +343,25 @@ describe("checks", () => {
     models.script(
       "check",
       verdict({ verdict: "missed", reply: "Not yet.", freshQuestion: "Try this one?" }),
-      verdict({ verdict: "missed", reply: "This idea is still settling; that's fine." }),
+      // The model can't tell the question will be withheld; the app drops it.
+      verdict({
+        verdict: "missed",
+        reply: "This idea is still settling; that's fine.",
+        freshQuestion: "And this one?",
+      }),
     );
     await answer(cookie, sessionId, "s1", { dontKnow: true });
-    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 2);
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
     await answer(cookie, sessionId, "s1", { text: "still not sure" });
-    await until(cookie, sessionId, (s) => s.state.steps.s1?.offerGate === true);
+    await until(
+      cookie,
+      sessionId,
+      (s) => s.state.steps.s1?.offerGate === true && tutorReplies(s, "s1").length === 2,
+    );
+    expect(tutorReplies(await snapshot(cookie, sessionId), "s1").map((m) => m.text)).toEqual([
+      "Not yet.\n\nTry this one?",
+      "This idea is still settling; that's fine.",
+    ]);
 
     const blocked = await answer(cookie, sessionId, "s1", { text: "one more try" });
     expect(blocked.status).toBe(409);
@@ -331,6 +379,7 @@ describe("checks", () => {
     expect(
       (await t.request(`/api/sessions/${sessionId}/resume`, { method: "POST", cookie })).status,
     ).toBe(200);
+    // Resuming posts the fresh question alone.
     await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 3);
     expect((await snapshot(cookie, sessionId)).state.steps.s1).toEqual({
       status: "open",
@@ -347,7 +396,7 @@ describe("checks", () => {
       verdict({ verdict: "missed", reply: "Still settling." }),
     );
     await answer(cookie, sessionId, "s1", { dontKnow: true });
-    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 2);
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
     await answer(cookie, sessionId, "s1", { dontKnow: true });
     await until(cookie, sessionId, (s) => s.state.steps.s1?.offerGate === true);
 

@@ -57,7 +57,7 @@ export {
   type ReviewUnit,
   type WordingReview,
 } from "./review.js";
-export { checkVerdictSchema, type CheckVerdict } from "./check.js";
+export { checkVerdictIssues, checkVerdictSchema, type CheckVerdict } from "./check.js";
 export {
   auditDecisionSchema,
   openingReviewDecisionSchema,

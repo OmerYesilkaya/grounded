@@ -149,7 +149,31 @@ describe("LessonView: answering a check", () => {
     expect(props.onDontKnow).toHaveBeenCalledWith("s1");
   });
 
-  it("shows the repair thread and keeps the input for the fresh question", () => {
+  it("shows the repair and the fresh question as one turn, and keeps the input for it", () => {
+    renderLesson({
+      s1: {
+        status: "open",
+        thread: [
+          { from: "learner", text: "they collided" },
+          tutor(
+            "Close. Worker B copied **before** A put 6 back.\n\nTry this one: what is the worst final balance?",
+            "missed",
+          ),
+        ],
+      },
+    });
+    const check = screen.getByRole("group", { name: "Check" });
+    expect(within(check).getByText("they collided")).toBeInTheDocument();
+    expect(within(check).getAllByText("Tutor")).toHaveLength(1);
+    expect(within(check).getByText("Not quite there yet")).toBeInTheDocument();
+    expect(within(check).getByText("before")).toBeInTheDocument();
+    expect(
+      within(check).getByText("Try this one: what is the worst final balance?"),
+    ).toBeInTheDocument();
+    expect(within(check).getByRole("textbox", { name: "Your answer" })).toBeInTheDocument();
+  });
+
+  it("shows a thread stored with the fresh question on its own as it is", () => {
     renderLesson({
       s1: {
         status: "open",
@@ -161,13 +185,11 @@ describe("LessonView: answering a check", () => {
       },
     });
     const check = screen.getByRole("group", { name: "Check" });
-    expect(within(check).getByText("they collided")).toBeInTheDocument();
-    expect(within(check).getByText("Not quite there yet")).toBeInTheDocument();
-    expect(within(check).getByText("before")).toBeInTheDocument();
+    expect(within(check).getAllByText("Tutor")).toHaveLength(2);
+    expect(within(check).getAllByText("Not quite there yet")).toHaveLength(1);
     expect(
       within(check).getByText("Try this one: what is the worst final balance?"),
     ).toBeInTheDocument();
-    expect(within(check).getByRole("textbox", { name: "Your answer" })).toBeInTheDocument();
   });
 
   it("disables the input while an answer is being checked", () => {
@@ -249,7 +271,10 @@ describe("LessonView: focusing a check", () => {
 
   it("focuses it again when a repair's fresh question arrives", () => {
     const answer = { from: "learner" as const, text: "they collided" };
-    const verdict = tutor("Close. Worker B copied **before** A put 6 back.", "missed");
+    const verdict = tutor(
+      "Close. Worker B copied **before** A put 6 back.\n\nWhat is the worst final balance?",
+      "missed",
+    );
     const update = renderRerenderable({ s1: { status: "open", thread: [answer], grading: true } });
     const box = screen.getByRole("textbox", { name: "Your answer" });
     box.blur();
@@ -257,9 +282,10 @@ describe("LessonView: focusing a check", () => {
     update({ s1: { status: "open", thread: [answer, verdict] } });
     expect(box).toHaveFocus();
 
+    // Back after a pause, the fresh question comes on its own.
     box.blur();
     update({
-      s1: { status: "open", thread: [answer, verdict, tutor("What is the worst final balance?")] },
+      s1: { status: "open", thread: [answer, verdict, tutor("What does memory hold meanwhile?")] },
     });
     expect(box).toHaveFocus();
   });

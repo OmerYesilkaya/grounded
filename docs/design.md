@@ -936,6 +936,13 @@ HTML/SVG). To be measured, then adjusted.
   read.
 - **Miss or "I don't know"** → a repair thread opens under the check (the one place explanation
   happens outside the lesson), then a **fresh** question on the same idea — never the same one again.
+  The repair and the fresh question are **one tutor turn**, under "Not quite there yet" (decided
+  2026-09-30, #60). The grading call still returns them as two fields (`reply`, `freshQuestion`),
+  because the app, not the model, decides whether the question is shown: it is dropped when pause or
+  continue is offered (below), and resuming after a pause posts a question alone. The fields' schema
+  descriptions tell the model the repair asks nothing when a fresh question is given, and a repair
+  that still ends with a question then is a broken rule, fed back once like the others. Threads
+  stored before this, with the question as its own message, show as they are.
   A marked "After the check-back" note is added under the check; later steps are not rewritten.
 - **Still shaky after a repair:** if a later step **rests on** the check (every check but the last), offer
   **Pause here** (the lesson waits, and coming back to it opens with a fresh question on this idea —

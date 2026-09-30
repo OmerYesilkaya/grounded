@@ -3,6 +3,7 @@ import {
   assembleSystemPrompt,
   auditDecisionSchema,
   breakDemotions,
+  checkVerdictIssues,
   checkVerdictSchema,
   generateLesson,
   LessonOutlineError,
@@ -1122,7 +1123,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             return output;
           });
         const review = reviewerFor(session);
-        // The reply and the fresh question, checked by matching, then judged together by the review.
+        // The reply and the fresh question, checked by matching, then judged together by the review;
+        // and the verdict's shape: a repair asks nothing when a fresh question follows it.
         const problems = async (graded: { reply: string; freshQuestion: string | null }) => {
           const texts = [graded.reply, graded.freshQuestion ?? ""].filter(Boolean);
           const found = texts.flatMap((text) => {
@@ -1133,6 +1135,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             ];
           });
           return [
+            ...checkVerdictIssues(graded),
             ...found.filter((i) => i.severity !== "review"),
             ...(await review({
               markdown: texts.join("\n\n"),
@@ -1190,20 +1193,24 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           verdict: verdict.verdict,
         });
         await markCardsTaught(db, sessionId, next);
-        await recordCheckMessage(db, sessionId, stepId, verdict.reply, verdict.verdict, deps.media);
-
+        // A miss still being repaired is one tutor turn, the repair then the fresh question; the
+        // app, not the model, withholds the question when the learner is offered pause or continue
+        // (design §7.3).
         const step = next.steps[stepId];
+        const asking =
+          verdict.verdict === "missed" && step?.status === "open" && !step.offerGate
+            ? verdict.freshQuestion
+            : null;
+        await recordCheckMessage(
+          db,
+          sessionId,
+          stepId,
+          asking ? `${verdict.reply}\n\n${asking}` : verdict.reply,
+          verdict.verdict,
+          deps.media,
+        );
+
         if (verdict.verdict === "missed") {
-          if (step?.status === "open" && !step.offerGate && verdict.freshQuestion) {
-            await recordCheckMessage(
-              db,
-              sessionId,
-              stepId,
-              verdict.freshQuestion,
-              null,
-              deps.media,
-            );
-          }
           if (verdict.note) {
             await db
               .update(lessons)
