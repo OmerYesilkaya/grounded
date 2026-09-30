@@ -40,8 +40,8 @@ stored API keys can't be decrypted.
 
 Invite people from a shell in the API service (`railway ssh -s @grounded/api`):
 `pnpm cli invite someone@example.com` lets them sign in from the sign-in page (the link comes by
-email); `pnpm cli link someone@example.com` also prints a sign-in link to hand over yourself, which
-works once, within a week, and signs in whoever opens it, so send it privately.
+email); `pnpm cli link someone@example.com` also prints an invite link to hand over yourself. It
+opens a page whose button signs in whoever clicks it, once, within a week, so send it privately.
 
 Use a direct Postgres connection, never a transaction-mode pooler: jobs and streams rely on
 `LISTEN/NOTIFY`. To try the image locally: `docker build -t grounded .`, then run it with the variables

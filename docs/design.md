@@ -1581,8 +1581,13 @@ every other page usable (tried at 360–430px wide, in both themes).
 ## 10. Operating without an admin page
 
 - Allowlist: `pnpm cli invite a@b.com`, `pnpm cli revoke a@b.com`. `pnpm cli link a@b.com` invites and
-  prints a sign-in link to hand over by any channel: minted by the magic-link endpoint itself, valid
-  a week rather than an emailed link's five minutes, single use, and it signs in whoever opens it.
+  prints an invite link to hand over by any channel: its token is minted by the magic-link endpoint
+  itself, valid a week rather than an emailed link's five minutes, single use, and it signs in
+  whoever uses it. The link opens `/invite`, a page with a "Sign in" button, and only the button
+  calls the verify endpoint: a chat app's link preview or an in-app browser opening the URL would
+  otherwise spend the single use before the person got there. A spent or expired token sends the
+  browser back to the page, which says so and points to the email route; a signed-in person is sent
+  to the app instead.
 - Model list: `packages/providers/src/models.ts` in the repo, reviewed with its eval results.
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:
@@ -1644,7 +1649,8 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - HTTPS; least-privilege database roles; backups.
 - Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
   are content too (§4.5): only their owner can download them, and never inline.
-- A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
+- A plain sentence at sign-up (the sign-in page and the invite page, since an invited email signs
+  up by signing in):
   what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
   shared (the tutor's calls go to the provider whose key the learner brings), and that the operator
   can technically access the database but does not read it.

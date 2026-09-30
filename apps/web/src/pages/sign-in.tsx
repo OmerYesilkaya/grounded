@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authClient } from "@/lib/auth-client";
-import { CentredPage } from "./auth-layout";
+import { CentredPage, WhatIsStored } from "./auth-layout";
 
 export function SignInPage() {
   const [email, setEmail] = useState("");
@@ -76,13 +76,7 @@ export function SignInPage() {
           Grounded is invite-only. No password needed.
         </p>
       </form>
-      {/* Design §12: what is stored, said plainly before anyone signs in. */}
-      <p className="mt-8 border-t pt-4 text-xs leading-relaxed text-subtle-foreground">
-        What is stored: your answers, your progress, the questions you ask, the files you attach and
-        your API key, encrypted. Nothing is shared; the tutor&apos;s calls go to the AI provider
-        whose key you bring. Whoever runs Grounded can technically access the database, but does not
-        read it.
-      </p>
+      <WhatIsStored />
     </CentredPage>
   );
 }

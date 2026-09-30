@@ -72,12 +72,18 @@ describe("an invite link", () => {
       secret: "test-secret-that-is-long-enough-for-better-auth",
     });
 
-  it("invites the email and signs them in once, without sending anything", async () => {
+  it("lands on the invite page and signs them in once from its button, sending nothing", async () => {
     const link = await mint(" Ada@Example.com ");
     expect(t.sent).toEqual([]);
-    expect(link.startsWith(`${BASE_URL}/api/auth/magic-link/verify?token=`)).toBe(true);
+    const { pathname, searchParams } = new URL(link);
+    expect(pathname).toBe("/invite");
+    expect(searchParams.get("email")).toBe("ada@example.com");
+    const token = searchParams.get("token") ?? "";
+    expect(token).not.toBe("");
 
-    const first = await t.request(link, { redirect: "manual" });
+    // What the page's button navigates to (apps/web/src/pages/invite.tsx).
+    const verify = `/api/auth/magic-link/verify?${new URLSearchParams({ token, callbackURL: "/", errorCallbackURL: "/invite" }).toString()}`;
+    const first = await t.request(verify, { redirect: "manual" });
     const cookie = first.headers
       .getSetCookie()
       .map((c) => c.split(";")[0])
@@ -86,8 +92,9 @@ describe("an invite link", () => {
     expect(me.status).toBe(200);
     expect(await me.json()).toMatchObject({ email: "ada@example.com" });
 
-    const again = await t.request(link, { redirect: "manual" });
-    expect(again.headers.get("location")).toContain("error=INVALID_TOKEN");
+    // A second use sends the browser back to the invite page, which explains.
+    const again = await t.request(verify, { redirect: "manual" });
+    expect(again.headers.get("location")).toBe(`${BASE_URL}/invite?error=INVALID_TOKEN`);
   });
 
   it("stays valid for a week, not the five minutes of an emailed link", async () => {
