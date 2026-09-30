@@ -398,7 +398,11 @@ describe("checks", () => {
     await answer(cookie, sessionId, "s1", { dontKnow: true });
     await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
     await answer(cookie, sessionId, "s1", { dontKnow: true });
-    await until(cookie, sessionId, (s) => s.state.steps.s1?.offerGate === true);
+    await until(
+      cookie,
+      sessionId,
+      (s) => s.state.steps.s1?.offerGate === true && tutorReplies(s, "s1").length === 2,
+    );
 
     await t.request(`/api/sessions/${sessionId}/steps/s1/continue`, { method: "POST", cookie });
     const s = await snapshot(cookie, sessionId);
