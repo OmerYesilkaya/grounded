@@ -48,7 +48,6 @@ vi.mock("@/lib/api", () => ({ api: vi.fn(), ApiError: class ApiError extends Err
 const wrapper = ({ children }: { children: ReactNode }) => (
   <QueryClientProvider client={new QueryClient()}>{children}</QueryClientProvider>
 );
-vi.mock("@/lib/auth-client", () => ({ authClient: {} }));
 
 const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem => ({
   kind: "session",

@@ -16,7 +16,7 @@ import { applyActions } from "../engine/track-state.js";
 import { addLogContext } from "../log.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 const question = z.string().trim().min(1).max(ASIDE_LIMITS.question);

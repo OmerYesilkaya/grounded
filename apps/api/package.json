@@ -25,7 +25,6 @@
     "@grounded/providers": "workspace:^",
     "@hono/node-server": "^2.1.1",
     "ai": "^7.0.118",
-    "better-auth": "^1.7.6",
     "graphile-worker": "^0.18.0",
     "hono": "^4.13.9",
     "mammoth": "^1.13.0",

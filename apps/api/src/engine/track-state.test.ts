@@ -14,10 +14,7 @@ import {
 const t = createTestHarness();
 
 async function newTrack() {
-  const [user] = await t.db
-    .insert(users)
-    .values({ name: "Ada", email: "ada@example.com" })
-    .returning();
+  const [user] = await t.db.insert(users).values({ email: "ada@example.com" }).returning();
   if (!user) throw new Error("no user");
   const [track] = await t.db
     .insert(tracks)

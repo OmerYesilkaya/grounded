@@ -106,10 +106,7 @@ describe("usage", () => {
   it("shows a learner only their own calls", async () => {
     await invite(t.db, "eve@example.com");
     const cookie = await t.signIn("eve@example.com");
-    const [other] = await t.db
-      .insert(users)
-      .values({ name: "Ada", email: "ada@example.com" })
-      .returning();
+    const [other] = await t.db.insert(users).values({ email: "ada@example.com" }).returning();
     await t.db.insert(usageEvents).values(call(other?.id ?? "", "2026-09-02T11:00:00Z"));
 
     const report = (await (await t.request("/api/usage", { cookie })).json()) as UsageReport;

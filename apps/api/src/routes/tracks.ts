@@ -11,7 +11,7 @@ import { addLogContext } from "../log.js";
 import { trackList } from "../track-list.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 // No language: the tutor infers it from the learner's messages and records it (set-language).

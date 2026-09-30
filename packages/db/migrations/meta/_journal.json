@@ -204,6 +204,13 @@
       "when": 1790682583122,
       "tag": "0028_final",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790792013087,
+      "tag": "0029_sign_in_by_email",
+      "breakpoints": true
     }
   ]
 }

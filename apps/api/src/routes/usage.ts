@@ -13,7 +13,7 @@ import { estimateCost } from "@grounded/providers";
 import type { Hono } from "hono";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 /** What a set of model calls used, and what it cost at the model list's prices (design §4.4). */

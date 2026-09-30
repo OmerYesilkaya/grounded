@@ -20,7 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { authClient } from "@/lib/auth-client";
+import { signOut } from "@/lib/auth";
 import { setThemeChoice, useThemeChoice, type ThemeChoice } from "@/lib/theme";
 
 const THEMES: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
@@ -105,7 +105,7 @@ export function AccountMenu({ email }: { email: string }) {
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onSelect={() => {
-            void authClient.signOut().then(() => navigate({ to: "/sign-in" }));
+            void signOut().then(() => navigate({ to: "/sign-in" }));
           }}
         >
           <LogOut />

@@ -31,7 +31,7 @@ import type { FileStore } from "../files/store.js";
 import { addLogContext } from "../log.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });

@@ -15,7 +15,7 @@ import { loadTrackTerms, termMap, type TermMap } from "../term-map.js";
 import { trackProgress } from "../track-progress.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 /** A session's pictures of what rests on what (design §3.2, §9.1). */

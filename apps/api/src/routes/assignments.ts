@@ -44,7 +44,7 @@ import { FileNotFound, type FileStore } from "../files/store.js";
 import { addLogContext } from "../log.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 const answerInput = z.object({

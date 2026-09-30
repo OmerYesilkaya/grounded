@@ -37,7 +37,7 @@ export default defineRailway(() => {
     DATABASE_URL: db.env.DATABASE_URL,
     KEY_VAULT_MASTER_KEYS: preserve(),
     KEY_VAULT_ACTIVE_KID: preserve(),
-    BETTER_AUTH_SECRET: preserve(),
+    AUTH_SECRET: preserve(),
     FILES_BUCKET: ref(files, "BUCKET"),
     FILES_ENDPOINT: ref(files, "ENDPOINT"),
     FILES_REGION: ref(files, "REGION"),
@@ -60,14 +60,7 @@ export default defineRailway(() => {
     healthcheck: "/healthz",
     replicas: { "europe-west4-drams3a": 1 },
     networking: { privateNetworkEndpoint: "groundedapi" },
-    env: {
-      ...common,
-      // Railway's own proxies; the client is the X-Forwarded-For hop before them.
-      TRUSTED_PROXIES: "100.0.0.0/8",
-      APP_URL: preserve(),
-      RESEND_API_KEY: preserve(),
-      EMAIL_FROM: preserve(),
-    },
+    env: { ...common, APP_URL: preserve() },
   });
 
   const worker = service("@grounded/worker", {

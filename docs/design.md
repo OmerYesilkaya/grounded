@@ -16,7 +16,7 @@ config value.
 
 **v1**
 
-- Sign-in (allowlist + magic link), key entry, provider/model choice.
+- Sign-in (an invited email, nothing else), key entry, provider/model choice.
 - Tracks (created and deleted by the learner); the full session loop (probe → plan → lesson →
   inline checks → homework → close).
 - Lessons rendered by our own block renderer (no HTML), with asides as margin cards.
@@ -121,7 +121,7 @@ apps/
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
                 worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
-                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli link`, `pnpm cli revoke`) and
+                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli revoke`) and
                 the track import (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
@@ -238,13 +238,13 @@ about, test and debug.
   provider, model, tokens and `durationMs` (the timing `usage_events` records), and for a failure
   its kind and cause (status and the provider's error body). Appended events are logged at `debug`
   by type and id, streamed pieces at `trace`.
-  **Never logged:** keys (plain or sealed), magic-link tokens outside development, or anything a
+  **Never logged:** keys (plain or sealed), the session cookie, or anything a
   learner or the tutor wrote, the track's title included: lines hold ids, counts, issue codes and
   the app's own messages. Errors are serialized field by field (type, message, stack frames, a
   provider's status and error body, the cause chain), never whole: an SDK error carries the request,
   and so the prompt. A message that quotes content (a failed JSON parse of the model's output) is
   withheld. A test runs a session through the real model caller, with a failing call and an
-  unparseable reply, and asserts that its key, sealed key, magic-link token, title and answers never
+  unparseable reply, and asserts that its key, sealed key, session cookie, title and answers never
   appear in the log.
   **The one exception, `LOG_CONTENT=true`** (off by default; an operator's switch, production
   included, for diagnosing what a model was asked and answered): every model call's line then also
@@ -272,14 +272,17 @@ about, test and debug.
 
 ### 4.3 Auth and keys
 
-- **Better Auth** (or equivalent that grows): email magic link, gated by an allowlist Omer manages with
-  the CLI. Google sign-in and open sign-up later, behind configuration.
-- **Rate limits per client:** Better Auth's limits (5 magic links a minute) key on the client's
-  address, the last `X-Forwarded-For` hop before the host's proxies (`TRUSTED_PROXIES`; Railway's are
-  `100.0.0.0/8`). Without it every client shares one bucket, so one person could lock out everyone.
-- **Email: Resend**, called through its REST API. With `RESEND_API_KEY` unset (development, tests), the
-  link is printed to the API console. Until a domain is verified in Resend, only
-  `onboarding@resend.dev` can send, and only to the Resend account's own address (`EMAIL_FROM`).
+- **Sign-in is the invited email, nothing else** (decided 2026-09-30, replacing Better Auth's magic
+  link, Resend and invite links). Omer puts an email on the `allowlist` (`pnpm cli invite`, or a row
+  by hand); entering it on the sign-in page signs the person in, creating their user row the first
+  time, and they stay signed in. The browser holds a cookie (`grounded_session`) with the user's id,
+  signed with `AUTH_SECRET` (HMAC, Hono's signed cookies), HttpOnly, SameSite=Lax, Secure where the
+  app is served over HTTPS, for 400 days (the browsers' cap), renewed by every page load's `/api/me`.
+  Every request looks the cookie's user up joined with the allowlist, so `pnpm cli revoke` shuts
+  someone out at once; no session table. Sign-out clears the cookie. The account guards nothing
+  worth more than that list: the learner brings their own API key, and an uninvited email is told
+  so plainly (`apps/api/src/auth.ts`). Something stronger (a real identity provider, open sign-up)
+  is a later decision, behind configuration.
 - **Keys:** envelope encryption — a per-row data key encrypts the API key; a master key (host secret
   now, a KMS later) encrypts the data keys. Decrypted only in the worker at call time; never sent to
   the browser after entry, never logged. Learners can replace or delete their key.
@@ -516,33 +519,33 @@ about, test and debug.
 
 The schema is `packages/db/src/schema.ts`. Tables that exist:
 
-| Table                                            | Holds                                                                                                                                                                    |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `users`, `sessions`, `accounts`, `verifications` | Better Auth's: account, sign-in sessions, magic-link tokens                                                                                                              |
-| `allowlist`                                      | who may sign in                                                                                                                                                          |
-| `credentials`                                    | provider, encrypted key, credential source                                                                                                                               |
-| `tracks`                                         | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                                   |
-| `track_files`                                    | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                                             |
-| `terms`                                          | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                  |
-| `term_events`                                    | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                             |
-| `term_dependencies`                              | "rests on" edges — the map; source of every structure picture                                                                                                            |
-| `fix_list_items`                                 | the audit's misconceptions and their status                                                                                                                              |
-| `learning_sessions`                              | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, the final's teach-back breaks, older turns summarized |
-| `session_messages`                               | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms         |
-| `session_events`                                 | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
-| `lessons`                                        | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
-| `check_messages`                                 | per step: answers, verdicts, repairs, fresh questions                                                                                                                    |
-| `research_notes`                                 | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                                    |
-| `asides`, `aside_messages`                       | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
-| `usage_events`                                   | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
-| `imported_lessons`                               | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                           |
-| `learner_profile_notes`                          | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                |
-| `profile_refreshes`                              | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                  |
-| `assignments`                                    | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at                   |
-| `submissions`                                    | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                                             |
-| `answer_files`                                   | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                                   |
-| `reviews`                                        | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up                                 |
-| `review_comments`, `review_messages`             | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads                         |
+| Table                                | Holds                                                                                                                                                                    |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `users`                              | a learner: email, created on their first sign-in (§4.3)                                                                                                                  |
+| `allowlist`                          | who may sign in                                                                                                                                                          |
+| `credentials`                        | provider, encrypted key, credential source                                                                                                                               |
+| `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                                   |
+| `track_files`                        | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                                             |
+| `terms`                              | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                  |
+| `term_events`                        | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                             |
+| `term_dependencies`                  | "rests on" edges — the map; source of every structure picture                                                                                                            |
+| `fix_list_items`                     | the audit's misconceptions and their status                                                                                                                              |
+| `learning_sessions`                  | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, the final's teach-back breaks, older turns summarized |
+| `session_messages`                   | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms         |
+| `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
+| `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
+| `check_messages`                     | per step: answers, verdicts, repairs, fresh questions                                                                                                                    |
+| `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                                    |
+| `asides`, `aside_messages`           | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
+| `usage_events`                       | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
+| `imported_lessons`                   | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                           |
+| `learner_profile_notes`              | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                |
+| `profile_refreshes`                  | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                  |
+| `assignments`                        | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at                   |
+| `submissions`                        | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                                             |
+| `answer_files`                       | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                                   |
+| `reviews`                            | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up                                 |
+| `review_comments`, `review_messages` | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads                         |
 
 An assignment also holds when it is snoozed until (`snoozed_until`, "Later"), the later homework
 it was folded into (`subsumed_by`) and, for an arc exam, when starting a session warned it was
@@ -1580,14 +1583,8 @@ every other page usable (tried at 360–430px wide, in both themes).
 
 ## 10. Operating without an admin page
 
-- Allowlist: `pnpm cli invite a@b.com`, `pnpm cli revoke a@b.com`. `pnpm cli link a@b.com` invites and
-  prints an invite link to hand over by any channel: its token is minted by the magic-link endpoint
-  itself, valid a week rather than an emailed link's five minutes, single use, and it signs in
-  whoever uses it. The link opens `/invite`, a page with a "Sign in" button, and only the button
-  calls the verify endpoint: a chat app's link preview or an in-app browser opening the URL would
-  otherwise spend the single use before the person got there. A spent or expired token sends the
-  browser back to the page, which says so and points to the email route; a signed-in person is sent
-  to the app instead.
+- Allowlist: `pnpm cli invite a@b.com`, `pnpm cli revoke a@b.com` (or the `allowlist` table by hand).
+  An invited person signs in by entering the email (§4.3); nothing is sent to them.
 - Model list: `packages/providers/src/models.ts` in the repo, reviewed with its eval results.
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:
@@ -1649,8 +1646,7 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - HTTPS; least-privilege database roles; backups.
 - Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
   are content too (§4.5): only their owner can download them, and never inline.
-- A plain sentence at sign-up (the sign-in page and the invite page, since an invited email signs
-  up by signing in):
+- A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
   what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
   shared (the tutor's calls go to the provider whose key the learner brings), and that the operator
   can technically access the database but does not read it.
@@ -1680,7 +1676,8 @@ progress, so a step is done when its issues are closed.
 3. `packages/content`: block-tree types, parser, allowlists, validators (with tests); renderer
    components in `apps/web` (shadcn + our tokens), starting from the prototype's verdict; the
    cheap model's review (#52).
-4. Auth (allowlist + magic link), key entry with envelope encryption, provider adapters, usage logging.
+4. Auth (allowlist + magic link, since replaced by sign-in with the email alone, §4.3), key entry with
+   envelope encryption, provider adapters, usage logging.
 5. One track, one session end to end: phases, probe/plan chat, lesson generation pipeline, inline
    checks with repair and the gate, close with structured state edits, the opening review (#40).
 6. Asides in the margin (#37). Owed: their polish on phones, with the phone pass (#49).

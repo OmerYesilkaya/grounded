@@ -6,13 +6,13 @@ import {
   lazyRouteComponent,
   Outlet,
   redirect,
+  useNavigate,
 } from "@tanstack/react-router";
 import { AppShell } from "@/components/app-shell";
 import { api, type Credential } from "@/lib/api";
-import { authClient } from "@/lib/auth-client";
+import { getSession } from "@/lib/auth";
 import { tracksQuery } from "@/lib/tracks";
 import { ImportedLessonPage } from "./pages/imported-lesson";
-import { InvitePage, type InviteSearch } from "./pages/invite";
 import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
 import { SignInPage } from "./pages/sign-in";
@@ -25,9 +25,9 @@ export const queryClient = new QueryClient({
 });
 
 async function requireSession() {
-  const { data } = await authClient.getSession();
-  if (!data) throw redirect({ to: "/sign-in" });
-  return data.user;
+  const user = await getSession();
+  if (!user) throw redirect({ to: "/sign-in" });
+  return user;
 }
 
 const rootRoute = createRootRoute({ component: Outlet });
@@ -124,29 +124,11 @@ const signInRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/sign-in",
   beforeLoad: async () => {
-    const { data } = await authClient.getSession();
-    if (data) throw redirect({ to: "/" });
+    if (await getSession()) throw redirect({ to: "/" });
   },
-  component: SignInPage,
-});
-
-// An invite link lands here, not on the verify endpoint, so a chat app's link preview or an in-app
-// browser can't spend its single use; the button does (design §10).
-const inviteRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/invite",
-  validateSearch: (search: Record<string, unknown>): InviteSearch => ({
-    ...(typeof search.token === "string" ? { token: search.token } : {}),
-    ...(typeof search.email === "string" ? { email: search.email } : {}),
-    ...(typeof search.error === "string" ? { error: search.error } : {}),
-  }),
-  beforeLoad: async () => {
-    const { data } = await authClient.getSession();
-    if (data) throw redirect({ to: "/" });
-  },
-  component: function Invite() {
-    const search = inviteRoute.useSearch();
-    return <InvitePage {...search} />;
+  component: function SignIn() {
+    const navigate = useNavigate();
+    return <SignInPage onSignedIn={() => void navigate({ to: "/" })} />;
   },
 });
 
@@ -170,7 +152,6 @@ export const router = createRouter({
       teachingNotesRoute,
     ]),
     signInRoute,
-    inviteRoute,
     keySettingsRoute,
   ]),
 });

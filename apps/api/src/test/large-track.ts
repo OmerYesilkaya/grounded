@@ -149,10 +149,7 @@ export async function createLargeTrack(
     leftOff?: string;
   } = {},
 ) {
-  const [user] = await db
-    .insert(users)
-    .values({ name: "Ada", email: "ada@example.com" })
-    .returning();
+  const [user] = await db.insert(users).values({ email: "ada@example.com" }).returning();
   if (!user) throw new Error("no user");
   const [track] = await db
     .insert(tracks)

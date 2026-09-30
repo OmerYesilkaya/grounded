@@ -1,4 +1,4 @@
-import { allowlist, eq, inArray, sessions, users, type Db } from "@grounded/db";
+import { allowlist, eq, type Db } from "@grounded/db";
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
@@ -17,10 +17,7 @@ export async function invite(db: Db, email: string): Promise<void> {
     .onConflictDoNothing();
 }
 
-/** Removes the invitation and ends the person's sessions immediately. */
+/** Removes the invitation; every request checks it, so the person is out at once. */
 export async function revoke(db: Db, email: string): Promise<void> {
-  const normalized = normalizeEmail(email);
-  await db.delete(allowlist).where(eq(allowlist.email, normalized));
-  const people = db.select({ id: users.id }).from(users).where(eq(users.email, normalized));
-  await db.delete(sessions).where(inArray(sessions.userId, people));
+  await db.delete(allowlist).where(eq(allowlist.email, normalizeEmail(email)));
 }

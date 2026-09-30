@@ -42,60 +42,21 @@ const updatedAt = () =>
     .$onUpdateFn(() => new Date());
 
 // ---------------------------------------------------------------------------------------------
-// Auth (the shape Better Auth expects; ids are UUIDv7 through its generateId hook)
+// Auth (design §4.3): who may sign in, and who has
 // ---------------------------------------------------------------------------------------------
 
+/** A learner, created on their first sign-in. Signed-in browsers hold a cookie with the id. */
 export const users = pgTable("users", {
   id: id(),
-  name: text("name").notNull(),
   email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").notNull().default(false),
-  image: text("image"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
 
-export const sessions = pgTable("sessions", {
-  id: id(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  token: text("token").notNull().unique(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  ipAddress: text("ip_address"),
-  userAgent: text("user_agent"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
-
-export const accounts = pgTable("accounts", {
-  id: id(),
-  userId: uuid("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  accountId: text("account_id").notNull(),
-  providerId: text("provider_id").notNull(),
-  accessToken: text("access_token"),
-  refreshToken: text("refresh_token"),
-  idToken: text("id_token"),
-  accessTokenExpiresAt: timestamp("access_token_expires_at", { withTimezone: true }),
-  refreshTokenExpiresAt: timestamp("refresh_token_expires_at", { withTimezone: true }),
-  scope: text("scope"),
-  password: text("password"),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
-
-export const verifications = pgTable("verifications", {
-  id: id(),
-  identifier: text("identifier").notNull(),
-  value: text("value").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: createdAt(),
-  updatedAt: updatedAt(),
-});
-
-/** Who may sign in. Managed with `pnpm invite` / `pnpm revoke`. Emails are stored lowercased. */
+/**
+ * Who may sign in: an email here signs in by entering it. Managed with `pnpm invite` /
+ * `pnpm revoke` (or a row added by hand). Emails are stored lowercased.
+ */
 export const allowlist = pgTable("allowlist", {
   email: text("email").primaryKey(),
   invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
@@ -330,7 +291,7 @@ export const importedLessons = pgTable("imported_lessons", {
 });
 
 // ---------------------------------------------------------------------------------------------
-// Learning sessions (design §7). "sessions" is Better Auth's table.
+// Learning sessions (design §7).
 // ---------------------------------------------------------------------------------------------
 
 export const learningSessions = pgTable(

@@ -81,8 +81,6 @@ const LESSON = [
 async function keyedLearner() {
   await invite(t.db, "ada@example.com");
   const cookie = await t.signIn("ada@example.com");
-  const token = new URL(t.sent.at(-1)?.url ?? "").searchParams.get("token");
-  if (!token) throw new Error("no magic-link token");
   const saved = await t.request("/api/credentials", {
     method: "PUT",
     cookie,
@@ -101,7 +99,7 @@ async function keyedLearner() {
     body: JSON.stringify({ goal: TITLE }),
   });
   const { id: trackId } = (await track.json()) as { id: string };
-  return { cookie, userId: user.id, trackId, token, sealedKey: credential.sealedKey };
+  return { cookie, userId: user.id, trackId, sealedKey: credential.sealedKey };
 }
 
 const answer = (cookie: string, sessionId: string, text: string) =>
@@ -112,9 +110,9 @@ const answer = (cookie: string, sessionId: string, text: string) =>
   });
 
 describe("logs", () => {
-  it("never show a key, a magic-link token or anyone's words during a session run", async () => {
+  it("never show a key, the session cookie or anyone's words during a session run", async () => {
     const captured = logs();
-    const { cookie, userId, trackId, token, sealedKey } = await keyedLearner();
+    const { cookie, userId, trackId, sealedKey } = await keyedLearner();
 
     // The probe, the plan, the lesson.
     models.script("probe", { text: FIRST_QUESTION });
@@ -212,7 +210,7 @@ describe("logs", () => {
     for (const secret of [
       KEY,
       sealedKey,
-      token,
+      cookie.replace(/^[^=]+=/, ""),
       TITLE,
       PROBE_ANSWER,
       CHECK_ANSWER,
@@ -247,17 +245,14 @@ describe("request lines", () => {
     ]);
   });
 
-  it("never give the query string: the magic link's token travels in it", async () => {
+  it("never give the query string: a token or a learner's words would travel in it", async () => {
     const captured = logs();
     await invite(t.db, "ada@example.com");
-    await t.signIn("ada@example.com");
-    const token = new URL(t.sent.at(-1)?.url ?? "").searchParams.get("token");
+    const cookie = await t.signIn("ada@example.com");
+    await t.request("/api/credentials?token=n0t-f0r-the-l0g", { cookie });
 
-    expect(withMsg(captured.lines, "request").map((l) => l.path)).toContain(
-      "/api/auth/magic-link/verify",
-    );
-    expect(token).toBeTruthy();
-    expect(captured.text()).not.toContain(token);
+    expect(withMsg(captured.lines, "request").map((l) => l.path)).toContain("/api/credentials");
+    expect(captured.text()).not.toContain("n0t-f0r-the-l0g");
   });
 
   it("carry the request id into the jobs it queues", async () => {

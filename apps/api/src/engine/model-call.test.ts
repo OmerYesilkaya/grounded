@@ -29,10 +29,7 @@ const reply = (text: string): LanguageModelV4GenerateResult => ({
 });
 
 async function userWithKey(provider: "openai" | "anthropic" | "deepseek", model: string) {
-  const [user] = await t.db
-    .insert(users)
-    .values({ name: "Ada", email: "ada@example.com" })
-    .returning();
+  const [user] = await t.db.insert(users).values({ email: "ada@example.com" }).returning();
   if (!user) throw new Error("no user");
   await t.db.insert(credentials).values({
     userId: user.id,
@@ -236,10 +233,7 @@ describe("callModel", () => {
   });
 
   it("asks for a key when the learner has none", async () => {
-    const [user] = await t.db
-      .insert(users)
-      .values({ name: "Bo", email: "bo@example.com" })
-      .returning();
+    const [user] = await t.db.insert(users).values({ email: "bo@example.com" }).returning();
     if (!user) throw new Error("no user");
     const { caller } = callerWith(new MockLanguageModelV4({ doGenerate: reply("ok") }));
     await expect(

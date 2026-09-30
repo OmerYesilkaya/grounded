@@ -5,28 +5,14 @@ const schema = z
     DATABASE_URL: z.url(),
     KEY_VAULT_MASTER_KEYS: z.string().min(1),
     KEY_VAULT_ACTIVE_KID: z.string().min(1),
-    BETTER_AUTH_SECRET: z.string().min(32),
+    /** Signs the session cookie (design §4.3). */
+    AUTH_SECRET: z.string().min(32),
     /** Where the web app is served; the API is reached through it at /api. */
     APP_URL: z.url().default("http://localhost:5173"),
     NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
     PORT: z.coerce.number().default(8787),
-    /** The host's proxies (comma-separated IPs or CIDR ranges), so rate limits see each client. */
-    TRUSTED_PROXIES: z
-      .string()
-      .optional()
-      .transform(
-        (value) =>
-          value
-            ?.split(",")
-            .map((p) => p.trim())
-            .filter(Boolean) ?? [],
-      ),
     /** Production: the built web app, served by the API on the same origin. Vite serves it otherwise. */
     WEB_DIST_DIR: z.string().min(1).optional(),
-    /** Magic links go by email when set; to the console otherwise. */
-    RESEND_API_KEY: z.string().min(1).optional(),
-    /** Until a domain is verified in Resend, only onboarding@resend.dev works (to your own address). */
-    EMAIL_FROM: z.string().default("Grounded <onboarding@resend.dev>"),
     ALLOW_UNGATED_MODELS: z.enum(["true", "false"]).default("false"),
     /** Development only: canned responses instead of real model calls. */
     DEMO_MODELS: z.enum(["true", "false"]).default("false"),

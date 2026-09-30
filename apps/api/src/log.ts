@@ -18,7 +18,7 @@ import PinoPretty from "pino-pretty";
  * `requestId` of the request that queued it. Code adds what it learns with addLogContext; nothing
  * is passed around.
  *
- * Never log a key (plain or sealed), a magic-link token outside development, or anything a learner
+ * Never log a key (plain or sealed), a session cookie, or anything a learner
  * or the tutor wrote: ids, counts, codes and the app's own messages only. Errors are logged through
  * serializeError, which keeps the fields that diagnose a failure and none that carry content.
  *

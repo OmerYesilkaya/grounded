@@ -14,7 +14,7 @@ import { z } from "zod";
 import { TEACHING_NOTES_MAX } from "../engine/profile.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string; name: string } };
+  Variables: { user: { id: string; email: string } };
 }
 
 /** A teaching note as the learner sees it, with the sessions it rests on. */

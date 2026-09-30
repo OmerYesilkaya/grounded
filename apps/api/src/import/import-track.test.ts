@@ -39,7 +39,7 @@ beforeEach(() => {
 });
 
 async function learner(options: { key?: boolean } = {}) {
-  const [user] = await t.db.insert(users).values({ name: "Ada", email: EMAIL }).returning();
+  const [user] = await t.db.insert(users).values({ email: EMAIL }).returning();
   if (!user) throw new Error("no user");
   if (options.key ?? true) {
     await t.db.insert(credentials).values({

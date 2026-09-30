@@ -1,33 +1,20 @@
 import { createDb } from "@grounded/db";
 import { invite, normalizeEmail, revoke } from "./allowlist.js";
-import { createInviteLink } from "./invite-link.js";
 
-const usage = "usage: pnpm cli invite <email> | pnpm cli link <email> | pnpm cli revoke <email>";
+const usage = "usage: pnpm cli invite <email> | pnpm cli revoke <email>";
 const [command, email] = process.argv.slice(2);
-if ((command !== "invite" && command !== "link" && command !== "revoke") || !email) {
+if ((command !== "invite" && command !== "revoke") || !email) {
   console.error(usage);
   process.exit(1);
 }
-const required = (name: string): string => {
-  const value = process.env[name];
-  if (!value) throw new Error(`${name} is not set`);
-  return value;
-};
+const url = process.env.DATABASE_URL;
+if (!url) throw new Error("DATABASE_URL is not set");
 
-const { db, close } = createDb(required("DATABASE_URL"));
+const { db, close } = createDb(url);
 try {
   if (command === "invite") {
     await invite(db, email);
-    console.log(`invited ${normalizeEmail(email)}`);
-  } else if (command === "link") {
-    const link = await createInviteLink({
-      db,
-      email,
-      appUrl: required("APP_URL"),
-      secret: required("BETTER_AUTH_SECRET"),
-    });
-    console.log(`invited ${normalizeEmail(email)}; this link signs them in once, within a week:`);
-    console.log(link);
+    console.log(`invited ${normalizeEmail(email)}: they sign in by entering it`);
   } else {
     await revoke(db, email);
     console.log(`revoked ${normalizeEmail(email)}`);

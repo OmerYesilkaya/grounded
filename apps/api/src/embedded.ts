@@ -6,7 +6,6 @@ import type { KeyCheck, ProviderId } from "@grounded/providers";
 import type { TaskList } from "graphile-worker";
 import postgres from "postgres";
 import { createApp } from "./app.js";
-import { createAuth } from "./auth.js";
 import { createEventHub } from "./engine/events.js";
 import type { ModelAccess } from "./engine/model-call.js";
 import { createJobQueue, startWorker, type JobQueue, type Worker } from "./engine/queue.js";
@@ -17,8 +16,7 @@ import { offlineWeb } from "./media/web.js";
 
 /*
  * The whole backend in one process, for the test harness and the eval harness (tools/eval): the API
- * app answering requests in memory, and the worker running its jobs, on a database of their own,
- * with magic links captured instead of emailed.
+ * app answering requests in memory, and the worker running its jobs, on a database of their own.
  */
 
 export const BASE_URL = "http://localhost:3000";
@@ -87,10 +85,8 @@ export interface Embedded {
   queue: JobQueue;
   /** Learners' files, in memory. */
   files: ReturnType<typeof createMemoryFileStore>;
-  /** Magic links sent, newest last. */
-  sent: { email: string; url: string }[];
   request: (path: string, init?: RequestInit & { cookie?: string }) => Response | Promise<Response>;
-  /** Signs an allowlisted email in through the magic link; returns the session cookie. */
+  /** Signs an allowlisted email in as the sign-in page does; returns the session cookie. */
   signIn: (email: string) => Promise<string>;
   /** Polls until the condition holds (for work done by the worker). */
   waitFor: (condition: () => Promise<boolean>, timeoutMs?: number) => Promise<void>;
@@ -109,21 +105,11 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
   const queue = createJobQueue(databaseUrl);
   const vault = createKeyVault({ masterKeys: { e1: randomBytes(32) }, activeKid: "e1" });
   const files = createMemoryFileStore();
-  const sent: { email: string; url: string }[] = [];
   let runner: Worker | undefined;
 
-  const auth = createAuth({
-    db,
-    baseURL: BASE_URL,
-    secret: "embedded-secret-that-is-long-enough-for-better-auth",
-    trustedOrigins: [BASE_URL],
-    sendMagicLink: (email, url) => {
-      sent.push({ email, url });
-    },
-  });
   const app = createApp({
     db,
-    auth,
+    auth: { secret: "embedded-secret-that-is-long-enough-to-sign-with", secure: false },
     vault,
     events,
     queue,
@@ -142,14 +128,12 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
   };
 
   const signIn = async (email: string): Promise<string> => {
-    await request("/api/auth/sign-in/magic-link", {
+    const response = await request("/api/auth/sign-in", {
       method: "POST",
-      body: JSON.stringify({ email, callbackURL: "/" }),
+      body: JSON.stringify({ email }),
     });
-    const link = sent.at(-1);
-    if (!link) throw new Error(`no magic link was sent to ${email}`);
-    const verified = await request(link.url, { redirect: "manual" });
-    return verified.headers
+    if (!response.ok) throw new Error(`${email} could not sign in: ${await response.text()}`);
+    return response.headers
       .getSetCookie()
       .map((c) => c.split(";")[0])
       .join("; ");
@@ -174,7 +158,6 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
     vault,
     queue,
     files,
-    sent,
     request,
     signIn,
     waitFor,

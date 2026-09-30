@@ -4,7 +4,13 @@ import { offeredModels, type KeyCheck, type ProviderId } from "@grounded/provide
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
-import type { Auth } from "./auth.js";
+import {
+  registerAuthRoutes,
+  requireSignIn,
+  setSession,
+  type AuthOptions,
+  type SignedInUser,
+} from "./auth.js";
 import { eventsAfter, type EventHub } from "./engine/events.js";
 import type { FileStore } from "./files/store.js";
 import type { JobQueue } from "./engine/queue.js";
@@ -20,7 +26,7 @@ import { registerUsageRoutes } from "./routes/usage.js";
 
 export interface AppDependencies {
   db: Db;
-  auth: Auth;
+  auth: Omit<AuthOptions, "db">;
   vault: KeyVault;
   events: EventHub;
   queue: JobQueue;
@@ -32,7 +38,7 @@ export interface AppDependencies {
 }
 
 interface Variables {
-  user: { id: string; email: string; name: string };
+  user: SignedInUser;
 }
 
 const PROVIDERS = [
@@ -49,7 +55,8 @@ const credentialInput = z.object({
 });
 
 export function createApp(deps: AppDependencies) {
-  const { db, auth, vault } = deps;
+  const { db, vault } = deps;
+  const auth: AuthOptions = { db, ...deps.auth };
   const app = new Hono<{ Variables: Variables }>();
   app.use(requestLogging());
   app.onError(unexpectedError);
@@ -60,17 +67,20 @@ export function createApp(deps: AppDependencies) {
     return c.text("ok");
   });
 
-  app.on(["GET", "POST"], "/api/auth/*", (c) => auth.handler(c.req.raw));
+  registerAuthRoutes(app, auth);
 
+  app.use("/api/*", requireSignIn(auth));
   app.use("/api/*", async (c, next) => {
-    const session = await auth.api.getSession({ headers: c.req.raw.headers });
-    if (!session) return c.json({ error: "Sign in first." }, 401);
-    c.set("user", { id: session.user.id, email: session.user.email, name: session.user.name });
-    addLogContext({ userId: session.user.id });
+    addLogContext({ userId: c.get("user").id });
     await next();
   });
 
-  app.get("/api/me", (c) => c.json(c.get("user")));
+  /** Who is signed in; every page load asks, and each answer renews the cookie. */
+  app.get("/api/me", async (c) => {
+    const user = c.get("user");
+    await setSession(c, auth, user);
+    return c.json(user);
+  });
 
   app.get("/api/models", (c) =>
     c.json(

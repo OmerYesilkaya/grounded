@@ -9,8 +9,8 @@ const REQUEST_ID = /^[\w.:-]{1,100}$/;
 /**
  * One line per request: method, route, path, status and duration, in a log context carrying the
  * request id (answered as `x-request-id`) and whatever the handlers add (the user, the session).
- * A 4xx or 5xx line says why, from the response's `error`. The query string is never logged: the
- * magic link's token travels in it.
+ * A 4xx or 5xx line says why, from the response's `error`. The query string is never logged:
+ * nothing the line needs is in it, and it is where a token or a learner's words would travel.
  */
 export function requestLogging(): MiddlewareHandler {
   return async (c, next) => {

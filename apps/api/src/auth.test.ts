@@ -1,43 +1,85 @@
-import { eq, users, verifications } from "@grounded/db";
+import { eq, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
 import { invite, revoke } from "./allowlist.js";
-import { createAuth } from "./auth.js";
-import { createInviteLink, INVITE_LINK_LIFETIME_SECONDS } from "./invite-link.js";
-import { BASE_URL, createTestHarness } from "./test/harness.js";
+import { SESSION_COOKIE, SESSION_COOKIE_MAX_AGE_SECONDS } from "./auth.js";
+import { createTestHarness } from "./test/harness.js";
 
 const t = createTestHarness();
 
-describe("sign-in with a magic link", () => {
-  it("sends a link to an invited email and signs them in with it", async () => {
-    await invite(t.db, "ada@example.com");
-    const cookie = await t.signIn("ada@example.com");
+const signInRequest = (email: string) =>
+  t.request("/api/auth/sign-in", { method: "POST", body: JSON.stringify({ email }) });
 
-    expect(t.sent.map((s) => s.email)).toEqual(["ada@example.com"]);
+const sessionCookie = (response: Response) =>
+  response.headers.getSetCookie().find((c) => c.startsWith(`${SESSION_COOKIE}=`));
+
+describe("sign-in by email", () => {
+  it("signs an invited email in by entering it, creating them the first time and never again", async () => {
+    await invite(t.db, "ada@example.com");
+    const first = await signInRequest("ada@example.com");
+    expect(first.status).toBe(200);
+    expect(await first.json()).toMatchObject({ email: "ada@example.com" });
+
+    const cookie = await t.signIn("ada@example.com");
     const me = await t.request("/api/me", { cookie });
     expect(me.status).toBe(200);
     expect(await me.json()).toMatchObject({ email: "ada@example.com" });
+    expect(await t.db.select().from(users).where(eq(users.email, "ada@example.com"))).toHaveLength(
+      1,
+    );
   });
 
-  it("answers an uninvited email exactly the same, but sends nothing and creates no one", async () => {
-    await invite(t.db, "ada@example.com");
-    const body = (email: string) => JSON.stringify({ email, callbackURL: "/" });
-    const invited = await t.request("/api/auth/sign-in/magic-link", {
-      method: "POST",
-      body: body("ada@example.com"),
-    });
-    const stranger = await t.request("/api/auth/sign-in/magic-link", {
-      method: "POST",
-      body: body("eve@example.com"),
-    });
-
-    expect(stranger.status).toBe(invited.status);
-    expect(await stranger.json()).toEqual(await invited.json());
-    expect(t.sent.map((s) => s.email)).toEqual(["ada@example.com"]);
+  it("refuses an uninvited email, saying so, and creates no one", async () => {
+    const stranger = await signInRequest("eve@example.com");
+    expect(stranger.status).toBe(403);
+    expect(await stranger.json()).toEqual({ error: "That email isn't invited." });
+    expect(sessionCookie(stranger)).toBeUndefined();
     expect(await t.db.select().from(users).where(eq(users.email, "eve@example.com"))).toEqual([]);
   });
 
-  it("refuses requests without a session", async () => {
+  it("asks for an email when none was sent", async () => {
+    const empty = await t.request("/api/auth/sign-in", { method: "POST", body: "{}" });
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({ error: "Enter your email." });
+  });
+
+  it("refuses requests without a cookie, with a forged one, and with one naming nobody", async () => {
     expect((await t.request("/api/me")).status).toBe(401);
+    await invite(t.db, "ada@example.com");
+    const cookie = await t.signIn("ada@example.com");
+    const [userId = "", signature = ""] = cookie.replace(`${SESSION_COOKIE}=`, "").split(".");
+    const forged = `${SESSION_COOKIE}=${userId.replace(/^./, (c) => (c === "0" ? "1" : "0"))}.${signature}`;
+    expect((await t.request("/api/me", { cookie: forged })).status).toBe(401);
+    expect((await t.request("/api/me", { cookie: `${SESSION_COOKIE}=${userId}` })).status).toBe(
+      401,
+    );
+    // The row the cookie names is gone (a deleted learner keeps no access).
+    await t.db.delete(users).where(eq(users.id, userId));
+    expect((await t.request("/api/me", { cookie })).status).toBe(401);
+  });
+
+  it("keeps the cookie for the browser's longest allowed while, renewed by every page load", async () => {
+    await invite(t.db, "ada@example.com");
+    const signedIn = await signInRequest("ada@example.com");
+    const set = sessionCookie(signedIn) ?? "";
+    expect(set).toContain(`Max-Age=${String(SESSION_COOKIE_MAX_AGE_SECONDS)}`);
+    expect(set).toContain("HttpOnly");
+    expect(set).toContain("SameSite=Lax");
+    expect(set).toContain("Path=/");
+
+    const cookie = set.split(";")[0] ?? "";
+    const me = await t.request("/api/me", { cookie });
+    expect(sessionCookie(me)).toBe(set);
+    expect(sessionCookie(await t.request("/api/credentials", { cookie }))).toBeUndefined();
+  });
+
+  it("signs out by clearing the cookie", async () => {
+    await invite(t.db, "ada@example.com");
+    const cookie = await t.signIn("ada@example.com");
+    const out = await t.request("/api/auth/sign-out", { method: "POST", cookie });
+    expect(out.status).toBe(204);
+    expect(sessionCookie(out)).toContain("Max-Age=0");
+    // The cookie itself is stateless: only the browser forgets it. Signing in again is typing the email.
+    expect((await t.signIn("ada@example.com")).length).toBeGreaterThan(0);
   });
 });
 
@@ -45,65 +87,23 @@ describe("invite and revoke", () => {
   it("stores emails trimmed and lowercased, and inviting twice is harmless", async () => {
     await invite(t.db, "  Ada@Example.COM ");
     await invite(t.db, "ada@example.com");
-    const cookie = await t.signIn("ADA@example.com");
-    expect((await t.request("/api/me", { cookie })).status).toBe(200);
+    const cookie = await t.signIn(" ADA@example.com ");
+    const me = await t.request("/api/me", { cookie });
+    expect(me.status).toBe(200);
+    expect(await me.json()).toMatchObject({ email: "ada@example.com" });
   });
 
-  it("revoking ends the person's sessions at once", async () => {
+  it("revoking shuts the person out at once, cookie or not", async () => {
     await invite(t.db, "ada@example.com");
     const cookie = await t.signIn("ada@example.com");
     await revoke(t.db, "Ada@example.com");
 
     expect((await t.request("/api/me", { cookie })).status).toBe(401);
-    await t.request("/api/auth/sign-in/magic-link", {
-      method: "POST",
-      body: JSON.stringify({ email: "ada@example.com", callbackURL: "/" }),
-    });
-    expect(t.sent).toHaveLength(1);
-  });
-});
+    expect((await signInRequest("ada@example.com")).status).toBe(403);
 
-describe("an invite link", () => {
-  const mint = (email: string) =>
-    createInviteLink({
-      db: t.db,
-      email,
-      appUrl: BASE_URL,
-      secret: "test-secret-that-is-long-enough-for-better-auth",
-    });
-
-  it("lands on the invite page and signs them in once from its button, sending nothing", async () => {
-    const link = await mint(" Ada@Example.com ");
-    expect(t.sent).toEqual([]);
-    const { pathname, searchParams } = new URL(link);
-    expect(pathname).toBe("/invite");
-    expect(searchParams.get("email")).toBe("ada@example.com");
-    const token = searchParams.get("token") ?? "";
-    expect(token).not.toBe("");
-
-    // What the page's button navigates to (apps/web/src/pages/invite.tsx).
-    const verify = `/api/auth/magic-link/verify?${new URLSearchParams({ token, callbackURL: "/", errorCallbackURL: "/invite" }).toString()}`;
-    const first = await t.request(verify, { redirect: "manual" });
-    const cookie = first.headers
-      .getSetCookie()
-      .map((c) => c.split(";")[0])
-      .join("; ");
-    const me = await t.request("/api/me", { cookie });
-    expect(me.status).toBe(200);
-    expect(await me.json()).toMatchObject({ email: "ada@example.com" });
-
-    // A second use sends the browser back to the invite page, which explains.
-    const again = await t.request(verify, { redirect: "manual" });
-    expect(again.headers.get("location")).toBe(`${BASE_URL}/invite?error=INVALID_TOKEN`);
-  });
-
-  it("stays valid for a week, not the five minutes of an emailed link", async () => {
-    const before = Date.now();
-    await mint("ada@example.com");
-    const [row] = await t.db.select().from(verifications);
-    const lifetime = (row?.expiresAt.getTime() ?? 0) - before;
-    expect(lifetime).toBeGreaterThan((INVITE_LINK_LIFETIME_SECONDS - 60) * 1000);
-    expect(lifetime).toBeLessThanOrEqual(INVITE_LINK_LIFETIME_SECONDS * 1000 + 60_000);
+    // Inviting again lets them back in, as the same learner.
+    await invite(t.db, "ada@example.com");
+    expect((await t.request("/api/me", { cookie })).status).toBe(200);
   });
 });
 
@@ -112,39 +112,5 @@ describe("the health check", () => {
     const res = await t.request("/healthz");
     expect(res.status).toBe(200);
     expect(await res.text()).toBe("ok");
-  });
-});
-
-describe("rate limiting behind the host's proxy", () => {
-  const auth = createAuth({
-    db: t.db,
-    baseURL: BASE_URL,
-    secret: "test-secret-that-is-long-enough-for-better-auth",
-    trustedOrigins: [BASE_URL],
-    sendMagicLink: () => undefined,
-    trustedProxies: ["100.0.0.0/8"],
-    rateLimit: true,
-  });
-  // What the proxy sends: anything the client claimed, then the client, then the proxy's own hop.
-  const askForLink = (forwardedFor: string) =>
-    auth.handler(
-      new Request(`${BASE_URL}/api/auth/sign-in/magic-link`, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          origin: BASE_URL,
-          "x-forwarded-for": forwardedFor,
-        },
-        body: JSON.stringify({ email: "ada@example.com", callbackURL: "/" }),
-      }),
-    );
-
-  it("limits each client by its own address, whatever it claims to be", async () => {
-    // The magic-link rule allows 5 a minute.
-    for (let i = 0; i < 5; i++) {
-      expect((await askForLink(`9.9.9.${String(i)}, 203.0.113.7, 100.64.0.2`)).status).toBe(200);
-    }
-    expect((await askForLink("203.0.113.7, 100.64.0.3")).status).toBe(429);
-    expect((await askForLink("198.51.100.4, 100.64.0.2")).status).toBe(200);
   });
 });
