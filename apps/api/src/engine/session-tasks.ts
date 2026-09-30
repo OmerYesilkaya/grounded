@@ -15,6 +15,7 @@ import {
   teachBackDecisionSchema,
   trackActionsSchema,
   type AssignmentKind,
+  type CheckVerdict,
   type Method,
   type OutlineProblem,
   type Phase,
@@ -37,6 +38,7 @@ import {
 import { generateText, Output, type ModelMessage } from "ai";
 import type { Task, TaskList } from "graphile-worker";
 import { systemMessages } from "./call-options.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { ASKED_IN_THE_MARGIN, asidesRecord } from "./asides.js";
 import {
   assignmentOf,
@@ -1112,20 +1114,23 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
 
         const request = (feedback: string) =>
           `The learner's answer to this step's check: ${answer.text ?? ""}${feedback}`;
+        // Traced, so each grading's verdict is stored on its call (call-trace.ts).
         const grade = (feedback: string) =>
-          withActivity(db, sessionId, "Checking your answer", async () => {
-            const { output } = await generateText({
-              model,
-              system,
-              output: Output.object({ schema: checkVerdictSchema }),
-              prompt: request(feedback),
-            });
-            return output;
-          });
+          traced(() =>
+            withActivity(db, sessionId, "Checking your answer", async () => {
+              const { output } = await generateText({
+                model,
+                system,
+                output: Output.object({ schema: checkVerdictSchema }),
+                prompt: request(feedback),
+              });
+              return output;
+            }),
+          );
         const review = reviewerFor(session);
-        // The reply and the fresh question, checked by matching, then judged together by the review;
-        // and the verdict's shape: a repair asks nothing when a fresh question follows it.
-        const problems = async (graded: { reply: string; freshQuestion: string | null }) => {
+        // The reply and the fresh question, checked by matching; and the verdict's shape: a repair
+        // asks nothing when a fresh question follows it.
+        const matched = (graded: CheckVerdict) => {
           const texts = [graded.reply, graded.freshQuestion ?? ""].filter(Boolean);
           const found = texts.flatMap((text) => {
             const parsed = parseBlocks(text);
@@ -1134,9 +1139,20 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               ...validate(parsed.blocks, { surface: "repair", terms, introduced }),
             ];
           });
+          return {
+            texts,
+            found,
+            errors: [
+              ...checkVerdictIssues(graded),
+              ...found.filter((i) => i.severity !== "review"),
+            ],
+          };
+        };
+        // Then what matching can't decide, judged together by the review.
+        const problems = async (graded: CheckVerdict) => {
+          const { texts, found, errors } = matched(graded);
           return [
-            ...checkVerdictIssues(graded),
-            ...found.filter((i) => i.severity !== "review"),
+            ...errors,
             ...(await review({
               markdown: texts.join("\n\n"),
               flagged: found.filter((i) => i.severity === "review"),
@@ -1145,13 +1161,19 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             })),
           ];
         };
-        let verdict = await grade("");
+        const first = await grade("");
+        let verdict = first.value;
+        let judge = first.judge;
         const issues = await problems(verdict);
+        await judge({ rewrite: 0, issues: verdictIssues(issues) });
         if (issues.length > 0) {
           log.info({ issues: issues.map((i) => i.code) }, "check reply broke rules; grading again");
-          verdict = await grade(
+          const again = await grade(
             `\n\nYour last reply broke these rules; fix them:\n${issues.map((i) => `- ${i.message}`).join("\n")}`,
           );
+          ({ value: verdict, judge } = again);
+          // Kept whatever it holds, as before; its verdict is matching's alone (no second review).
+          await judge({ rewrite: 1, issues: verdictIssues(matched(verdict).errors) });
         }
 
         const graded = verdict;

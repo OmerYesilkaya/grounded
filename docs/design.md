@@ -362,10 +362,11 @@ about, test and debug.
     `traced` and passes the verdict to `judge` (`apps/api/src/engine/call-trace.ts`), which finds
     the call through the async context, as the log's fields are found; the last call in the run
     that answered is the one judged. Recorded for tutor chat messages and asides' answers
-    (`composeReply`), assignment records, homework and exam reviews, track edits sent again, and
-    the verdict of where the learner stands after the first probe (§7.1);
-    not yet for check replies, the term sweep, lesson outlines and steps (a streamed lesson is one
-    call validated step by step), whose rewrites' prompts carry the rejected draft and the issues'
+    (`composeReply`), check replies (a grading done again is judged by matching alone, as a chat
+    message's rewrite is: the review runs once), assignment records, homework and exam reviews,
+    track edits sent again, and the verdict of where the learner stands after the first probe
+    (§7.1); not yet for the term sweep, lesson outlines and steps (a streamed lesson is one call
+    validated step by step), whose rewrites' prompts carry the rejected draft and the issues'
     messages all the same.
 
   Its own table, not columns on `usage_events`: the two outlive different things (usage records
