@@ -5,7 +5,7 @@ import { useId, useState } from "react";
 import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
-import type { SessionModel } from "@/lib/session";
+import type { SessionModel, VerdictState } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 /** The bands as the learner reads them, and how many of the three marks each fills. */
@@ -69,7 +69,9 @@ export function VerdictView({ verdict }: { verdict: ProbeVerdict }) {
  * never pushed. The verdict is written when the learner asks, and stays here once it is.
  */
 export function VerdictSeam({ model }: { model: SessionModel }) {
-  const ask = useMutation({
+  // Its variables are the state it was tapped from, so the tap shows as writing until a later one
+  // arrives.
+  const ask = useMutation<unknown, Error, VerdictState>({
     mutationFn: () => api(`/api/sessions/${model.id}/verdict`, { method: "POST" }),
   });
   const state = model.verdict;
@@ -88,7 +90,10 @@ export function VerdictSeam({ model }: { model: SessionModel }) {
       </section>
     );
 
-  const writing = state.status === "writing" || ask.isPending;
+  // A tap is writing from the moment it is sent, until the stream brings the verdict's next state:
+  // every `probe-verdict` event is a new object, so the one tapped from stands until then.
+  const writing =
+    state.status === "writing" || ((ask.isPending || ask.isSuccess) && ask.variables === state);
   return (
     <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
       {writing ? (
@@ -102,7 +107,7 @@ export function VerdictSeam({ model }: { model: SessionModel }) {
             size="sm"
             variant="outline"
             onClick={() => {
-              ask.mutate();
+              ask.mutate(state);
             }}
           >
             {state.status === "failed" ? "Try again" : "See where you stand"}

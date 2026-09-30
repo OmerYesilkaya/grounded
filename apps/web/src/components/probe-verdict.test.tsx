@@ -82,6 +82,27 @@ describe("see where you stand, at the seam", () => {
     expect(api).toHaveBeenCalledWith("/api/sessions/s1/verdict", { method: "POST" });
   });
 
+  it("shows it being worked out from the tap on, before the stream says so", async () => {
+    const tapped = model(offered);
+    const { rerender } = render(inClient(<VerdictSeam model={tapped} />));
+    await userEvent.click(screen.getByRole("button", { name: "See where you stand" }));
+    // The request is answered, and no event has arrived yet: still being worked out.
+    await screen.findByText("Working out where you stand…");
+    rerender(inClient(<VerdictSeam model={tapped} />));
+    expect(screen.queryByRole("button", { name: "See where you stand" })).toBeNull();
+    // It failed after all: the learner can ask again, and that tap shows at once too.
+    const failed = model({ status: "failed", verdict: null, failure: "Out of credit." });
+    rerender(inClient(<VerdictSeam model={failed} />));
+    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Working out where you stand…");
+    rerender(
+      inClient(
+        <VerdictSeam model={model({ status: "failed", verdict: null, failure: "Again." })} />,
+      ),
+    );
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
   it("says it is being worked out, then shows the verdict in bands, never a number", () => {
     const { rerender, container } = render(
       inClient(<VerdictSeam model={model({ ...offered, status: "writing" })} />),
