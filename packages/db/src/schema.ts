@@ -22,6 +22,7 @@ import type {
   AttachmentKind,
   ChecklistItem,
   ChecklistMark,
+  ProbeVerdict,
   ReviewAnchor,
   SessionState,
   StoredLessonOutline,
@@ -374,6 +375,16 @@ export const learningSessions = pgTable(
      * want to reach. Null until the probe finishes on its own (not when the learner skips to the plan).
      */
     probeSummary: text("probe_summary"),
+    /**
+     * "See where you stand" after a track's first probe (design §7.1): the verdict the learner asked
+     * for, written for them from the probe's records, once. The status is null until they ask,
+     * `writing` while its job runs, `written` once the verdict is stored, `failed` (with why) when
+     * it couldn't be written, and they may ask again; `probe_verdict_at` is when it last changed.
+     */
+    probeVerdict: jsonb("probe_verdict").$type<ProbeVerdict>(),
+    probeVerdictStatus: text("probe_verdict_status").$type<"writing" | "written" | "failed">(),
+    probeVerdictFailure: text("probe_verdict_failure"),
+    probeVerdictAt: timestamp("probe_verdict_at", { withTimezone: true }),
     /**
      * What the opening review found, for the probe's and the plan's prompts (design §7.1): whether
      * an arc exam showed its arc held, and what held and what still leaks. Null without a review, or

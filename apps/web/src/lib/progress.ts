@@ -1,3 +1,4 @@
+import type { ProbeVerdict } from "@grounded/core/probe-verdict";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "./api";
 import type { Standing, TermMap } from "./term-map";
@@ -22,6 +23,8 @@ export interface TrackProgress {
   settling: Idea[];
   coming: number;
   revisit: string[];
+  /** "Where you started": the verdict on the track's first probe, once written (design §7.1). */
+  started: { sessionId: string; verdict: ProbeVerdict } | null;
   arcs: {
     title: string;
     current: boolean;

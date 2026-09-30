@@ -172,7 +172,10 @@ about, test and debug.
   (unless its check job is still queued), so does a question in the margin still waiting for its
   answer ("… Ask again", in its card, unless its aside job is queued), and a lesson that stopped
   being written, outlined or not, is marked failed (unless its job is still queued); each such
-  session gets an `error` event (not for an aside alone: its card already says so).
+  session gets an `error` event (not for an aside alone: its card already says so). A verdict of
+  where the learner stands (§7.1) still being written, asked for over 30 seconds ago, with no job
+  queued for it and none at work on its session, is marked failed, open session or closed, and says
+  so at its seam.
   A lesson job that fails for any reason (the provider included) marks its lesson failed itself
   before telling the learner why, so an unfinished lesson is always one whose job died, and a failed
   one is never reported twice.
@@ -359,7 +362,8 @@ about, test and debug.
     `traced` and passes the verdict to `judge` (`apps/api/src/engine/call-trace.ts`), which finds
     the call through the async context, as the log's fields are found; the last call in the run
     that answered is the one judged. Recorded for tutor chat messages and asides' answers
-    (`composeReply`), assignment records, homework and exam reviews, and track edits sent again;
+    (`composeReply`), assignment records, homework and exam reviews, track edits sent again, and
+    the verdict of where the learner stands after the first probe (§7.1);
     not yet for check replies, the term sweep, lesson outlines and steps (a streamed lesson is one
     call validated step by step), whose rewrites' prompts carry the rejected draft and the issues'
     messages all the same.
@@ -580,7 +584,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `term_events`                        | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                             |
 | `term_dependencies`                  | "rests on" edges — the map; source of every structure picture                                                                                                            |
 | `fix_list_items`                     | the audit's misconceptions and their status                                                                                                                              |
-| `learning_sessions`                  | track, kind (normal / final), the state machine's state, open/closed, what the opening review and the probe found, the final's teach-back breaks, older turns summarized |
+| `learning_sessions`                  | track, kind (normal / final), its state, open/closed, what the opening review and the probe found (and the learner's verdict), teach-back breaks, older turns summarized |
 | `session_messages`                   | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms         |
 | `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
 | `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
@@ -882,6 +886,51 @@ finished, a separate call at the default reasoning effort writes what the probe 
 learner's knowledge ends, and their goal — so the record the plan is built on isn't made by the
 low-effort decision (the decision runs every turn; this runs once). It is stored on the session (`probe_summary`) and
 given to the plan's calls, research included; when the learner skips ahead to the plan there is none.
+
+**"See where you stand" after the track's first probe** (decided 2026-09-30, #61;
+`packages/core/src/probe-verdict.ts`, `apps/api/src/engine/probe-verdict.ts`,
+`apps/web/src/components/probe-verdict.tsx`). The probe's summary is written for the plan and the
+learner never sees it; a learner who wants to know their level in what they set out to learn can
+ask for a verdict of their own:
+
+- **Opt-in, never pushed.** Once the probe is over, the chat offers "See where you stand" at the
+  seam between the probe and the plan (before the first plan message, or after the probe while the
+  plan is still to come); the verdict is written and shown only when the learner taps it, and stays
+  there. Only after a track's **first** probe (the track's first session, not a final): later probes
+  are narrower, and a learner mid-track needn't be reminded of what they don't know yet. A probe
+  skipped ahead of before any answer has nothing to say and offers nothing; one answer is enough.
+  After a cold-start probe (every answer missed) it is still offered.
+- **It locates the boundary only**: per strand, what the learner used confidently and where it got
+  shaky, naming what was shaky without saying what the right answer is or why; no correction ahead
+  of the lesson (method.md's "a probe teaches nothing" stands). A cold start reads, kindly, as
+  starting out: the starting line of the way to their goal, not a list of misses.
+- **Coarse bands, per strand and overall** (`solid` / `working` / `starting`, shown as "Solid",
+  "Working", "Starting out" with three marks filled up to the band), each with a few sentences. No
+  numeric score: the probe brackets a boundary per strand, and a strand with a ceiling but no floor
+  is not zero (the verdict says the probe didn't get below that point).
+- **Its own learner-facing call** (purpose `probe-verdict`, the strong model at its default effort,
+  a structured reply, `probeVerdictSchema`), in the probe phase's method, from the same records the
+  summary is written from: the probe's part of the chat (everything before the first plan message,
+  with the opening turn), what the probe recorded (its term evidence, and the misconceptions noted
+  on the fix-list before the lesson began, the plan's record included), and the probe's summary when
+  there is one. The track's term list as it stands later is not given: it would carry what later
+  sessions taught. The request (`PROBE_VERDICT_PROMPT`) holds the rules above. `probe_summary` is
+  unchanged.
+- **Checked like a chat message** (§3.3): its prose goes through the chat's exact checks and the
+  wording review, against the terms the probe left held; a verdict that breaks a rule is written
+  again once with the issues, and a rewrite that still breaks one is kept (logged), as a chat
+  message's is.
+- **Stored on the session once written** (`learning_sessions.probe_verdict`, with
+  `probe_verdict_status`: `writing`, `written` or `failed` with why, and `probe_verdict_at`). Asked
+  for (`POST /api/sessions/:id/verdict`), it is marked `writing` and its job (`probe-verdict`) is
+  queued; two taps queue it once, and a written one is only shown again. The session snapshot
+  carries where it stands (`verdict`: offered, writing, written or failed, or null when none is
+  offered) and a `probe-verdict` event each change. The session waits on nothing: the plan and the
+  lesson go on while it is written, and a failure says why at the seam, where the learner may ask
+  again. A verdict whose job died is marked failed by recovery (§4.2), in a closed session too, since
+  the seam stays in the chat after the session closes.
+- **Reachable later**: the seam keeps it in the chat, and the track page gets a "Where you started"
+  entry once it exists (§8).
 
 **The review opens the session** (decided 2026-09-29, #40; `apps/api/src/engine/opening-review.ts`,
 the `opening-review` job in `session-tasks.ts`), before the probe, over what came up since the last
@@ -1419,6 +1468,9 @@ How it is built (#37, decided 2026-09-29):
     session it happened in (a link; found by time, as a track's sessions never overlap) and what it
     rests on. Ideas still to come are counted, never named: they haven't been taught.
   - **To revisit**: the open fix-list items, as the tutor wrote them.
+  - **Where you started** (#61): once the learner has asked to see where they stood after the
+    track's first probe and it is written (§7.1), an entry after the map, with its overall band,
+    that opens the verdict (`started` in the progress endpoint). Never before: it is opt-in.
   - **The map**, one arc at a time (tabs, the arc the track has reached first, marked "now"), with
     its counts; the arc's picture (§9.1) draws the arc's ideas and what they rest on, and an owned or
     settling idea in it opens the same details.

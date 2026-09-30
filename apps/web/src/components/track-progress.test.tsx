@@ -41,6 +41,7 @@ const progress: TrackProgress = {
   ],
   coming: 1,
   revisit: ["Thinks adding one is a single step"],
+  started: null,
   arcs: [
     {
       title: "Concurrency",

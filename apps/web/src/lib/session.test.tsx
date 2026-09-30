@@ -60,6 +60,7 @@ function snapshot(overrides: Partial<SessionSnapshot> = {}): SessionSnapshot {
     lastEventId: 7,
     activities: [],
     stalled: false,
+    verdict: null,
     ...overrides,
   };
 }
@@ -263,6 +264,27 @@ describe("a job that stopped", () => {
       source.emit("activity", 9, { id: "a1", label: "Thinking…", detail: null, state: "running" });
     });
     expect(result.current).toMatchObject({ stalled: false, error: null });
+  });
+});
+
+describe("see where you stand", () => {
+  it("follows the verdict as it is asked for and written, leaving the session's own state alone", async () => {
+    serve(snapshot({ verdict: { status: "offered", verdict: null, failure: null } }));
+    const { result } = await renderModel();
+    const source = openStream();
+    act(() => {
+      source.emit("probe-verdict", 8, { status: "writing", verdict: null, failure: null });
+    });
+    expect(result.current?.verdict?.status).toBe("writing");
+    const verdict = { strands: [], overall: { band: "starting", text: "You start here." } };
+    act(() => {
+      source.emit("probe-verdict", 9, { status: "written", verdict, failure: null });
+    });
+    expect(result.current).toMatchObject({
+      verdict: { status: "written", verdict },
+      stalled: false,
+      error: null,
+    });
   });
 });
 

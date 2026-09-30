@@ -23,6 +23,7 @@ import { assignmentSummary, sessionAssignments } from "../engine/assignments.js"
 import { messagesBeingWritten } from "../engine/chat.js";
 import { publish, runningActivities } from "../engine/events.js";
 import { writeLessonAgain } from "../engine/lesson-again.js";
+import { askForVerdict, verdictState } from "../engine/probe-verdict.js";
 import type { JobQueue } from "../engine/queue.js";
 import { retryStalled, stalledJob } from "../engine/retry.js";
 import { applyEvent, completeIfDone, loadSession, RejectedEvent } from "../engine/session-store.js";
@@ -209,6 +210,8 @@ export function registerSessionRoutes(
       hasAskedAside: await hasAskedAside(db, session.userId),
       // What jobs are doing at the cursor; later changes arrive on the stream as activity events.
       activities: await runningActivities(db, session.id, cursor),
+      // "See where you stand", at the seam between the probe and the plan (design §7.1).
+      verdict: await verdictState(db, session),
       // Waiting on a job nothing is doing (it failed, or died): the learner can try it again.
       stalled: (await stalledJob(db, session.id)) !== null,
       lastEventId: cursor,
@@ -226,6 +229,18 @@ export function registerSessionRoutes(
       ...(await finalOutcome(db, session)),
       closedAt: session.closedAt?.toISOString() ?? null,
     });
+  });
+
+  /**
+   * "See where you stand" (design §7.1): the verdict on the track's first probe, written when the
+   * learner asks for it; asked again once it has failed, it is written again.
+   */
+  app.post("/api/sessions/:id/verdict", async (c) => {
+    const session = await ownSession(c.get("user").id, c.req.param("id"));
+    if (!session) return c.json({ error: "Not found." }, 404);
+    const asked = await askForVerdict(db, queue, session);
+    if (!asked.ok) return c.json({ error: asked.reason }, 409);
+    return c.json(asked.state, asked.state.status === "written" ? 200 : 202);
   });
 
   /** Queues the job a stalled session waits on again (retry.ts). */

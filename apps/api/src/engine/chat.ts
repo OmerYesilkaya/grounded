@@ -80,7 +80,8 @@ export interface ReplyOptions {
   review: Reviewer;
 }
 
-function chatIssues(
+/** A text's blocks, the rules it breaks, and the words flagged for the review (design §3.3). */
+export function chatIssues(
   text: string,
   surface: Surface,
   terms: readonly TrackTerm[],

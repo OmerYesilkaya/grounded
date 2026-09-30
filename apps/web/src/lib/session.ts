@@ -1,5 +1,6 @@
 import type { Block, LessonStep } from "@grounded/content";
 import type { SessionState } from "@grounded/core";
+import type { ProbeVerdict } from "@grounded/core/probe-verdict";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useReducer } from "react";
 import type { Aside } from "@/lesson/types";
@@ -51,6 +52,11 @@ export interface SessionModel {
   asides: Aside[];
   /** Whether the learner has ever asked one (until then the lesson shows how). */
   hasAskedAside: boolean;
+  /**
+   * "See where you stand" after the track's first probe (design §7.1): offered, being written,
+   * written or failed; null when the session offers none.
+   */
+  verdict: VerdictState | null;
   /** What the tutor is doing right now, oldest first; the last one is the one to show. */
   activities: Activity[];
   lastEventId: number;
@@ -73,6 +79,15 @@ export function readableSteps(lesson: SessionModel["lesson"]): LessonStep[] {
     steps.push(step);
   }
   return steps;
+}
+
+/** Where the verdict on the first probe stands (api: engine/probe-verdict.ts). */
+export interface VerdictState {
+  /** offered: the learner hasn't asked for it yet. */
+  status: "offered" | "writing" | "written" | "failed";
+  verdict: ProbeVerdict | null;
+  /** Why it couldn't be written, when it failed. */
+  failure: string | null;
 }
 
 /** A running job step (api: engine/events.ts), with the reasoning the model shared, if any. */
@@ -233,6 +248,8 @@ export function reduceSession(model: SessionModel, event: StreamEvent): SessionM
     }
     case "taken-up":
       return { ...next, takenUp: (data as { assignments: AssignmentSummary[] }).assignments };
+    case "probe-verdict":
+      return { ...next, verdict: event.data as VerdictState };
     case "error":
       return { ...next, error: data.message as string };
     default: {
@@ -260,6 +277,7 @@ const EVENT_TYPES = [
   "activity-reasoning",
   "assignment",
   "taken-up",
+  "probe-verdict",
   ...ASIDE_EVENT_TYPES,
   // Also the name of EventSource's own connection error; the listener tells them apart by data.
   "error",

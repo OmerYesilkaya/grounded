@@ -9,6 +9,7 @@ import { FinalIntro } from "@/components/final-chat";
 import { FinalOutcomeCard } from "@/components/final-outcome";
 import { NextSession } from "@/components/next-session";
 import { ChatRule, ReviewDone, ReviewHeading } from "@/components/opening-review";
+import { VerdictSeam } from "@/components/probe-verdict";
 import { PlanPicture } from "@/components/session-pictures";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,9 @@ export function ChatView({
     phase === "review" || phase === "probe" || phase === "audit" || phase === "teach-back";
   const canWrite = (talking || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
   const placeholder = PLACEHOLDER[phase] ?? "";
+  // The seam between the probe and the plan: before the first plan, or after the probe while the
+  // plan is still to come.
+  const firstPlan = model.messages.findIndex((m) => m.kind === "plan");
 
   return (
     <div
@@ -148,6 +152,8 @@ export function ChatView({
           const before = model.messages[i - 1];
           return (
             <Fragment key={m.id}>
+              {/* Where the first probe ends and the plan begins (design §7.1). */}
+              {i === firstPlan && <VerdictSeam model={model} />}
               {m.kind === "review" && before?.kind !== "review" && (
                 <ReviewHeading takenUp={model.takenUp} />
               )}
@@ -168,6 +174,7 @@ export function ChatView({
             </Fragment>
           );
         })}
+        {firstPlan === -1 && <VerdictSeam model={model} />}
         <ActivityLine
           activities={model.activities}
           fallback={

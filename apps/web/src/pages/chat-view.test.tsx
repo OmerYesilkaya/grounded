@@ -40,6 +40,7 @@ function model(messages: ChatMessage[]): SessionModel {
     lastEventId: 0,
     error: null,
     stalled: false,
+    verdict: null,
   };
 }
 

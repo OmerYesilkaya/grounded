@@ -19,6 +19,17 @@ export { NOTES_PHASES, selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.j
 export type { TrackView, TrackViewInput } from "./track-view.js";
 export { awaitedJob, initialFinal, initialSession, resolved, transition } from "./session.js";
 export { breakDemotions, finalStanding, type FinalStanding } from "./final.js";
+export {
+  PROBE_VERDICT_PROMPT,
+  probeAnswers,
+  probePart,
+  probeVerdictSchema,
+  VERDICT_BANDS,
+  verdictOffered,
+  verdictText,
+  type ProbeVerdict,
+  type VerdictBand,
+} from "./probe-verdict.js";
 export type {
   AwaitedJob,
   LessonStepInfo,

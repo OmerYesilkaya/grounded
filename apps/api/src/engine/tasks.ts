@@ -1,6 +1,7 @@
 import type { TaskList } from "graphile-worker";
 import { createAsideTasks } from "./aside-tasks.js";
 import { endingWhenGone } from "./gone.js";
+import { createProbeVerdictTasks } from "./probe-verdict.js";
 import { createProfileTasks } from "./profile.js";
 import { createReviewTasks } from "./review-tasks.js";
 import { createSessionTasks, type SessionTaskDependencies } from "./session-tasks.js";
@@ -12,6 +13,7 @@ export function createTasks(deps: SessionTaskDependencies): TaskList {
     {
       ...createSessionTasks(deps),
       ...createAsideTasks(deps),
+      ...createProbeVerdictTasks(deps),
       ...createTrackTasks(deps),
       ...createProfileTasks(deps),
       ...createReviewTasks(deps),

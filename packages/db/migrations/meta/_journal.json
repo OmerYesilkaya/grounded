@@ -218,6 +218,13 @@
       "when": 1790795955259,
       "tag": "0030_model_calls",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1790796911170,
+      "tag": "0031_probe_verdict",
+      "breakpoints": true
     }
   ]
 }

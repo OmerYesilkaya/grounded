@@ -100,6 +100,27 @@ export function createDemoModels(): ModelAccess {
       model(
         "Knows a program changes values in memory; thinks adding one is a single step. Goal: understand why a shared counter ends up too low.",
       ),
+    "probe-verdict": () =>
+      model(
+        JSON.stringify({
+          strands: [
+            {
+              name: "What a program does to a number",
+              band: "solid",
+              text: "You said plainly that a program changes values in memory, and used that with confidence.",
+            },
+            {
+              name: "Adding one",
+              band: "working",
+              text: "You treated adding one as a single move. That's where it got shaky, and where the lesson starts.",
+            },
+          ],
+          overall: {
+            band: "working",
+            text: "You have firm ground to build on. The way to seeing why a shared counter ends up too low starts right where your answers got shaky.",
+          },
+        }),
+      ),
     plan: () =>
       model(
         "We start from something you already hold: a program changes values in memory. From there we'll see what really happens when a number goes up by one, then what goes wrong when two parts of a program do it at the same moment. That is exactly the counter problem you described.",

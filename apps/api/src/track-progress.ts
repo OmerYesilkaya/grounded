@@ -10,6 +10,8 @@ import {
   tracks,
   type Db,
 } from "@grounded/db";
+import type { ProbeVerdict } from "@grounded/core";
+import { whereYouStarted } from "./engine/probe-verdict.js";
 import { loadTrackTerms, standingOf, termMap, type Standing, type TermMap } from "./term-map.js";
 
 /*
@@ -41,6 +43,11 @@ export interface TrackProgress {
   coming: number;
   /** What the tutor will come back to: the open fix-list items. */
   revisit: string[];
+  /**
+   * "Where you started": the verdict on the track's first probe, once the learner asked for it and
+   * it was written (design §7.1), with the session it came from.
+   */
+  started: { sessionId: string; verdict: ProbeVerdict } | null;
   /** The plan's arcs in order, each with its picture (its terms and what they rest on). */
   arcs: {
     title: string;
@@ -135,6 +142,7 @@ export async function trackProgress(
     settling: ideas.filter((i) => i.standing === "settling"),
     coming: all.terms.filter((t) => standingOf(t.status, t.from !== null) === "coming").length,
     revisit: revisit.map((r) => r.text),
+    started: await whereYouStarted(db, trackId),
     arcs: track.plan.arcs.map((arc, i) => {
       const counts: Record<Standing, number> = { owned: 0, settling: 0, coming: 0 };
       for (const term of arc.terms) {

@@ -6,6 +6,7 @@ import { progressQuery, type Idea, type TrackProgress } from "@/lib/progress";
 import { describeItem } from "@/lib/track-list";
 import { isAssigned, type TrackItem } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
+import { WhereYouStarted } from "./probe-verdict";
 import { TermMapPicture } from "./term-map";
 import { DueTag, itemLink } from "./track-list";
 
@@ -90,6 +91,9 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
           ideas={ideas}
         />
       )}
+
+      {/* Once the learner asked to see where they stood after the first probe (design §7.1). */}
+      {progress.started && <WhereYouStarted verdict={progress.started.verdict} />}
     </div>
   );
 }

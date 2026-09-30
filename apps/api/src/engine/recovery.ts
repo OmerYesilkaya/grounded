@@ -17,6 +17,7 @@ import { asideFailedText, loadAsides, recordAsideMessage, waitingFor } from "./a
 import { messagesBeingWritten } from "./chat.js";
 import { publish, runningActivities } from "./events.js";
 import { jobWaiting } from "./queue.js";
+import { recoverVerdicts } from "./probe-verdict.js";
 import { recoverReviews } from "./review-recovery.js";
 import { applyEvent, loadSession } from "./session-store.js";
 import { checkFailedText, recordCheckMessage } from "./session-tasks.js";
@@ -61,6 +62,8 @@ export async function recoverAbandonedWork(
   // A closed session runs no more jobs of its own: the recap that closes it is the last one. The
   // review of its homework, handed in later, is recovered apart (review-recovery.ts).
   await recoverReviews(db, quietFor);
+  // So is a verdict of where the learner stands, which they may ask for after it closed.
+  await recoverVerdicts(db, quietFor);
   const open = await db
     .select({ id: learningSessions.id })
     .from(learningSessions)

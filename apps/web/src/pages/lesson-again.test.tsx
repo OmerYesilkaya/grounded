@@ -32,6 +32,7 @@ function model(lesson: SessionModel["lesson"], error: string | null = null): Ses
     lastEventId: 0,
     error,
     stalled: false,
+    verdict: null,
   };
 }
 
