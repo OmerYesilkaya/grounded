@@ -23,6 +23,7 @@ import { generateText, streamText, type Instructions, type ModelMessage } from "
 import { v7 as uuidv7 } from "uuid";
 import { content, log } from "../log.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { batcher, publish, startActivity, withActivity, type Activity } from "./events.js";
 import { ProviderCallError } from "./model-call.js";
 
@@ -155,7 +156,8 @@ const unseen: Activity = {
 /**
  * Streams a tutor reply through `onText`, then validates it against the surface's rules; if it
  * breaks one, it is rewritten once with the issues (the rewrite replaces what was streamed). A reply
- * without text is asked for again; if every attempt is empty, it fails.
+ * without text is asked for again; if every attempt is empty, it fails. The draft's verdict and the
+ * rewrite's are stored on their calls (call-trace.ts).
  */
 export async function composeReply(
   options: ReplyOptions,
@@ -164,36 +166,38 @@ export async function composeReply(
   const shown = options.activities ?? true;
   const deltas = batcher(options.onText);
   let text = "";
-  for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(text); attempt++) {
-    if (attempt > 0) log.info({ ...logFields, attempt }, "reply came back empty; asking again");
-    // Thinking lasts until the text starts: from then on the learner watches it being written.
-    const thinking = shown
-      ? await startActivity(
-          db,
-          sessionId,
-          attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
-        )
-      : unseen;
-    try {
-      const reply = streamText({
-        model: options.model,
-        system: options.system,
-        messages: attempt === 0 ? options.messages : [...options.messages, emptyReplyNudge],
-      });
-      for await (const part of reply.stream) {
-        if (part.type === "error") throw part.error;
-        if (part.type === "reasoning-delta") await thinking.reasoning(part.text);
-        if (part.type === "text-delta") {
-          if (!isBlank(part.text)) await thinking.done();
-          await deltas.add(part.text);
+  const draft = await traced(async () => {
+    for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(text); attempt++) {
+      if (attempt > 0) log.info({ ...logFields, attempt }, "reply came back empty; asking again");
+      // Thinking lasts until the text starts: from then on the learner watches it being written.
+      const thinking = shown
+        ? await startActivity(
+            db,
+            sessionId,
+            attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
+          )
+        : unseen;
+      try {
+        const reply = streamText({
+          model: options.model,
+          system: options.system,
+          messages: attempt === 0 ? options.messages : [...options.messages, emptyReplyNudge],
+        });
+        for await (const part of reply.stream) {
+          if (part.type === "error") throw part.error;
+          if (part.type === "reasoning-delta") await thinking.reasoning(part.text);
+          if (part.type === "text-delta") {
+            if (!isBlank(part.text)) await thinking.done();
+            await deltas.add(part.text);
+          }
         }
+        await deltas.end();
+        text = await reply.text;
+      } finally {
+        await thinking.done();
       }
-      await deltas.end();
-      text = await reply.text;
-    } finally {
-      await thinking.done();
     }
-  }
+  });
   if (isBlank(text))
     throw new ProviderCallError("unknown", "The tutor's reply came back empty. Try again.");
 
@@ -208,6 +212,7 @@ export async function composeReply(
       introduced: options.introduced ?? [],
     })),
   );
+  await draft.judge({ rewrite: 0, issues: verdictIssues(first.errors) });
   if (first.errors.length > 0) {
     log.info(
       {
@@ -224,10 +229,11 @@ export async function composeReply(
         )
       : await rewritten(options, text, first.errors);
     // An empty rewrite is worse than the message the learner has already read.
-    if (!isBlank(rewrite)) {
-      text = rewrite;
+    if (!isBlank(rewrite.value)) {
+      text = rewrite.value;
       const second = chatIssues(text, surface, options.terms, options.introduced);
       ({ blocks } = second);
+      await rewrite.judge({ rewrite: 1, issues: verdictIssues(second.errors) });
       if (second.errors.length > 0)
         log.warn(
           { ...logFields, issues: second.errors.map((i) => i.code) },
@@ -238,28 +244,30 @@ export async function composeReply(
   return { text, blocks: await withVerifiedLinks(blocks, options.media) };
 }
 
-async function rewritten(
-  options: ReplyOptions,
-  text: string,
-  errors: readonly Issue[],
-): Promise<string> {
-  let rewrite = "";
-  for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(rewrite); attempt++) {
-    const result = await generateText({
-      model: options.model,
-      system: options.system,
-      messages: [
-        ...options.messages,
-        { role: "assistant", content: text },
-        {
-          role: "user",
-          content: `Rewrite your last message; it broke these rules:\n${errors.map((e) => `- ${e.message}`).join("\n")}\nReply with the rewritten message only.`,
-        },
-      ],
-    });
-    rewrite = result.text;
-  }
-  return rewrite;
+/**
+ * The rewrite of a message that broke rules ("" if every attempt came back empty), traced for its
+ * verdict.
+ */
+function rewritten(options: ReplyOptions, text: string, errors: readonly Issue[]) {
+  return traced(async () => {
+    let rewrite = "";
+    for (let attempt = 0; attempt < TEXT_ATTEMPTS && isBlank(rewrite); attempt++) {
+      const result = await generateText({
+        model: options.model,
+        system: options.system,
+        messages: [
+          ...options.messages,
+          { role: "assistant", content: text },
+          {
+            role: "user",
+            content: `Rewrite your last message; it broke these rules:\n${errors.map((e) => `- ${e.message}`).join("\n")}\nReply with the rewritten message only.`,
+          },
+        ],
+      });
+      rewrite = result.text;
+    }
+    return rewrite;
+  });
 }
 
 interface MessageMark {

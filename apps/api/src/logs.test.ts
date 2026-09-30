@@ -1,5 +1,5 @@
 import { APICallError } from "@ai-sdk/provider";
-import { credentials, eq, users } from "@grounded/db";
+import { credentials, eq, modelCalls, usageEvents, users } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { invite } from "./allowlist.js";
@@ -219,6 +219,22 @@ describe("logs", () => {
     ])
       expect(text).not.toContain(secret);
     expect(text).not.toMatch(WORDS);
+
+    // The database, unlike the log, keeps what each call was sent and answered (design §4.2), with
+    // the validators' verdict where they judged the reply; never the key.
+    const calls = await t.db
+      .select({ purpose: usageEvents.purpose, call: modelCalls })
+      .from(modelCalls)
+      .innerJoin(usageEvents, eq(usageEvents.id, modelCalls.usageEventId));
+    const stored = JSON.stringify(calls);
+    for (const said of [TITLE, PROBE_ANSWER, CHECK_ANSWER, FIRST_QUESTION, PLAN_TEXT])
+      expect(stored).toContain(said);
+    for (const secret of [KEY, sealedKey.ciphertext, cookie.replace(/^[^=]+=/, "")])
+      expect(stored).not.toContain(secret);
+    expect(calls.find((c) => c.purpose === "probe")?.call.verdict).toEqual({
+      rewrite: 0,
+      issues: [],
+    });
   });
 });
 

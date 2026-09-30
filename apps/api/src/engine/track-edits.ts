@@ -1,6 +1,7 @@
 import type { TrackAction } from "@grounded/core";
 import type { Db } from "@grounded/db";
 import { log } from "../log.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { withActivity } from "./events.js";
 import { applyValidActions, type RejectedAction } from "./track-state.js";
 
@@ -16,7 +17,8 @@ export const rejectedFeedback = (rejected: readonly RejectedAction[]) =>
  * Records the track edits a call made alongside its real work (the probe's decision, a check's
  * verdict, a review; design §5): what validates is applied, and what doesn't goes back to the call
  * once, with the reasons, and what validates of its answer is applied too. Asking again is
- * best-effort: if it fails, what was applied stands and the rest is left out (logged).
+ * best-effort: if it fails, what was applied stands and the rest is left out (logged). The answer's
+ * verdict is stored on its call (call-trace.ts); the first call's shows in the next one's prompt.
  */
 export async function recordEdits(
   db: Db,
@@ -36,12 +38,20 @@ export async function recordEdits(
   if (rejected.length === 0) return;
   log.info({ source, rejected: rejected.length }, "track edits rejected; asking again");
   try {
-    const again = await withActivity(db, options.sessionId, options.label, () =>
-      options.askAgain(rejectedFeedback(rejected)),
+    const again = await traced(() =>
+      withActivity(db, options.sessionId, options.label, () =>
+        options.askAgain(rejectedFeedback(rejected)),
+      ),
     );
-    const still = again.length
-      ? (await applyValidActions(db, trackId, again, { source })).rejected
+    const still = again.value.length
+      ? (await applyValidActions(db, trackId, again.value, { source })).rejected
       : [];
+    await again.judge({
+      rewrite: 1,
+      issues: verdictIssues(
+        still.map((r) => ({ code: r.code, message: `${JSON.stringify(r.action)}: ${r.reason}` })),
+      ),
+    });
     if (still.length > 0)
       log.warn({ source, codes: still.map((r) => r.code) }, "track edits rejected again; left out");
   } catch (error) {

@@ -20,6 +20,7 @@ import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { assignmentOf, closeAfterReview, type AssignmentRow } from "./assignments.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { withActivity } from "./events.js";
 import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
@@ -76,33 +77,41 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
     const label =
       assignment.kind === "exam" ? "Reviewing your arc exam" : "Reviewing your homework";
     const asking: ModelMessage[] = [opening, { role: "user", content: REVIEW_REQUEST }];
+    // Traced, so each review's verdict is stored on its call (call-trace.ts).
     const ask = (feedback: ModelMessage[]) =>
-      withActivity(db, assignment.sessionId, label, async () => {
-        const { output } = await generateText({
-          model,
-          system,
-          output: Output.object({ schema: assignmentReviewSchema }),
-          messages: [...asking, ...feedback],
-        });
-        return output;
-      });
+      traced(() =>
+        withActivity(db, assignment.sessionId, label, async () => {
+          const { output } = await generateText({
+            model,
+            system,
+            output: Output.object({ schema: assignmentReviewSchema }),
+            messages: [...asking, ...feedback],
+          });
+          return output;
+        }),
+      );
+
     const review = createReviewer(db, models, ids);
     const settle = (output: AssignmentReview) =>
       settleReview({ output, assignment, answers, terms, review });
 
-    let output = await ask([]);
+    const asked = await ask([]);
+    let output = asked.value;
     let settled = await settle(output);
+    await asked.judge({ rewrite: 0, issues: verdictIssues(settled.problems) });
     if (settled.problems.length > 0) {
       log.info({ problems: settled.problems.length }, "review broke rules; asking again");
       const first = output;
-      output = await ask([
+      const again = await ask([
         { role: "assistant", content: JSON.stringify(first) },
         {
           role: "user",
           content: `That review broke these rules; send it again, fixed:\n${settled.problems.map((p) => `- ${p}`).join("\n")}`,
         },
       ]);
+      output = again.value;
       settled = await settle(output);
+      await again.judge({ rewrite: 1, issues: verdictIssues(settled.problems) });
       if (settled.problems.length > 0)
         log.warn({ problems: settled.problems.length }, "review still breaks rules; keeping it");
     }

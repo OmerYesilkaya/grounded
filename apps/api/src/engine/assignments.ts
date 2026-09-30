@@ -19,6 +19,7 @@ import {
 import { and, asc, assignments, eq, inArray, isNull, ne, submissions, type Db } from "@grounded/db";
 import { generateText, Output, type Instructions, type ModelMessage } from "ai";
 import { log } from "../log.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { publish } from "./events.js";
 import type { JobQueue } from "./queue.js";
 import { applyEvent, loadSession, RejectedEvent } from "./session-store.js";
@@ -253,6 +254,7 @@ function recordProblems(record: AssignmentRecord, terms: readonly TrackTerm[]): 
  * The structured record after an assignment's message (prose first, design §7.1): each task's
  * kind, a name, and what a good answer demonstrates. A record that breaks a rule is asked for again
  * once, with the problems; one still broken is kept (logged), since the learner has read the task.
+ * Each record's verdict is stored on its call (call-trace.ts).
  */
 export async function recordAssignment(options: {
   model: LanguageModelV4;
@@ -262,29 +264,32 @@ export async function recordAssignment(options: {
   request: string;
   terms: readonly TrackTerm[];
 }): Promise<AssignmentRecord> {
-  const ask = async (feedback: ModelMessage[]) =>
-    (
-      await generateText({
+  const ask = (feedback: ModelMessage[]) =>
+    traced(async () => {
+      const { output } = await generateText({
         model: options.model,
         system: options.system,
         output: Output.object({ schema: assignmentRecordSchema }),
         messages: [...options.messages, { role: "user", content: options.request }, ...feedback],
-      })
-    ).output;
+      });
+      return output;
+    });
   const first = await ask([]);
-  const problems = recordProblems(first, options.terms);
-  if (problems.length === 0) return first;
+  const problems = recordProblems(first.value, options.terms);
+  await first.judge({ rewrite: 0, issues: verdictIssues(problems) });
+  if (problems.length === 0) return first.value;
   log.info({ problems: problems.length }, "assignment record broke rules; asking again");
   const again = await ask([
-    { role: "assistant", content: JSON.stringify(first) },
+    { role: "assistant", content: JSON.stringify(first.value) },
     {
       role: "user",
       content: `That record broke these rules; send it again, fixed:\n${problems.map((p) => `- ${p}`).join("\n")}`,
     },
   ]);
-  if (recordProblems(again, options.terms).length > 0)
-    log.warn("assignment record still breaks rules; keeping it");
-  return again;
+  const still = recordProblems(again.value, options.terms);
+  await again.judge({ rewrite: 1, issues: verdictIssues(still) });
+  if (still.length > 0) log.warn("assignment record still breaks rules; keeping it");
+  return again.value;
 }
 
 /**

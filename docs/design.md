@@ -240,12 +240,15 @@ about, test and debug.
   by type and id, streamed pieces at `trace`.
   **Never logged:** keys (plain or sealed), the session cookie, or anything a
   learner or the tutor wrote, the track's title included: lines hold ids, counts, issue codes and
-  the app's own messages. Errors are serialized field by field (type, message, stack frames, a
+  the app's own messages. The rule is the log's, not the database's: the database holds what
+  learners and the tutor wrote (it is the product), and in the training period every model call in
+  full too (`model_calls`, §4.4). The log is where content must not go: it is shipped to the host,
+  kept by its retention rather than the learner's, and read while diagnosing anyone's problem. Errors are serialized field by field (type, message, stack frames, a
   provider's status and error body, the cause chain), never whole: an SDK error carries the request,
   and so the prompt. A message that quotes content (a failed JSON parse of the model's output) is
   withheld. A test runs a session through the real model caller, with a failing call and an
   unparseable reply, and asserts that its key, sealed key, session cookie, title and answers never
-  appear in the log.
+  appear in the log, and that the answers do appear in its stored calls while the key doesn't.
   **The one exception, `LOG_CONTENT=true`** (off by default; an operator's switch, production
   included, for diagnosing what a model was asked and answered): every model call's line then also
   carries, under `content`, the prompt's message count, its last turn (the instruction, the answer
@@ -253,7 +256,9 @@ about, test and debug.
   JSON, and the reply (text, reasoning, tool calls), a failed call's as far as it got. Rejected track
   edits carry their reasons and the batch, a rewritten chat message its issues' messages, and errors
   keep the messages that quote content. Keys and tokens stay out regardless. Turn it on for a
-  deploy, reproduce, turn it off: while it is on, the log holds learners' words.
+  deploy, reproduce, turn it off: while it is on, the log holds learners' words. Since every call
+  is stored in full (`model_calls`, §4.4), the database answers most of what it was for, and
+  queryably across sessions; it stays for now as the log-side view, and may be retired.
 - **Docker images, no host-specific services.** Start on Railway or Fly with managed Postgres; moving
   to AWS or elsewhere needs no rewrite. One image (`Dockerfile`) runs both processes: the API by
   default, the worker with `node --import tsx src/worker.ts`. The API runs its TypeScript through tsx
@@ -330,6 +335,49 @@ about, test and debug.
   shown simply per session and per month. Each attempt also records its duration (`duration_ms`,
   from the request to a stream's finish or the failure), so the effect of caching and reasoning
   effort shows per purpose.
+- **Every model call is stored in full** (`model_calls`, decided 2026-09-30, #58), so model
+  behaviour can be studied across sessions while the product is in its training period, where
+  nothing is private yet: what a call saw, what the model answered before and after validation,
+  what it searched, and what the validators decided. The database, unlike the log (§4.2), keeps
+  content. One row per `usage_events` row (so per attempt: a retried call's failed attempts too),
+  keyed by it, stored by the same middleware that records usage (`apps/api/src/engine/model-call.ts`),
+  so no caller stores anything:
+  - **the prompt as sent**: every message, the system prompt's parts (with their cache marks) and
+    the whole conversation, after the middleware has shaped it; files are named (media type,
+    filename, size), never copied, since the track keeps them (§4.5);
+  - **what else the call asked for**: the response format (a structured record's JSON schema), the
+    tools offered with their input schemas, and the other settings (reasoning effort, tool choice,
+    provider options such as cache keys);
+  - **the reply** as the provider gave it, a stream's parts gathered into the same shape: text,
+    reasoning, tool calls with their inputs and results (a provider's web searches and what they
+    found), sources, how it finished, and the provider's metadata beside it (Gemini's search
+    grounding); a failed call's as far as it got, with its error in full (message, status, the
+    provider's response body);
+  - **the validators' verdict**, where a caller validates the reply: which writing it was (0 the
+    first, 1 the rewrite after it broke a rule) and the issues found (codes and messages, the wording
+    review's included; none: it passed). The middleware can't know it, so a caller runs the call in
+    `traced` and passes the verdict to `judge` (`apps/api/src/engine/call-trace.ts`), which finds
+    the call through the async context, as the log's fields are found; the last call in the run
+    that answered is the one judged. Recorded for tutor chat messages and asides' answers
+    (`composeReply`), assignment records, homework and exam reviews, and track edits sent again;
+    not yet for check replies, the term sweep, lesson outlines and steps (a streamed lesson is one
+    call validated step by step), whose rewrites' prompts carry the rejected draft and the issues'
+    messages all the same.
+
+  Its own table, not columns on `usage_events`: the two outlive different things (usage records
+  what was spent and outlives a deleted track, §4.5; content is the track's and goes with it, by
+  cascade from the track and the session), and the content can be dropped whole when the privacy
+  rule returns without touching the usage page. A call made for no track (an import) goes with
+  the learner. Storing is best-effort: a row that can't be written is logged and the call's work
+  goes on, and a call whose track was deleted while it ran stores nothing (its usage is recorded).
+  It is read with SQL for now (join `usage_events` on `usage_event_id` for purpose, model, tokens,
+  time); there is no page for it. A session's calls are a few megabytes, mostly the system prompt
+  repeated, which Postgres compresses.
+  **Pending Omer's confirmation** (defaults taken 2026-09-30): storing is unconditional, with no
+  switch, for as long as the training period lasts, until the privacy rule returns; `LOG_CONTENT`
+  stays as it is (§4.2); rows go with their track and session, unlike usage; reading is raw SQL,
+  no page.
+
 - **The usage page** (`/usage`, from the account menu; `GET /api/usage`, `apps/api/src/routes/usage.ts`;
   decided 2026-09-29, #46) shows an **estimated cost** first, tokens second: a learner pays in money,
   and a token count means little to them. Cost is computed at read time from the model list's prices
@@ -508,12 +556,14 @@ about, test and debug.
   events and edges, the fix-list, research notes, `track_files` rows, the imported lesson. Then its files' bytes are
   deleted from the store, which the database can't reach; rows first, so no row ever names bytes
   that are gone, and bytes that can't be deleted are logged and left, reachable by nothing.
-  `usage_events` stay: they belong to the learner, not the track, and record what was spent.
+  `usage_events` stay: they belong to the learner, not the track, and record what was spent. The
+  track's stored model calls (`model_calls`, §4.4) go with it.
   **A job on the track** (a lesson being written, a check being graded, the track being named) is
   not waited for or cancelled: one still queued doesn't start, and one running stops at its next
   write, since what it adds has nothing left to belong to, and ends as done rather than failed,
   nobody being left to tell (`apps/api/src/engine/gone.ts`). The model call in flight still
-  finishes and is paid for; it is recorded in `usage_events` like any other.
+  finishes and is paid for; it is recorded in `usage_events` like any other, and its content is
+  not stored, having no track left to belong to.
 
 ## 5. Data model
 
@@ -538,6 +588,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                                    |
 | `asides`, `aside_messages`           | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
 | `usage_events`                       | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
+| `model_calls`                        | per `usage_events` row, in the training period: the call in full (prompt as sent, response format, tools, settings, reply, error), the validators' verdict (§4.4)        |
 | `imported_lessons`                   | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                           |
 | `learner_profile_notes`              | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                |
 | `profile_refreshes`                  | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                  |
@@ -1652,7 +1703,10 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 
 - HTTPS; least-privilege database roles; backups.
 - Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
-  are content too (§4.5): only their owner can download them, and never inline.
+  are content too (§4.5): only their owner can download them, and never inline. In the training
+  period the database also keeps every model call in full (`model_calls`, §4.4), read by Omer with
+  SQL to study how the models teach. The sign-in page's sentence below, that the operator does not
+  read the database, no longer holds while it does: its new wording is pending Omer.
 - A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
   what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
   shared (the tutor's calls go to the provider whose key the learner brings), and that the operator

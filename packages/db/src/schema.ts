@@ -134,6 +134,68 @@ export const usageEvents = pgTable(
   ],
 );
 
+/** A JSON value as the model call's content is stored (files named, not copied). */
+export type StoredJson =
+  null | string | number | boolean | StoredJson[] | { [key: string]: StoredJson };
+
+/** What a model call answered, as the middleware saw it (design §4.4). */
+export interface StoredReply {
+  /** The reply's parts in order: text, reasoning, tool calls with their inputs, tool results… */
+  content: StoredJson[];
+  /** How the call ended, as the provider said (a failed call has none). */
+  finishReason?: StoredJson;
+  /** What the provider returned beside the parts (Gemini's search grounding, cache usage…). */
+  providerMetadata?: StoredJson;
+}
+
+/** What the app's validators decided about a model call's reply (design §4.4). */
+export interface CallVerdict {
+  /** Which writing the call was: 0 the first, 1 the rewrite asked for after it broke a rule, … */
+  rewrite: number;
+  /** What the validators found in the reply, the review's judgments included; none: it passed. */
+  issues: { code?: string; message: string }[];
+}
+
+/**
+ * Every model call in full, one row per `usage_events` row (design §4.4, decided 2026-09-30, #58):
+ * what it was sent and what it answered, for studying model behaviour across sessions while the
+ * product is in its training period. The log never holds this (§4.2); the database does.
+ *
+ * Its own table rather than columns on `usage_events`: the two outlive different things (a call's
+ * usage records what was spent and outlives its track; its content is the track's and goes with
+ * it), and the content can be dropped whole when the privacy rule returns, leaving usage as it is.
+ */
+export const modelCalls = pgTable(
+  "model_calls",
+  {
+    /** The call's usage row, which holds its purpose, model, tokens, status and time. */
+    usageEventId: uuid("usage_event_id")
+      .primaryKey()
+      .references(() => usageEvents.id, { onDelete: "cascade" }),
+    /** Deleted with the track or session, like everything else in them (design §4.5). */
+    trackId: uuid("track_id").references(() => tracks.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id").references(() => learningSessions.id, { onDelete: "cascade" }),
+    /** Every message as sent, the system prompt's parts included; files named, not copied. */
+    prompt: jsonb("prompt").$type<StoredJson[]>().notNull(),
+    /** The response format asked for (a JSON schema for a structured record); null: text. */
+    responseFormat: jsonb("response_format").$type<StoredJson>(),
+    /** The tools offered, with their input schemas; null: none. */
+    tools: jsonb("tools").$type<StoredJson[]>(),
+    /** The call's other settings: reasoning effort, tool choice, provider options (cache hints)… */
+    settings: jsonb("settings").$type<Record<string, StoredJson>>().notNull(),
+    /** What the model answered; a failed call's as far as it got, null if it got nowhere. */
+    reply: jsonb("reply").$type<StoredReply>(),
+    /** A failed call's error: its type, message, status and the provider's response body. */
+    error: jsonb("error").$type<StoredJson>(),
+    /** Set by the caller once it has validated the reply; null for calls nothing validates. */
+    verdict: jsonb("verdict").$type<CallVerdict>(),
+  },
+  (table) => [
+    index("model_calls_session").on(table.sessionId),
+    index("model_calls_track").on(table.trackId),
+  ],
+);
+
 // ---------------------------------------------------------------------------------------------
 // Tracks: one subject each, with its own term list, map, plan and fix-list (design §5)
 // ---------------------------------------------------------------------------------------------

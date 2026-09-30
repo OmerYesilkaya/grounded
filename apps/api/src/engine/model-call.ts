@@ -5,7 +5,7 @@ import type {
   LanguageModelV4Usage,
 } from "@ai-sdk/provider";
 import type { KeyVault } from "@grounded/crypto";
-import { credentials, eq, usageEvents, type Db } from "@grounded/db";
+import { credentials, eq, modelCalls, usageEvents, type Db } from "@grounded/db";
 import {
   cheapModelFor,
   classifyProviderError,
@@ -19,7 +19,10 @@ import {
   describePrompt,
   describeReply,
   ReplyCollector,
-  type ReplyContent,
+  storedError,
+  storedReply,
+  storedRequest,
+  type Reply,
 } from "./call-content.js";
 import {
   CALL_RETRIES,
@@ -29,6 +32,7 @@ import {
   type CallLimits,
 } from "./call-limits.js";
 import { shapeCall } from "./call-options.js";
+import { currentTrace, type Trace } from "./call-trace.js";
 
 /** A provider failure with the plain message the learner is shown (design §4.4). */
 export class ProviderCallError extends Error {
@@ -88,11 +92,26 @@ export interface ModelRequest {
   sessionId?: string;
 }
 
+/** One attempt at a call: what it was sent, what it answered (so far), and the run it is traced in. */
+interface Exchange {
+  params: LanguageModelV4CallOptions;
+  reply?: () => Reply;
+  trace: Trace | undefined;
+}
+
+/** Whether a failed insert named a row that is gone (a track deleted while its call ran). */
+const isForeignKeyViolation = (error: unknown): boolean => {
+  for (let e = error, depth = 0; e instanceof Error && depth < 5; e = e.cause, depth++)
+    if ("code" in e && e.code === "23503") return true;
+  return false;
+};
+
 /**
  * Hands out language models built with the learner's key, decrypted for this call only. Every call
- * made through them records its usage, failed calls included, runs within its purpose's time limits
- * and is shaped for the provider (cache hints; call-options.ts), because all three live in
- * middleware around the model rather than in each caller.
+ * made through them records its usage and is stored in full (`model_calls`), failed calls included,
+ * runs within its purpose's time limits and is shaped for the provider (cache hints;
+ * call-options.ts), because all of it lives in middleware around the model rather than in each
+ * caller.
  */
 export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
   const { db, vault, limitsFor = callLimitsFor, retryDelayMs = 1000 } = deps;
@@ -121,16 +140,57 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
       const limits = limitsFor(request.purpose);
 
       /**
-       * Records and logs one attempt: its usage, how it ended and how long it took since startedAt.
-       * A failure's line has the cause (status and the provider's error body, never the request).
-       * With LOG_CONTENT on, the line also has what the call asked and what it answered (so far).
+       * Stores what an attempt was sent and answered (design §4.4), and hands the run it is traced
+       * in the way to record its verdict (call-trace.ts). Best-effort: the call's work doesn't
+       * depend on it, so a failure is logged, not thrown. A call whose track or session was deleted
+       * while it ran has nothing left to be stored with, like the rest of its track's content.
+       */
+      const store = async (
+        usageEventId: string,
+        exchange: Exchange,
+        reply: Reply | undefined,
+        error: unknown,
+      ) => {
+        try {
+          await db.insert(modelCalls).values({
+            usageEventId,
+            trackId: request.trackId ?? null,
+            sessionId: request.sessionId ?? null,
+            ...storedRequest(exchange.params),
+            reply: reply ? storedReply(reply) : null,
+            error: error === undefined ? null : storedError(error),
+          });
+        } catch (failure) {
+          if (isForeignKeyViolation(failure))
+            log.info("the call's track or session was deleted; its content is not stored");
+          else log.error({ err: failure }, "a model call's content could not be stored");
+          return;
+        }
+        if (error !== undefined || !exchange.trace) return;
+        exchange.trace.calls.push(async (verdict) => {
+          try {
+            await db
+              .update(modelCalls)
+              .set({ verdict })
+              .where(eq(modelCalls.usageEventId, usageEventId));
+          } catch (failure) {
+            log.error({ err: failure }, "a model call's verdict could not be stored");
+          }
+        });
+      };
+      /**
+       * Records and logs one attempt: its usage, how it ended and how long it took since startedAt,
+       * and stores it in full. A failure's line has the cause (status and the provider's error
+       * body, never the request). With LOG_CONTENT on, the line also has what the call asked and
+       * what it answered (so far).
        */
       const record = async (
         usage: LanguageModelV4Usage | null,
         failure: { kind: ProviderErrorKind; error: unknown; elapsedMs: number } | null,
         startedAt: number,
-        exchange: { params: LanguageModelV4CallOptions; reply?: () => ReplyContent },
+        exchange: Exchange,
       ) => {
+        const reply = exchange.reply?.();
         const durationMs = Date.now() - startedAt;
         const tokens = {
           inputTokens: usage?.inputTokens.total ?? 0,
@@ -149,7 +209,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           durationMs,
           ...content(() => ({
             ...describePrompt(exchange.params.prompt, exchange.params.responseFormat),
-            ...(exchange.reply ? { reply: exchange.reply() } : {}),
+            ...(reply ? { reply: describeReply(reply.content) } : {}),
           })),
         };
         if (!failure) log.info(line, "model call");
@@ -158,25 +218,29 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             { ...line, errorKind: failure.kind, elapsedMs: failure.elapsedMs, err: failure.error },
             "model call failed",
           );
-        await db.insert(usageEvents).values({
-          userId: request.userId,
-          trackId: request.trackId ?? null,
-          sessionId: request.sessionId ?? null,
-          provider,
-          model: modelId,
-          purpose: request.purpose,
-          ...tokens,
-          status: failure ? "error" : "ok",
-          errorKind: failure?.kind ?? null,
-          durationMs,
-        });
+        const [event] = await db
+          .insert(usageEvents)
+          .values({
+            userId: request.userId,
+            trackId: request.trackId ?? null,
+            sessionId: request.sessionId ?? null,
+            provider,
+            model: modelId,
+            purpose: request.purpose,
+            ...tokens,
+            status: failure ? "error" : "ok",
+            errorKind: failure?.kind ?? null,
+            durationMs,
+          })
+          .returning({ id: usageEvents.id });
+        if (event) await store(event.id, exchange, reply, failure ? failure.error : undefined);
       };
       /** Logs and records a failed attempt; returns the error with the learner's plain message. */
       const failed = async (
         error: unknown,
         deadline: Deadline,
         startedAt: number,
-        exchange: Parameters<typeof record>[3],
+        exchange: Exchange,
       ): Promise<ProviderCallError> => {
         const converted = providerErrorFrom(provider, error);
         const cause = RetryError.isInstance(error) ? error.lastError : error;
@@ -197,7 +261,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
        */
       const attempt = async <T>(
         deadline: Deadline,
-        params: LanguageModelV4CallOptions,
+        exchange: Exchange,
         run: () => PromiseLike<T>,
       ): Promise<{ result: T; startedAt: number }> => {
         for (let retry = 0; ; retry++) {
@@ -207,7 +271,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           } catch (error) {
             deadline.unwatch();
             if (deadline.callerAborted()) throw error;
-            const converted = await failed(error, deadline, startedAt, { params });
+            const converted = await failed(error, deadline, startedAt, exchange);
             const delay = retryDelayMs * 2 ** retry;
             const retryable = APICallError.isInstance(error) && error.isRetryable;
             if (!retryable || retry >= CALL_RETRIES || deadline.remainingMs <= delay)
@@ -235,13 +299,19 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             ),
           wrapGenerate: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.generateMs);
+            const trace = currentTrace();
             try {
-              const { result, startedAt } = await attempt(deadline, params, () =>
+              const { result, startedAt } = await attempt(deadline, { params, trace }, () =>
                 model.doGenerate({ ...params, abortSignal: deadline.signal }),
               );
               await record(result.usage, null, startedAt, {
                 params,
-                reply: () => describeReply(result.content),
+                trace,
+                reply: () => ({
+                  content: result.content,
+                  finishReason: result.finishReason,
+                  ...(result.providerMetadata ? { providerMetadata: result.providerMetadata } : {}),
+                }),
               });
               return result;
             } finally {
@@ -250,9 +320,11 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           },
           wrapStream: async ({ model, params }) => {
             const deadline = new Deadline(params.abortSignal, limits.streamMs);
+            // Taken here: the stream's parts are pulled later, by whatever reads them.
+            const trace = currentTrace();
             let connected;
             try {
-              connected = await attempt(deadline, params, () => {
+              connected = await attempt(deadline, { params, trace }, () => {
                 deadline.watch(limits.thinkMs);
                 return model.doStream({ ...params, abortSignal: deadline.signal });
               });
@@ -266,7 +338,7 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             let silence: number | undefined;
             let recorded = false;
             const reply = new ReplyCollector();
-            const exchange = { params, reply: () => reply.content() };
+            const exchange: Exchange = { params, trace, reply: () => reply.reply() };
             const finish = async (usage: LanguageModelV4Usage) => {
               if (recorded) return;
               recorded = true;

@@ -1,6 +1,14 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { initialSession, joinSystemPrompt, type SystemPrompt } from "@grounded/core";
-import { credentials, learningSessions, tracks, usageEvents, users } from "@grounded/db";
+import {
+  credentials,
+  eq,
+  learningSessions,
+  modelCalls,
+  tracks,
+  usageEvents,
+  users,
+} from "@grounded/db";
 import { generateText, Output, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
 import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
@@ -12,6 +20,7 @@ import { captureLogs } from "../log.js";
 import { createTestHarness } from "../test/harness.js";
 import type { CallLimits } from "./call-limits.js";
 import { systemMessages } from "./call-options.js";
+import { traced, verdictIssues } from "./call-trace.js";
 import { createModelCaller, ProviderCallError } from "./model-call.js";
 
 const t = createTestHarness();
@@ -879,5 +888,283 @@ describe("provider cache hints", () => {
     expect(mock.doGenerateCalls[0]?.providerOptions).toEqual({
       openai: { promptCacheKey: "mine", store: false },
     });
+  });
+});
+
+describe("stored calls (model_calls)", () => {
+  const storedFor = async (usageEventId: string | undefined) => {
+    const [row] = await t.db
+      .select()
+      .from(modelCalls)
+      .where(eq(modelCalls.usageEventId, usageEventId ?? ""));
+    return row;
+  };
+
+  it("keeps a call in full: the prompt as sent, the response format, the settings and the reply", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const trackId = await trackOf(userId);
+    const [session] = await t.db
+      .insert(learningSessions)
+      .values({ trackId, userId, state: initialSession() })
+      .returning();
+    const { caller } = callerWith(
+      new MockLanguageModelV4({ doGenerate: reply('{"actions":["plan"]}') }),
+    );
+    const bytes = new Uint8Array(2048);
+
+    await generateText({
+      model: await caller.model({
+        userId,
+        trackId,
+        sessionId: session?.id ?? "",
+        purpose: "term-sweep",
+        role: "strong",
+      }),
+      system: "the method",
+      messages: [
+        { role: "user", content: "teach me" },
+        { role: "assistant", content: "what do you know?" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Record the sweep." },
+            { type: "file", data: bytes, mediaType: "image/png", filename: "board.png" },
+          ],
+        },
+      ],
+      output: Output.object({ schema: z.object({ actions: z.array(z.string()) }) }),
+    });
+
+    const [event] = await t.db.select().from(usageEvents);
+    const stored = await storedFor(event?.id);
+    expect(stored).toMatchObject({
+      trackId,
+      sessionId: session?.id,
+      responseFormat: {
+        type: "json",
+        schema: expect.objectContaining({ type: "object" }) as unknown,
+      },
+      tools: null,
+      // The middleware's own settings, as sent.
+      settings: {
+        reasoning: "low",
+        providerOptions: { openai: { promptCacheKey: trackId } },
+      },
+      reply: {
+        content: [{ type: "text", text: '{"actions":["plan"]}' }],
+        finishReason: finish,
+      },
+      error: null,
+      verdict: null,
+    });
+    expect(stored?.prompt).toEqual([
+      { role: "system", content: "the method" },
+      { role: "user", content: [{ type: "text", text: "teach me" }] },
+      { role: "assistant", content: [{ type: "text", text: "what do you know?" }] },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Record the sweep." },
+          // Named, not copied.
+          {
+            type: "file",
+            filename: "board.png",
+            mediaType: "image/png",
+            data: { type: "data", bytes: 2048 },
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps a streamed reply's parts: reasoning, text, and the searches with what they found", async () => {
+    const userId = await userWithKey("anthropic", "claude-opus-5-5");
+    const chunks: LanguageModelV4StreamPart[] = [
+      { type: "reasoning-start", id: "r" },
+      { type: "reasoning-delta", id: "r", delta: "Check the date. " },
+      { type: "reasoning-delta", id: "r", delta: "Search it." },
+      { type: "reasoning-end", id: "r" },
+      {
+        type: "tool-call",
+        toolCallId: "s1",
+        toolName: "web_search",
+        input: '{"query":"when was the transistor invented"}',
+        providerExecuted: true,
+      },
+      {
+        type: "tool-result",
+        toolCallId: "s1",
+        toolName: "web_search",
+        result: [{ url: "https://example.org/transistor", title: "The transistor" }],
+      },
+      { type: "text-start", id: "t" },
+      { type: "text-delta", id: "t", delta: "In 1947, " },
+      { type: "text-delta", id: "t", delta: "at Bell Labs." },
+      { type: "text-end", id: "t" },
+      { type: "finish", finishReason: finish, usage, providerMetadata: { anthropic: { x: 1 } } },
+    ];
+    const { caller } = callerWith(
+      new MockLanguageModelV4({ doStream: { stream: simulateReadableStream({ chunks }) } }),
+    );
+
+    const result = streamText({
+      model: await caller.model({ userId, purpose: "research", role: "strong" }),
+      prompt: "Check the facts.",
+    });
+    await result.text;
+
+    const [event] = await t.db.select().from(usageEvents);
+    expect((await storedFor(event?.id))?.reply).toEqual({
+      content: [
+        { type: "reasoning", text: "Check the date. Search it." },
+        {
+          type: "tool-call",
+          toolCallId: "s1",
+          toolName: "web_search",
+          input: '{"query":"when was the transistor invented"}',
+          providerExecuted: true,
+        },
+        {
+          type: "tool-result",
+          toolCallId: "s1",
+          toolName: "web_search",
+          result: [{ url: "https://example.org/transistor", title: "The transistor" }],
+        },
+        { type: "text", text: "In 1947, at Bell Labs." },
+      ],
+      finishReason: finish,
+      providerMetadata: { anthropic: { x: 1 } },
+    });
+  });
+
+  it("keeps a failed call's error in full, and a stream that failed part-way as far as it got", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const failing = new MockLanguageModelV4({
+      doGenerate: () =>
+        Promise.reject(
+          new APICallError({
+            message: "Incorrect API key provided",
+            url: "https://api.openai.com/v1/responses",
+            requestBodyValues: {},
+            statusCode: 401,
+            responseBody: '{"error":{"code":"invalid_api_key"}}',
+            isRetryable: false,
+          }),
+        ),
+      doStream: {
+        stream: simulateReadableStream({
+          chunks: [
+            { type: "text-start", id: "t" },
+            { type: "text-delta", id: "t", delta: "Half a" },
+            { type: "error", error: new Error("overloaded") },
+          ] satisfies LanguageModelV4StreamPart[],
+        }),
+      },
+    });
+    const { caller } = callerWith(failing);
+    const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+    await generateText({ model, prompt: "grade", maxRetries: 0 }).catch(() => undefined);
+    await streamParts(streamText({ model, prompt: "write" }));
+
+    const events = await t.db.select().from(usageEvents).orderBy(usageEvents.createdAt);
+    const rows = await Promise.all(events.map((e) => storedFor(e.id)));
+    expect(rows.map((row) => [row?.reply, row?.error])).toEqual([
+      [
+        null,
+        {
+          type: "AI_APICallError",
+          message: "Incorrect API key provided",
+          status: 401,
+          body: '{"error":{"code":"invalid_api_key"}}',
+        },
+      ],
+      [{ content: [{ type: "text", text: "Half a" }] }, { type: "Error", message: "overloaded" }],
+    ]);
+  });
+
+  it("records the verdict on the traced call whose reply was validated, and only on it", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    let calls = 0;
+    const flaky = new MockLanguageModelV4({
+      doGenerate: () =>
+        ++calls === 1 ? Promise.reject(networkError()) : Promise.resolve(reply("Draft.")),
+    });
+    const { caller } = callerWith(flaky, tight);
+    const model = await caller.model({ userId, purpose: "plan", role: "strong" });
+
+    const draft = await traced(() => generateText({ model, prompt: "write" }));
+    await generateText({ model, prompt: "untraced" });
+    await draft.judge({
+      rewrite: 0,
+      issues: verdictIssues([{ code: "term/unknown", message: "Uses a term not taught." }]),
+    });
+
+    const events = await t.db.select().from(usageEvents).orderBy(usageEvents.createdAt);
+    const rows = await Promise.all(events.map((e) => storedFor(e.id)));
+    // The failed attempt, the draft that answered after it, and the untraced call.
+    expect(rows.map((row) => row?.verdict)).toEqual([
+      null,
+      { rewrite: 0, issues: [{ code: "term/unknown", message: "Uses a term not taught." }] },
+      null,
+    ]);
+  });
+
+  it("goes with its track, while the call's usage stays", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const trackId = await trackOf(userId);
+    const { caller } = callerWith(new MockLanguageModelV4({ doGenerate: reply("Named.") }));
+    await generateText({
+      model: await caller.model({ userId, trackId, purpose: "track-name", role: "cheap" }),
+      prompt: "name it",
+    });
+    await generateText({
+      model: await caller.model({ userId, purpose: "import", role: "strong" }),
+      prompt: "read",
+    });
+    expect(await t.db.select().from(modelCalls)).toHaveLength(2);
+
+    await t.db.delete(tracks).where(eq(tracks.id, trackId));
+
+    expect(await t.db.select().from(usageEvents)).toHaveLength(2);
+    expect((await t.db.select().from(modelCalls)).map((row) => row.trackId)).toEqual([null]);
+  });
+
+  it("stores nothing of a call whose track was deleted while it ran, and still records its usage", async () => {
+    const logs = captureLogs();
+    onTestFinished(logs.restore);
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const trackId = await trackOf(userId);
+    const { caller } = callerWith(
+      new MockLanguageModelV4({
+        doGenerate: async () => {
+          await t.db.delete(tracks).where(eq(tracks.id, trackId));
+          return reply("Too late.");
+        },
+      }),
+    );
+
+    const result = await generateText({
+      model: await caller.model({ userId, trackId, purpose: "track-name", role: "cheap" }),
+      prompt: "name it",
+    });
+
+    expect(result.text).toBe("Too late.");
+    expect(await t.db.select().from(usageEvents)).toHaveLength(1);
+    expect(await t.db.select().from(modelCalls)).toEqual([]);
+    expect(logs.lines.filter((l) => l.level === "error")).toEqual([]);
+  });
+
+  it("keeps text Postgres can't hold as close as it can", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const { caller } = callerWith(new MockLanguageModelV4({ doGenerate: reply("a\u0000b") }));
+    await generateText({
+      model: await caller.model({ userId, purpose: "probe", role: "strong" }),
+      prompt: "x\u0000y",
+    });
+
+    const [row] = await t.db.select().from(modelCalls);
+    expect(row?.reply?.content).toEqual([{ type: "text", text: "a�b" }]);
+    expect(JSON.stringify(row?.prompt)).toContain("x�y");
   });
 });

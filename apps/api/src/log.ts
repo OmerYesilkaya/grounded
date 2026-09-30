@@ -19,7 +19,8 @@ import PinoPretty from "pino-pretty";
  * is passed around.
  *
  * Never log a key (plain or sealed), a session cookie, or anything a learner
- * or the tutor wrote: ids, counts, codes and the app's own messages only. Errors are logged through
+ * or the tutor wrote: ids, counts, codes and the app's own messages only. The rule is the log's:
+ * the database keeps content, every model call in full included (`model_calls`, model-call.ts). Errors are logged through
  * serializeError, which keeps the fields that diagnose a failure and none that carry content.
  *
  * The one exception is LOG_CONTENT=true, an operator's switch for diagnosing what a model was asked

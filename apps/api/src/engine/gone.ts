@@ -27,7 +27,8 @@ async function stillThere(db: Db, payload: unknown): Promise<boolean> {
  * Jobs on a deleted track end quietly. One still queued doesn't start; one running when the track
  * goes stops at its next write (a row it adds has nothing left to belong to) and ends as done, not
  * failed: nobody is left to tell. Its model call in flight finishes and is recorded in
- * `usage_events`, which belongs to the learner, not the track.
+ * `usage_events`, which belongs to the learner, not the track; its content is not stored
+ * (`model_calls` goes with the track).
  */
 export function endingWhenGone(tasks: TaskList, db: Db): TaskList {
   const wrapped: TaskList = {};
