@@ -369,9 +369,14 @@ about, test and debug.
     makes beside its real work (the probe's, the opening review's and the final's decisions, a
     check's grading, a review): the rejected ones are the verdict on that call, added to its own
     where it has one (a second verdict on a call adds its issues), and on the call that sent them
-    again. Not yet for lesson outlines and steps (a streamed lesson is one call validated step by
-    step), whose rewrites' prompts carry the rejected draft and the issues'
-    messages all the same.
+    again. And for lessons: each outline's problems; the streamed lesson's, one call validated
+    step by step as it streams, gets every step's issues in one verdict once the stream is done,
+    each issue naming its step (`stepId`), what the first version of each step broke; and each
+    step's rewrite gets its own. The lesson pipeline lives in core, which knows nothing of how
+    calls are stored, so it is handed the tracer (`GenerateLessonOptions.trace`, a `CallTracer`
+    from `packages/core/src/verdict.ts`, where the verdict's type lives); it starts only the
+    streamed call inside the traced run, so the steps' reviews, made while it streams, stay out of
+    it.
 
   Its own table, not columns on `usage_events`: the two outlive different things (usage records
   what was spent and outlives a deleted track, §4.5; content is the track's and goes with it, by

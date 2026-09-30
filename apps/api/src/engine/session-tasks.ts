@@ -1027,6 +1027,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           request: `Write the lesson for the approved plan. The session so far:\n\n${transcript}${notes}`,
           terms,
           review: reviewerFor(session),
+          trace: traced,
           ...(resume ? { resume } : {}),
           media: createLessonMedia({
             ...deps.media,

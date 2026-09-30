@@ -1,7 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import type { CallVerdict } from "@grounded/db";
+import type { CallVerdict, Judge } from "@grounded/core";
 
-export type { CallVerdict };
+export type { CallVerdict, Judge };
 
 /**
  * Validator verdicts for stored model calls (design §4.4). The middleware stores every call
@@ -10,12 +10,6 @@ export type { CallVerdict };
  * it on the call. Nothing is passed around: the calls are found through the async context, as the
  * log's fields are (log.ts).
  */
-
-/**
- * Records a verdict on a call. A second verdict on the same call, from another validator (the
- * track edits a check's grading made, beside its reply), adds its issues to the first's.
- */
-export type Judge = (verdict: CallVerdict) => Promise<void>;
 
 /** The calls that answered within one traced run, in the order they finished. */
 export interface Trace {
@@ -32,7 +26,7 @@ export const currentTrace = (): Trace | undefined => traces.getStore();
  * Runs `run`, keeping the model calls it makes; `judge` then records a verdict on the one whose
  * reply was validated: the last that answered (an attempt before it failed, or came back empty and
  * was asked again). A traced run within it keeps its own calls. Where no call was stored (a
- * test's scripted model), `judge` does nothing.
+ * test's scripted model), `judge` does nothing. It is the lesson pipeline's CallTracer (core).
  */
 export async function traced<T>(run: () => PromiseLike<T>): Promise<{ value: T; judge: Judge }> {
   const trace: Trace = { calls: [] };
@@ -45,14 +39,18 @@ export async function traced<T>(run: () => PromiseLike<T>): Promise<{ value: T; 
   };
 }
 
-/** A verdict's issues from the validators' own: their codes and messages, or messages alone. */
+/**
+ * A verdict's issues from the validators' own: their codes, messages and steps, or messages alone.
+ */
 export const verdictIssues = (
-  issues: readonly (string | { code?: string; message: string })[],
+  issues: readonly (string | { code?: string; message: string; stepId?: string })[],
 ): CallVerdict["issues"] =>
   issues.map((issue) =>
     typeof issue === "string"
       ? { message: issue }
-      : issue.code
-        ? { code: issue.code, message: issue.message }
-        : { message: issue.message },
+      : {
+          ...(issue.code ? { code: issue.code } : {}),
+          message: issue.message,
+          ...(issue.stepId ? { stepId: issue.stepId } : {}),
+        },
   );

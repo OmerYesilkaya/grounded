@@ -11,6 +11,7 @@ import { generateText, Output, stepCountIs, streamText, type Instructions, type 
 import { z } from "zod";
 import type { LessonStepInfo, StepCheck } from "./session.js";
 import type { Reviewer } from "./review.js";
+import { untraced, type CallTracer, type VerdictIssue } from "./verdict.js";
 
 export const lessonOutlineSchema = z.object({
   title: z
@@ -122,6 +123,12 @@ export interface GenerateLessonOptions {
   media?: LessonMedia;
   /** Judges what the validators can't decide by matching (design §3.3); without it, nothing is. */
   review?: Reviewer;
+  /**
+   * Runs each model call so its verdict is recorded on it (design §4.4): each outline's problems,
+   * the streamed lesson's issues step by step (every step's first version), and each step
+   * rewrite's. Without it, verdicts go nowhere.
+   */
+  trace?: CallTracer;
 }
 
 export interface LessonResult {
@@ -157,10 +164,11 @@ type Settled =
 export async function generateLesson(options: GenerateLessonOptions): Promise<LessonResult> {
   const retries = options.maxRetries ?? 2;
   const { resume } = options;
+  const trace = options.trace ?? untraced;
   let outline: StoredLessonOutline;
   if (resume) outline = resume.outline;
   else {
-    const written = await writeOutline(options, retries);
+    const written = await writeOutline(options, retries, trace);
     await options.onOutline?.(written);
     outline = written;
   }
@@ -181,13 +189,18 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
     }
   };
 
-  const stream = streamText({
-    model: options.model,
-    system: options.system,
-    prompt: resume
-      ? resumePrompt(options.request, planned, resume.written)
-      : writePrompt(options.request, planned, options.media?.found() ?? ""),
-  });
+  // Only the call is started in the traced run: the steps' reviews, made as it streams, are not it.
+  const { value: stream, judge: judgeWriting } = await trace(() =>
+    Promise.resolve(
+      streamText({
+        model: options.model,
+        system: options.system,
+        prompt: resume
+          ? resumePrompt(options.request, planned, resume.written)
+          : writePrompt(options.request, planned, options.media?.found() ?? ""),
+      }),
+    ),
+  );
   let buffer = "";
   let checked = 0;
   let started = 0;
@@ -217,13 +230,20 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
       planned,
       options,
     );
+  // The stream's verdict: what each step it wrote broke, before any was rewritten.
+  await judgeWriting({
+    rewrite: 0,
+    issues: settled.slice(first).flatMap((entry, i) => stepVerdict(entry, first + i)),
+  });
 
   for (let index = first; index < settled.length; index++) {
     let entry = settled[index];
     for (let attempt = 0; entry?.kind === "retry" && attempt < retries; attempt++) {
       await options.onStepStart?.(index, attempt + 1, entry.issues);
-      const markdown = await regenerate(options, planned, index, entry);
-      entry = await check(markdown, index, planned, options);
+      const retried = entry;
+      const rewrite = await trace(() => regenerate(options, planned, index, retried));
+      entry = await check(rewrite.value, index, planned, options);
+      await rewrite.judge({ rewrite: attempt + 1, issues: stepVerdict(entry, index) });
     }
     if (entry?.kind === "retry") entry = await finalize(entry, index, planned, options);
     settled[index] = entry;
@@ -244,12 +264,20 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
   return { outline, steps, stepInfo: planned.steps, failed, degraded };
 }
 
+/** A step's issues as the verdict on the call that wrote it: none unless it is to be rewritten. */
+function stepVerdict(entry: Settled | undefined, index: number): VerdictIssue[] {
+  if (entry?.kind !== "retry") return [];
+  const stepId = `s${String(index + 1)}`;
+  return entry.issues.map(({ code, message }) => ({ code, message, stepId }));
+}
+
 const OUTLINE_REQUEST =
   "Write the lesson's outline first: its steps in order. Name every term as the term list spells it: a step introduces only planned terms (or taught ones it teaches again), and rests on terms the learner holds (confirmed, assumed or borrowed) or that it or an earlier step introduces. A taught term the lesson builds on is taught again first.";
 
 async function writeOutline(
   options: GenerateLessonOptions,
   retries: number,
+  trace: CallTracer,
 ): Promise<LessonOutline> {
   let feedback = "";
   const tools = options.media?.tools;
@@ -258,22 +286,32 @@ async function writeOutline(
     : "";
   let problems: OutlineProblem[] = [];
   for (let attempt = 0; attempt <= retries; attempt++) {
-    const { output } = await generateText({
-      model: options.model,
-      system: options.system,
-      output: Output.object({ schema: lessonOutlineSchema }),
-      prompt: `${options.request}\n\n${OUTLINE_REQUEST}${finding}${feedback}`,
-      ...(tools
-        ? {
-            tools,
-            stopWhen: stepCountIs(OUTLINE_TOOL_STEPS),
-            // The last round has no tools, so the outline always ends in its answer.
-            prepareStep: ({ stepNumber }: { stepNumber: number }) =>
-              stepNumber === OUTLINE_TOOL_STEPS - 1 ? { activeTools: [] } : {},
-          }
-        : {}),
+    const asked = await trace(() =>
+      generateText({
+        model: options.model,
+        system: options.system,
+        output: Output.object({ schema: lessonOutlineSchema }),
+        prompt: `${options.request}\n\n${OUTLINE_REQUEST}${finding}${feedback}`,
+        ...(tools
+          ? {
+              tools,
+              stopWhen: stepCountIs(OUTLINE_TOOL_STEPS),
+              // The last round has no tools, so the outline always ends in its answer.
+              prepareStep: ({ stepNumber }: { stepNumber: number }) =>
+                stepNumber === OUTLINE_TOOL_STEPS - 1 ? { activeTools: [] } : {},
+            }
+          : {}),
+      }),
+    );
+    const fitted = fitOutline(asked.value.output, options.terms);
+    await asked.judge({
+      rewrite: attempt,
+      issues: fitted.problems.map(({ code, message, step }) => ({
+        code,
+        message,
+        stepId: `s${String(step)}`,
+      })),
     });
-    const fitted = fitOutline(output, options.terms);
     if (fitted.problems.length === 0) return fitted.outline;
     problems = fitted.problems;
     if (attempt < retries) await options.onOutlineRejected?.(attempt + 1, problems);

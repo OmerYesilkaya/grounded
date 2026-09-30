@@ -48,6 +48,13 @@ export {
   type TrackAction,
 } from "./actions.js";
 export { generateLesson, LessonOutlineError, lessonOutlineSchema, placeChecks } from "./lesson.js";
+export {
+  untraced,
+  type CallTracer,
+  type CallVerdict,
+  type Judge,
+  type VerdictIssue,
+} from "./verdict.js";
 export type {
   GenerateLessonOptions,
   LessonMedia,

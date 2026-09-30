@@ -20,6 +20,7 @@ import type {
   AssignmentKind,
   AssignmentTask,
   AttachmentKind,
+  CallVerdict,
   ChecklistItem,
   ChecklistMark,
   ProbeVerdict,
@@ -147,14 +148,6 @@ export interface StoredReply {
   finishReason?: StoredJson;
   /** What the provider returned beside the parts (Gemini's search grounding, cache usage…). */
   providerMetadata?: StoredJson;
-}
-
-/** What the app's validators decided about a model call's reply (design §4.4). */
-export interface CallVerdict {
-  /** Which writing the call was: 0 the first, 1 the rewrite asked for after it broke a rule, … */
-  rewrite: number;
-  /** What the validators found in the reply, the review's judgments included; none: it passed. */
-  issues: { code?: string; message: string }[];
 }
 
 /**

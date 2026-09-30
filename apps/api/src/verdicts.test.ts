@@ -187,3 +187,36 @@ describe("track edits", () => {
     ]);
   });
 });
+
+describe("lessons", () => {
+  it("keep each outline's verdict, the stream's by step, and each rewrite's", async () => {
+    const session = await planned();
+    const [first, second] = OUTLINE.steps;
+    if (!first || !second) throw new Error("fixture outline is short");
+    const unplanned = { ...OUTLINE, steps: [{ ...first, introduces: ["mutex"] }, second] };
+    // The first step comes without its check: it is rewritten, with the check.
+    const [s1 = "", s2 = ""] = LESSON.split("\n\n## ");
+    const unchecked = s1.replace(/\n\n:::check[\s\S]*$/, "");
+    models.script("lesson", {
+      text: `${unchecked}\n\n## ${s2}`,
+      thenGenerate: [JSON.stringify(unplanned), JSON.stringify(OUTLINE), s1],
+    });
+    await t.request(`/api/sessions/${session.sessionId}/approve-plan`, {
+      method: "POST",
+      cookie: session.cookie,
+    });
+    await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 2);
+
+    const brief = (await verdictsOf("lesson")).map((v) => [
+      v?.rewrite,
+      v?.issues.map((i) => `${i.stepId ?? ""} ${i.code ?? ""}`),
+    ]);
+    expect(brief).toEqual([
+      // Step 1 teaches no planned term, so step 2 rests on one nothing introduced.
+      [0, ["s1 outline/not-planned", "s2 outline/not-held"]],
+      [1, []],
+      [0, ["s1 lesson/missing-check"]],
+      [1, []],
+    ]);
+  });
+});

@@ -8,6 +8,8 @@ import {
   generateLesson,
   LessonOutlineError,
   placeChecks,
+  type CallTracer,
+  type CallVerdict,
   type GenerateLessonOptions,
   type LessonMedia,
   type LessonOutline,
@@ -217,6 +219,40 @@ describe("generateLesson", () => {
     expect(promptText(model.doGenerateCalls[1])).toContain(
       'Step 1 introduces "mutex", which isn\'t a planned term. Name the planned term it teaches exactly as the term list spells it, or leave it out.',
     );
+  });
+
+  it("gives each call its verdict: each outline's problems, the stream's by step, each rewrite's", async () => {
+    const [first] = OUTLINE.steps;
+    if (!first) throw new Error("fixture outline is empty");
+    const bad: LessonOutline = { ...OUTLINE, steps: [{ ...first, introduces: ["mutex"] }] };
+    const model = new MockLanguageModelV4({
+      doGenerate: [text(JSON.stringify(bad)), text(JSON.stringify(OUTLINE)), text(S1)],
+      doStream: streamOf([BROKEN_S1, S2, S3].join("\n\n")),
+    });
+    // One entry per traced call, in the order they were made, with the verdicts it was given.
+    const calls: CallVerdict[][] = [];
+    const trace: CallTracer = async (call) => {
+      const verdicts: CallVerdict[] = [];
+      calls.push(verdicts);
+      return {
+        value: await call(),
+        judge: (verdict) => {
+          verdicts.push(verdict);
+          return Promise.resolve();
+        },
+      };
+    };
+    await run(model, { trace });
+
+    const brief = (verdicts: CallVerdict[]) =>
+      verdicts.map((v) => [v.rewrite, v.issues.map((i) => `${i.stepId ?? ""} ${i.code ?? ""}`)]);
+    expect(calls.map(brief)).toEqual([
+      [[0, ["s1 outline/not-planned"]]],
+      [[1, []]],
+      // The stream wrote every step; only the first broke a rule.
+      [[0, ["s1 lesson/missing-check"]]],
+      [[1, []]],
+    ]);
   });
 
   it("gives up after three outlines that don't fit, with what was wrong with the last", async () => {
