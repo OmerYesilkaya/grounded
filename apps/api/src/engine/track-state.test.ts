@@ -141,7 +141,7 @@ describe("applyActions", () => {
       { source: "close" },
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       errors: [
         '"lock" isn\'t in the term list; add it as a planned term first (or as assumed, if the learner already knew it).',
@@ -150,6 +150,13 @@ describe("applyActions", () => {
         'There is no open fix-list item "Never recorded".',
       ],
     });
+    // With each rejection's code, for the call's stored verdict (design §4.4).
+    expect(result.ok ? [] : result.rejected.map((r) => r.code)).toEqual([
+      "unknown-term",
+      "no-evidence",
+      "unknown-rests-on",
+      "no-open-fix-item",
+    ]);
     const context = await loadTrackContext(t.db, trackId);
     expect(context.terms).toEqual([{ term: "memory", status: "planned", restsOn: [] }]);
     expect(context.fixList).toEqual([]);
@@ -391,7 +398,7 @@ describe("applyActions: add-to-arc", () => {
       ],
       { source: "plan" },
     );
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       ok: false,
       // In the batch's order.
       errors: [
@@ -567,7 +574,10 @@ describe("applyActions: the plan's notes, edited by section", () => {
         [{ type: "edit-plan-notes", heading: "## Owed", text: null }],
         { source: "close", rewritePlan: true },
       ),
-    ).toEqual({ ok: false, errors: ['The plan\'s notes have no section "## Owed" to remove.'] });
+    ).toMatchObject({
+      ok: false,
+      errors: ['The plan\'s notes have no section "## Owed" to remove.'],
+    });
     await applyActions(
       t.db,
       trackId,
@@ -624,7 +634,7 @@ describe("applyActions: teaching language", () => {
       await applyActions(t.db, trackId, [{ type: "set-language", language: "  " }], {
         source: "probe",
       }),
-    ).toEqual({
+    ).toMatchObject({
       ok: false,
       errors: ["set-language needs the name of a language."],
     });
@@ -931,7 +941,7 @@ describe("borrowed terms (#54)", () => {
       [{ type: "borrow-term", term: "scheduler", from: "scheduler" }],
       { source: "plan" },
     );
-    expect(rejected).toEqual({
+    expect(rejected).toMatchObject({
       ok: false,
       errors: [
         `"scheduler" isn't held in any of the learner's other tracks; plan "scheduler" as a term to teach instead.`,

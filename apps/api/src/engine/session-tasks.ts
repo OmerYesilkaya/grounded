@@ -111,7 +111,7 @@ import {
   reviewsUnderWay,
   takenUpBy,
 } from "./opening-review.js";
-import { recordEdits } from "./track-edits.js";
+import { recordEdits, rejectionIssues } from "./track-edits.js";
 import { markCardsTaught } from "./word-cards.js";
 import { createReviewer } from "./review.js";
 import {
@@ -667,18 +667,17 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           ...context.messages,
           { role: "user", content: REVIEW_DECISION_PROMPT },
         ];
-        const { output } = await withActivity(
-          db,
-          sessionId,
-          "Noting what your answers showed",
-          () =>
+        const decided = await traced(() =>
+          withActivity(db, sessionId, "Noting what your answers showed", () =>
             generateText({
               model: decider,
               system: context.system,
               output: Output.object({ schema: openingReviewDecisionSchema }),
               messages: asking,
             }),
+          ),
         );
+        const { output } = decided.value;
         if (output.actions.length)
           await recordEdits(db, {
             sessionId,
@@ -686,6 +685,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             actions: output.actions,
             source: "review",
             label: "Noting what your answers showed",
+            judge: decided.judge,
             askAgain: async (feedback) =>
               (
                 await generateText({
@@ -776,18 +776,17 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       if (answered) {
         // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
         const decider = await modelFor("probe-decision");
-        const { output } = await withActivity(
-          db,
-          sessionId,
-          "Noting what your answers showed",
-          () =>
+        const decided = await traced(() =>
+          withActivity(db, sessionId, "Noting what your answers showed", () =>
             generateText({
               model: decider,
               system: context.system,
               output: Output.object({ schema: probeDecisionSchema }),
               messages: [...context.messages, { role: "user", content: PROBE_DECISION_PROMPT }],
             }),
+          ),
         );
+        const { output } = decided.value;
         if (output.actions.length) {
           await recordEdits(db, {
             sessionId,
@@ -795,6 +794,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             actions: output.actions,
             source: "probe",
             label: "Noting what your answers showed",
+            judge: decided.judge,
             askAgain: async (feedback) =>
               (
                 await generateText({
@@ -898,7 +898,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 output: Output.object({ schema: teachBackDecisionSchema }),
                 messages: asking,
               }).then(({ output }) => output);
-        const output = await withActivity(db, sessionId, "Noting what your answers showed", decide);
+        const decided = await traced(() =>
+          withActivity(db, sessionId, "Noting what your answers showed", decide),
+        );
+        const output = decided.value;
         // A break takes its term back to taught, the app's to derive (final.ts in core).
         const actions = [...output.actions, ...breakDemotions(output.breaks, context.terms)];
         if (actions.length)
@@ -908,6 +911,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             actions,
             source: part,
             label: "Noting what your answers showed",
+            judge: decided.judge,
             askAgain: async (feedback) =>
               (
                 await generateText({
@@ -1184,6 +1188,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             actions: graded.actions,
             source: `check ${stepId}`,
             label: "Checking your answer",
+            judge,
             askAgain: async (feedback) =>
               (
                 await generateText({
@@ -1353,21 +1358,28 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           purpose: "term-sweep",
           role: "strong",
         });
-        const { output } = await withActivity(db, sessionId, "Updating your term list", () =>
-          generateText({
-            model,
-            system,
-            output: Output.object({ schema: sweepActionsSchema }),
-            messages: [
-              ...recapped,
-              {
-                role: "user",
-                content: `(For the app; the learner doesn't see this.) Now the term sweep: ${SWEEP_REQUEST}${final ? FINAL_SWEEP_REQUEST : ""}${feedback}`,
-              },
-            ],
-          }),
+        // Traced, so each attempt's verdict (the edits rejected) is stored on its call.
+        const swept = await traced(() =>
+          withActivity(db, sessionId, "Updating your term list", () =>
+            generateText({
+              model,
+              system,
+              output: Output.object({ schema: sweepActionsSchema }),
+              messages: [
+                ...recapped,
+                {
+                  role: "user",
+                  content: `(For the app; the learner doesn't see this.) Now the term sweep: ${SWEEP_REQUEST}${final ? FINAL_SWEEP_REQUEST : ""}${feedback}`,
+                },
+              ],
+            }),
+          ),
         );
-        if (output.actions.length === 0) break;
+        const { output } = swept.value;
+        if (output.actions.length === 0) {
+          await swept.judge({ rewrite: attempt, issues: [] });
+          break;
+        }
         const options = { source: "close", rewritePlan: true };
         // The last attempt keeps what validates, so a bad edit doesn't cost the rest of the sweep.
         if (attempt + 1 === SWEEP_ATTEMPTS) {
@@ -1377,6 +1389,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             output.actions,
             options,
           );
+          await swept.judge({ rewrite: attempt, issues: rejectionIssues(rejected) });
           if (rejected.length > 0)
             log.warn(
               { attempts: SWEEP_ATTEMPTS, left: rejected.length },
@@ -1385,6 +1398,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           break;
         }
         const applied = await applyActions(db, session.trackId, output.actions, options);
+        await swept.judge({
+          rewrite: attempt,
+          issues: applied.ok ? [] : rejectionIssues(applied.rejected),
+        });
         if (applied.ok) break;
         log.info({ attempt: attempt + 1 }, "term sweep rejected; asking again");
         feedback = `\n\nThose edits were rejected:\n${applied.errors.map((e) => `- ${e}`).join("\n")}\nFix them.`;
@@ -1485,18 +1502,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             terms,
             kind: "plan",
           });
-          const { output } = await withActivity(db, sessionId, "Recording the plan's terms", () =>
-            generateText({
-              model,
-              system,
-              output: Output.object({ schema: planActionsSchema }),
-              messages: [
-                ...conversation,
-                { role: "assistant", content: reply.text },
-                { role: "user", content: PLAN_RECORD_PROMPT },
-              ],
-            }),
+          // Traced, so the record's verdict (its edits rejected) is stored on its call.
+          const recorded = await traced(() =>
+            withActivity(db, sessionId, "Recording the plan's terms", () =>
+              generateText({
+                model,
+                system,
+                output: Output.object({ schema: planActionsSchema }),
+                messages: [
+                  ...conversation,
+                  { role: "assistant", content: reply.text },
+                  { role: "user", content: PLAN_RECORD_PROMPT },
+                ],
+              }),
+            ),
           );
+          const { output } = recorded.value;
           const applied = output.actions.length
             ? await applyActions(db, session.trackId, output.actions, {
                 source: "plan",
@@ -1504,7 +1525,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             : {
                 ok: false as const,
                 errors: ["Record the plan's planned terms and place them in its arcs."],
+                rejected: [],
               };
+          await recorded.judge({
+            rewrite: attempt,
+            issues: applied.ok
+              ? []
+              : applied.rejected.length
+                ? rejectionIssues(applied.rejected)
+                : verdictIssues(applied.errors),
+          });
           if (applied.ok) {
             // What the plan's picture is drawn around (term-map.ts).
             await db

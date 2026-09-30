@@ -5,7 +5,7 @@ import type {
   LanguageModelV4Usage,
 } from "@ai-sdk/provider";
 import type { KeyVault } from "@grounded/crypto";
-import { credentials, eq, modelCalls, usageEvents, type Db } from "@grounded/db";
+import { credentials, eq, modelCalls, sql, usageEvents, type Db } from "@grounded/db";
 import {
   cheapModelFor,
   classifyProviderError,
@@ -167,11 +167,16 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
           return;
         }
         if (error !== undefined || !exchange.trace) return;
+        // A second verdict on the call (its track edits, beside its reply) adds its issues.
         exchange.trace.calls.push(async (verdict) => {
           try {
             await db
               .update(modelCalls)
-              .set({ verdict })
+              .set({
+                verdict: sql`case when ${modelCalls.verdict} is null then ${JSON.stringify(verdict)}::jsonb
+                  else jsonb_set(${modelCalls.verdict}, '{issues}',
+                    (${modelCalls.verdict} -> 'issues') || ${JSON.stringify(verdict.issues)}::jsonb) end`,
+              })
               .where(eq(modelCalls.usageEventId, usageEventId));
           } catch (failure) {
             log.error({ err: failure }, "a model call's verdict could not be stored");

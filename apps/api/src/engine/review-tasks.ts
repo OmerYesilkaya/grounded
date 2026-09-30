@@ -96,6 +96,8 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
       settleReview({ output, assignment, answers, terms, review });
 
     const asked = await ask([]);
+    // The call whose review is kept: its track edits' verdict goes on it too.
+    let judge = asked.judge;
     let output = asked.value;
     let settled = await settle(output);
     await asked.judge({ rewrite: 0, issues: verdictIssues(settled.problems) });
@@ -110,6 +112,7 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
         },
       ]);
       output = again.value;
+      judge = again.judge;
       settled = await settle(output);
       await again.judge({ rewrite: 1, issues: verdictIssues(settled.problems) });
       if (settled.problems.length > 0)
@@ -127,6 +130,7 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
         actions: reviewed.actions,
         source: assignment.kind === "exam" ? "exam" : "homework",
         label,
+        judge,
         askAgain: async (feedback) =>
           (
             await generateText({

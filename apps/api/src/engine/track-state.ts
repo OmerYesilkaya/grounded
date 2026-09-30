@@ -31,7 +31,8 @@ import type { TrackTerm } from "@grounded/content";
 import { content, log } from "../log.js";
 import { loadTeachingNotes } from "./profile.js";
 
-export type ApplyResult = { ok: true } | { ok: false; errors: string[] };
+export type ApplyResult =
+  { ok: true } | { ok: false; errors: string[]; rejected: RejectedAction[] };
 
 export interface KnownTerm {
   id: string | null;
@@ -397,7 +398,7 @@ export async function applyActions(
 ): Promise<ApplyResult> {
   const checked = await checkBatch(db, trackId, batch, options);
   if (checked.rejected.length > 0)
-    return { ok: false, errors: checked.rejected.map((r) => r.reason) };
+    return { ok: false, errors: checked.rejected.map((r) => r.reason), rejected: checked.rejected };
   await writeBatch(db, trackId, checked, options.source);
   return { ok: true };
 }

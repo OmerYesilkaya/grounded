@@ -1,6 +1,6 @@
 import { asc, eq, modelCalls, usageEvents } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createFlows } from "./test/flows.js";
+import { createFlows, homework } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 import { throughTheCaller } from "./test/stored-models.js";
@@ -9,7 +9,7 @@ import { throughTheCaller } from "./test/stored-models.js";
 // are called through the real model caller, which stores every call.
 const models = scriptedModels();
 const t = createTestHarness({ models: throughTheCaller(models.access, () => t) });
-const { until, planned } = createFlows(t, models);
+const { until, planned, startedSession, putOffHomework } = createFlows(t, models);
 
 beforeEach(() => {
   models.reset();
@@ -48,8 +48,8 @@ async function inLesson() {
   return session;
 }
 
-const answer = (cookie: string, sessionId: string, text: string) =>
-  t.request(`/api/sessions/${sessionId}/steps/s1/answer`, {
+const answer = (cookie: string, sessionId: string, text: string, stepId = "s1") =>
+  t.request(`/api/sessions/${sessionId}/steps/${stepId}/answer`, {
     method: "POST",
     cookie,
     body: JSON.stringify({ text }),
@@ -104,6 +104,86 @@ describe("check replies", () => {
         issues: [{ code: "check/repair-asks", message: expect.any(String) as string }],
       },
       { rewrite: 1, issues: [] },
+    ]);
+  });
+});
+
+/** An edit the track can't take: the term isn't in it. */
+const UNKNOWN = { type: "set-term-status", term: "nonsense", status: "confirmed", evidence: "x" };
+const unknownTerm = {
+  code: "unknown-term",
+  message: expect.stringContaining("nonsense") as string,
+};
+
+describe("track edits", () => {
+  it("keep their rejections on the call that made them, and on the one that sent them again", async () => {
+    const { cookie, sessionId } = await startedSession();
+    models.script("probe-decision", {
+      thenGenerate: [
+        JSON.stringify({ actions: [UNKNOWN], finished: false }),
+        JSON.stringify({ actions: [] }),
+      ],
+    });
+    models.script("probe", { text: "And what happens when two workers do it at once?" });
+    await t.request(`/api/sessions/${sessionId}/messages`, {
+      method: "POST",
+      cookie,
+      body: JSON.stringify({ text: "it just adds one" }),
+    });
+    await until(cookie, sessionId, (s) => s.messages.length === 3 && !s.messages[2]?.streaming);
+
+    expect(await verdictsOf("probe-decision")).toEqual([
+      { rewrite: 0, issues: [unknownTerm] },
+      { rewrite: 1, issues: [] },
+    ]);
+  });
+
+  it("add to a check grading's own verdict", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script("check", {
+      thenGenerate: [graded({ actions: [UNKNOWN] }), JSON.stringify({ actions: [] })],
+    });
+    await answer(cookie, sessionId, "an answer");
+    await until(cookie, sessionId, (s) => s.state.steps.s1?.status === "passed");
+
+    expect(await verdictsOf("check")).toEqual([
+      { rewrite: 0, issues: [unknownTerm] },
+      { rewrite: 1, issues: [] },
+    ]);
+  });
+
+  it("keep the plan's record and the term sweep's verdict on each attempt", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script("check", { thenGenerate: [graded({})] }, { thenGenerate: [graded({})] });
+    models.script("homework", homework("Explain it to a friend."));
+    models.script("close", { text: "We built it." });
+    const confirm = {
+      type: "set-term-status",
+      term: "lost update",
+      status: "confirmed",
+      evidence: "vanishes",
+    };
+    models.script(
+      "term-sweep",
+      { thenGenerate: [JSON.stringify({ actions: [confirm, UNKNOWN] })] },
+      { thenGenerate: [JSON.stringify({ actions: [confirm] })] },
+    );
+    models.script("left-off", { text: "Owed: the homework." });
+    for (const stepId of ["s1", "s2"]) {
+      await answer(cookie, sessionId, "an answer", stepId);
+      await until(cookie, sessionId, (s) => s.state.steps[stepId]?.status === "passed");
+    }
+    await putOffHomework(cookie, sessionId);
+    await until(cookie, sessionId, (s) => s.state.phase === "closed");
+
+    expect(await verdictsOf("term-sweep")).toEqual([
+      { rewrite: 0, issues: [unknownTerm] },
+      { rewrite: 1, issues: [] },
+    ]);
+    // The plan's message, then its record.
+    expect(await verdictsOf("plan")).toEqual([
+      { rewrite: 0, issues: [] },
+      { rewrite: 0, issues: [] },
     ]);
   });
 });

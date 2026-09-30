@@ -364,9 +364,13 @@ about, test and debug.
     that answered is the one judged. Recorded for tutor chat messages and asides' answers
     (`composeReply`), check replies (a grading done again is judged by matching alone, as a chat
     message's rewrite is: the review runs once), assignment records, homework and exam reviews,
-    track edits sent again, and the verdict of where the learner stands after the first probe
-    (§7.1); not yet for the term sweep, lesson outlines and steps (a streamed lesson is one call
-    validated step by step), whose rewrites' prompts carry the rejected draft and the issues'
+    the verdict of where the learner stands after the first probe (§7.1), the plan's record and
+    each term sweep attempt (the edits rejected, with their codes), and the track edits a call
+    makes beside its real work (the probe's, the opening review's and the final's decisions, a
+    check's grading, a review): the rejected ones are the verdict on that call, added to its own
+    where it has one (a second verdict on a call adds its issues), and on the call that sent them
+    again. Not yet for lesson outlines and steps (a streamed lesson is one call validated step by
+    step), whose rewrites' prompts carry the rejected draft and the issues'
     messages all the same.
 
   Its own table, not columns on `usage_events`: the two outlive different things (usage records

@@ -11,10 +11,16 @@ export type { CallVerdict };
  * log's fields are (log.ts).
  */
 
+/**
+ * Records a verdict on a call. A second verdict on the same call, from another validator (the
+ * track edits a check's grading made, beside its reply), adds its issues to the first's.
+ */
+export type Judge = (verdict: CallVerdict) => Promise<void>;
+
 /** The calls that answered within one traced run, in the order they finished. */
 export interface Trace {
   /** Each records its call's verdict. */
-  calls: ((verdict: CallVerdict) => Promise<void>)[];
+  calls: Judge[];
 }
 
 const traces = new AsyncLocalStorage<Trace>();
@@ -28,9 +34,7 @@ export const currentTrace = (): Trace | undefined => traces.getStore();
  * was asked again). A traced run within it keeps its own calls. Where no call was stored (a
  * test's scripted model), `judge` does nothing.
  */
-export async function traced<T>(
-  run: () => PromiseLike<T>,
-): Promise<{ value: T; judge: (verdict: CallVerdict) => Promise<void> }> {
+export async function traced<T>(run: () => PromiseLike<T>): Promise<{ value: T; judge: Judge }> {
   const trace: Trace = { calls: [] };
   const value = await traces.run(trace, run);
   return {
