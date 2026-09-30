@@ -11,8 +11,11 @@ import {
 } from "@grounded/db";
 import { generateText, Output, simulateReadableStream, streamText } from "ai";
 import { MockLanguageModelV4 } from "ai/test";
-import type { LanguageModelV4GenerateResult, LanguageModelV4StreamPart } from "@ai-sdk/provider";
-import { APICallError } from "@ai-sdk/provider";
+import {
+  type LanguageModelV4GenerateResult,
+  type LanguageModelV4StreamPart,
+  APICallError,
+} from "@ai-sdk/provider";
 import { setTimeout as sleep } from "node:timers/promises";
 import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { z } from "zod";
@@ -21,7 +24,7 @@ import { createTestHarness } from "../test/harness.js";
 import type { CallLimits } from "./call-limits.js";
 import { systemMessages } from "./call-options.js";
 import { traced, verdictIssues } from "./call-trace.js";
-import { createModelCaller, ProviderCallError } from "./model-call.js";
+import { createModelCaller, NoCredentialError, ProviderCallError } from "./model-call.js";
 
 const t = createTestHarness();
 
@@ -208,8 +211,7 @@ describe("callModel", () => {
     expect(error).toBeInstanceOf(ProviderCallError);
     expect(error).toMatchObject({
       kind: "invalid-key",
-      message:
-        "Your OpenAI key was rejected. Check it in Settings, or create a new one on OpenAI's site.",
+      notice: { code: "provider-failed", kind: "invalid-key", provider: "OpenAI" },
     });
     const [event] = await t.db.select().from(usageEvents);
     expect(event).toMatchObject({
@@ -247,7 +249,7 @@ describe("callModel", () => {
     const { caller } = callerWith(new MockLanguageModelV4({ doGenerate: reply("ok") }));
     await expect(
       caller.model({ userId: user.id, purpose: "probe", role: "strong" }),
-    ).rejects.toThrow("Add your AI key in Settings first.");
+    ).rejects.toBeInstanceOf(NoCredentialError);
   });
 });
 
@@ -364,7 +366,7 @@ describe("model call time limits", () => {
     expect(error).toBeInstanceOf(ProviderCallError);
     expect(error).toMatchObject({
       kind: "timeout",
-      message: "OpenAI is taking too long. Try again in a moment.",
+      notice: { code: "provider-failed", kind: "timeout", provider: "OpenAI" },
     });
     expect(Date.now() - started).toBeLessThan(1000);
     // Nothing waits again: a timeout is not retried.
@@ -483,7 +485,7 @@ describe("model call time limits", () => {
     expect(failure?.error).toBeInstanceOf(ProviderCallError);
     expect(failure?.error).toMatchObject({
       kind: "timeout",
-      message: "Anthropic is taking too long. Try again in a moment.",
+      notice: { code: "provider-failed", kind: "timeout", provider: "Anthropic" },
     });
     // The idle limit fired, not the longer thinking limit.
     expect(Date.now() - started).toBeLessThan(tight.thinkMs);

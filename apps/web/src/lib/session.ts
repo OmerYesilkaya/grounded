@@ -1,6 +1,8 @@
 import type { Block, LessonStep } from "@grounded/content";
 import type { SessionState } from "@grounded/core";
+import type { Cause, FailureNotice } from "@grounded/core/notices";
 import type { ProbeVerdict } from "@grounded/core/probe-verdict";
+import type { Said } from "@/i18n/notice";
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useReducer } from "react";
 import type { Aside } from "@/lesson/types";
@@ -30,6 +32,8 @@ export interface CheckEntry {
   text: string | null;
   blocks: Block[] | null;
   verdict: "landed" | "missed" | null;
+  /** The app's reply in place of the tutor's, when the answer couldn't be checked (design §9.3). */
+  failure?: FailureNotice | null;
 }
 
 export interface SessionModel {
@@ -60,7 +64,8 @@ export interface SessionModel {
   /** What the tutor is doing right now, oldest first; the last one is the one to show. */
   activities: Activity[];
   lastEventId: number;
-  error: string | null;
+  /** What a job that failed says: a notice, worded by the page (design §9.3). */
+  error: Said | null;
   /**
    * Waiting on a job nothing is doing (it failed, or died with its worker), which the learner can't
    * set going by writing: "Try again" queues it again. From the snapshot; a job starting clears it.
@@ -86,21 +91,22 @@ export interface VerdictState {
   /** offered: the learner hasn't asked for it yet. */
   status: "offered" | "writing" | "written" | "failed";
   verdict: ProbeVerdict | null;
-  /** Why it couldn't be written, when it failed. */
-  failure: string | null;
+  /** Why it couldn't be written, when it failed (words for one stored before notices). */
+  failure: Cause | string | null;
 }
 
 /** A running job step (api: engine/events.ts), with the reasoning the model shared, if any. */
 export interface Activity {
   id: string;
-  label: string;
+  /** What the job is doing: a notice, worded by the page (design §9.3). */
+  label: Said;
   detail: string | null;
   reasoning: string;
 }
 
 /** What GET /api/sessions/:id returns: the model without its local state. */
 export type SessionSnapshot = Omit<SessionModel, "error" | "activities"> & {
-  activities: { id: string; label: string; detail: string | null; state: "running" | "done" }[];
+  activities: { id: string; label: Said; detail: string | null; state: "running" | "done" }[];
 };
 
 const emptyLesson = { steps: [], totalSteps: 0, failedSteps: [], notes: {} };
@@ -196,6 +202,7 @@ export function reduceSession(model: SessionModel, event: StreamEvent): SessionM
             text: (data.text as string | undefined) ?? null,
             blocks: (data.blocks as Block[] | undefined) ?? null,
             verdict: (data.verdict as CheckEntry["verdict"] | undefined) ?? null,
+            failure: (data.failure as FailureNotice | undefined) ?? null,
           },
         ],
       };
@@ -212,7 +219,7 @@ export function reduceSession(model: SessionModel, event: StreamEvent): SessionM
     case "activity": {
       const { id, label, detail, state } = data as {
         id: string;
-        label: string;
+        label: Said;
         detail: string | null;
         state: string;
       };
@@ -251,7 +258,8 @@ export function reduceSession(model: SessionModel, event: StreamEvent): SessionM
     case "probe-verdict":
       return { ...next, verdict: event.data as VerdictState };
     case "error":
-      return { ...next, error: data.message as string };
+      // A notice; words, for an event stored before them.
+      return { ...next, error: (data.error ?? data.message) as Said };
     default: {
       const asides = reduceAsides(model.asides, event.type, event.data);
       if (!asides) return next;

@@ -7,9 +7,11 @@ import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
+import { useT, type Messages } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { Aside } from "./types";
+import { saidBlocks } from "@/i18n/notice";
 
 /** The passage a card is about, quoted (in the sheet, and for a card whose passage is gone). */
 export function QuotedPassage({ quote, className }: { quote: string; className?: string }) {
@@ -27,10 +29,11 @@ export function QuotedPassage({ quote, className }: { quote: string; className?:
 
 /** "Thinking…" until the answer's first words arrive. */
 export function Thinking() {
+  const t = useT().lesson.asides;
   return (
     <div className="flex items-center gap-2 text-[12.5px] text-subtle-foreground">
       <WorkingMark />
-      <span className="text-shimmer mb-px">Thinking…</span>
+      <span className="text-shimmer mb-px">{t.thinking}</span>
     </div>
   );
 }
@@ -64,7 +67,7 @@ interface Exchange {
 }
 
 /** The thread as questions, each with its answer (streaming, for the last one still waiting). */
-function exchangesOf(aside: Aside): Exchange[] {
+function exchangesOf(aside: Aside, t: Messages): Exchange[] {
   const exchanges: Exchange[] = [];
   for (const message of aside.messages) {
     if (message.role === "learner") {
@@ -73,7 +76,11 @@ function exchangesOf(aside: Aside): Exchange[] {
     }
     const last = exchanges.at(-1);
     if (last && !last.answer)
-      last.answer = { text: message.text ?? "", blocks: message.blocks, streaming: false };
+      last.answer = {
+        text: message.text ?? "",
+        blocks: message.failure ? saidBlocks(message.failure, t) : message.blocks,
+        streaming: false,
+      };
   }
   const last = exchanges.at(-1);
   if (last && !last.answer)
@@ -100,7 +107,9 @@ export function AsideThread({
   onSave,
   onClose,
 }: AsideThreadProps) {
-  const exchanges = exchangesOf(aside);
+  const all = useT();
+  const t = all.lesson.asides;
+  const exchanges = exchangesOf(aside, all);
   const waiting = exchanges.at(-1)?.answer?.streaming === true;
   const shown = expanded ? exchanges : exchanges.slice(0, 1);
   const more = exchanges.length - shown.length;
@@ -125,9 +134,7 @@ export function AsideThread({
         </div>
       ))}
       {more > 0 && (
-        <p className="mt-2 text-[11.5px] text-subtle-foreground">
-          {more} more {more === 1 ? "question" : "questions"}
-        </p>
+        <p className="mt-2 text-[11.5px] text-subtle-foreground">{t.moreQuestions(more)}</p>
       )}
       {expanded && aside.tangent && (
         <Tangent tangent={aside.tangent} saved={aside.saved} canSave={canAsk} onSave={onSave} />
@@ -141,13 +148,14 @@ export function AsideThread({
 
 function Tangent(props: { tangent: string; saved: boolean; canSave: boolean; onSave: () => void }) {
   const Icon = props.saved ? BookmarkCheck : BookmarkPlus;
+  const t = useT().lesson.asides;
   return (
     <div className="mt-3 flex gap-2 rounded-md bg-highlight px-2.5 py-2 text-[12.5px] leading-snug">
       <Icon className="mt-px size-3.5 shrink-0 text-primary" aria-hidden />
       <div className="min-w-0">
         <p className="text-muted-foreground">{props.tangent}</p>
         {props.saved ? (
-          <p className="mt-0.5 text-primary">Saved for a future session</p>
+          <p className="mt-0.5 text-primary">{t.saved}</p>
         ) : (
           props.canSave && (
             <button
@@ -155,7 +163,7 @@ function Tangent(props: { tangent: string; saved: boolean; canSave: boolean; onS
               onClick={props.onSave}
               className="mt-0.5 font-medium text-primary underline-offset-2 hover:underline"
             >
-              Save for a future session
+              {t.save}
             </button>
           )
         )}
@@ -189,6 +197,7 @@ export function QuestionBox({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const { common } = useT();
   const submit = (text: string) => {
     setSending(true);
     setError(null);
@@ -197,9 +206,7 @@ export function QuestionBox({
         setDraft("");
       })
       .catch((failure: unknown) => {
-        setError(
-          failure instanceof ApiError ? failure.message : "That didn't go through. Try again.",
-        );
+        setError(failure instanceof ApiError ? failure.message : common.failed);
       })
       .finally(() => {
         setSending(false);
@@ -240,11 +247,12 @@ function FollowUp(props: {
   onSubmit: (text: string) => Promise<void>;
   onCancel?: (() => void) | undefined;
 }) {
+  const t = useT().lesson.asides;
   return (
     <QuestionBox
-      label="Follow up"
-      placeholder={props.waiting ? "Answering…" : "Ask a follow-up…"}
-      submitLabel="Send"
+      label={t.followUp}
+      placeholder={props.waiting ? t.answering : t.askFollowUp}
+      submitLabel={t.send}
       waiting={props.waiting}
       onSubmit={props.onSubmit}
       onCancel={props.onCancel}
@@ -258,13 +266,15 @@ export function AskDraft(props: {
   onCancel: () => void;
   quote?: string;
 }) {
+  const { lesson, common } = useT();
+  const t = lesson.asides;
   return (
     <div>
       {props.quote && <QuotedPassage quote={props.quote} className="mb-2" />}
       <QuestionBox
-        label="Your question about this passage"
-        placeholder="Ask about this passage…"
-        submitLabel="Ask"
+        label={t.yourQuestion}
+        placeholder={t.askPassage}
+        submitLabel={t.ask}
         minRows={2}
         autoFocus="always"
         onSubmit={props.onSubmit}
@@ -277,7 +287,7 @@ export function AskDraft(props: {
           className="mr-auto h-7 px-2 text-[12.5px] text-muted-foreground"
           onClick={props.onCancel}
         >
-          Cancel
+          {common.cancel}
         </Button>
       </QuestionBox>
     </div>

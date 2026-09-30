@@ -8,6 +8,7 @@ import { ContentProvider } from "@/content/environment";
 import { BuiltPicture } from "@/components/session-pictures";
 import { LessonView, type StepProgress } from "@/lesson/lesson-view";
 import { StepMenu } from "@/lesson/step-menu";
+import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { asideActions } from "@/lib/asides";
 import { readableSteps, useSessionModel, type SessionModel } from "@/lib/session";
@@ -33,6 +34,7 @@ function stepProgress(model: SessionModel): Record<string, StepProgress> {
               from: "tutor" as const,
               blocks: c.blocks ?? [],
               ...(c.verdict ? { verdict: c.verdict } : {}),
+              ...(c.failure ? { failure: c.failure } : {}),
             },
       ),
       ...(note ? { note } : {}),
@@ -43,6 +45,7 @@ function stepProgress(model: SessionModel): Record<string, StepProgress> {
 
 export function SessionPage({ sessionId }: { sessionId: string }) {
   const model = useSessionModel(sessionId);
+  const t = useT().session;
   const phase = model?.state.phase;
   const queryClient = useQueryClient();
   // The sidebar shows each session's phase and its lesson's terms; refresh it when either changes.
@@ -93,20 +96,20 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
           <FinalParts phase={model.state.phase} />
         ) : (
           <div className="flex gap-0.5 rounded-lg border bg-card p-0.5">
-            {(["chat", "lesson"] as const).map((t) => (
+            {(["chat", "lesson"] as const).map((name) => (
               <button
-                key={t}
+                key={name}
                 type="button"
-                disabled={t === "lesson" && !hasLesson}
+                disabled={name === "lesson" && !hasLesson}
                 onClick={() => {
-                  setTab(t);
+                  setTab(name);
                 }}
                 className={cn(
-                  "touch-target relative rounded-md px-4 py-1 text-[13px] text-muted-foreground capitalize disabled:opacity-40 pointer-coarse:py-1.5",
-                  tab === t && "bg-muted text-foreground",
+                  "touch-target relative rounded-md px-4 py-1 text-[13px] text-muted-foreground disabled:opacity-40 pointer-coarse:py-1.5",
+                  tab === name && "bg-muted text-foreground",
                 )}
               >
-                {t}
+                {t.tabs[name]}
               </button>
             ))}
           </div>
@@ -127,17 +130,15 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
         ) : (
           // The outline exists but no step is written yet: say so, rather than an empty timeline.
           <div className="mx-auto w-full max-w-[68ch] px-6 pt-24 max-md:pt-12">
-            <h2 className="font-serif text-2xl font-semibold tracking-tight">
-              Writing your lesson
-            </h2>
+            <h2 className="font-serif text-2xl font-semibold tracking-tight">{t.writingLesson}</h2>
             <p className="mt-2 text-sm text-muted-foreground">
               {model.lesson && model.lesson.totalSteps > 0
-                ? `${String(model.lesson.totalSteps)} steps are planned. The first one opens as soon as it's written.`
-                : "The first step opens as soon as it's written."}
+                ? t.stepsPlanned(model.lesson.totalSteps)
+                : t.firstStepOpens}
             </p>
             <ActivityLine
               activities={model.activities}
-              fallback="Getting started…"
+              fallback={t.gettingStarted}
               className="mt-6"
             />
           </div>
@@ -190,7 +191,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
       {model.state.phase === "lesson" &&
         model.state.steps[model.state.currentStep ?? ""]?.status === "paused" && (
           <div className="fixed bottom-[max(1rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 rounded-lg border bg-card px-4 py-2 text-sm whitespace-nowrap shadow">
-            Paused here.{" "}
+            {t.pausedHere}{" "}
             <button
               type="button"
               className="text-primary underline"
@@ -198,7 +199,7 @@ export function SessionPage({ sessionId }: { sessionId: string }) {
                 post.mutate({ path: `/api/sessions/${sessionId}/resume` });
               }}
             >
-              Pick it up again
+              {t.pickUp}
             </button>
           </div>
         )}

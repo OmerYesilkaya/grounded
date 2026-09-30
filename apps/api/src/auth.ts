@@ -3,6 +3,7 @@ import type { Context, Hono, MiddlewareHandler } from "hono";
 import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { z } from "zod";
 import { isInvited, normalizeEmail } from "./allowlist.js";
+import { refuse } from "./refusals.js";
 
 /*
  * Sign-in by email alone (design §4.3): an email on the allowlist signs in by typing it, and stays
@@ -82,7 +83,7 @@ export function requireSignIn(
 ): MiddlewareHandler<{ Variables: { user: SignedInUser } }> {
   return async (c, next) => {
     const user = await signedInUser(c, options);
-    if (!user) return c.json({ error: "Sign in first." }, 401);
+    if (!user) return c.json(refuse("sign-in-first"), 401);
     c.set("user", user);
     await next();
   };
@@ -95,9 +96,9 @@ export function registerAuthRoutes(
 ): void {
   app.post("/api/auth/sign-in", async (c) => {
     const parsed = signInInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Enter your email." }, 400);
+    if (!parsed.success) return c.json(refuse("enter-email"), 400);
     const user = await signIn(options.db, parsed.data.email);
-    if (!user) return c.json({ error: "That email isn't invited." }, 403);
+    if (!user) return c.json(refuse("not-invited"), 403);
     await setSession(c, options, user);
     return c.json(user);
   });

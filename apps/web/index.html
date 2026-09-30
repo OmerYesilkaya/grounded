@@ -31,6 +31,14 @@
       } catch {
         document.documentElement.dataset.theme = "dark";
       }
+      // The page's language, for the browser (hyphens, a screen reader's voice) from the start. The
+      // same key and rules as src/i18n/language.ts.
+      try {
+        if (localStorage.getItem("grounded:language") === "tr")
+          document.documentElement.lang = "tr";
+      } catch {
+        // English, as the page says.
+      }
     </script>
   </head>
   <body>

@@ -1,6 +1,7 @@
 import type { ChecklistItem } from "@grounded/core/assignment";
 import { Check } from "lucide-react";
 import { useState } from "react";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 const storageKey = (assignmentId: string) => `grounded:self-check:${assignmentId}`;
@@ -46,6 +47,7 @@ export function SelfCheck(props: {
   readOnly: boolean;
 }) {
   const { ticked } = props;
+  const t = useT().homework;
   if (props.items.length === 0) return null;
   return (
     <section aria-labelledby="self-check" className="rounded-xl border bg-card px-4 py-3.5">
@@ -53,7 +55,7 @@ export function SelfCheck(props: {
         id="self-check"
         className="text-[11px] font-semibold tracking-[0.12em] text-subtle-foreground uppercase"
       >
-        A good answer shows
+        {t.goodAnswerShows}
       </h2>
       <ul className="mt-2.5 flex flex-col gap-1.5">
         {props.items.map((item) => {
@@ -93,9 +95,7 @@ export function SelfCheck(props: {
         })}
       </ul>
       {!props.readOnly && (
-        <p className="mt-2.5 text-[12px] leading-snug text-subtle-foreground">
-          Tick what your answer shows before you hand it in. Only you see the ticks.
-        </p>
+        <p className="mt-2.5 text-[12px] leading-snug text-subtle-foreground">{t.tickNote}</p>
       )}
     </section>
   );

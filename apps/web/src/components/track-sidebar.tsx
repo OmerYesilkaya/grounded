@@ -1,6 +1,7 @@
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useT } from "@/i18n";
 import { MANY_TRACKS, searchTracks, shortList } from "@/lib/track-list";
 import { useTracks } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ export function TrackSidebar({
   headerEnd?: ReactNode;
 }) {
   const tracks = useTracks();
+  const t = useT();
   const params = useParams({ strict: false });
   const navigate = useNavigate();
   // Tracks the learner opened or closed by hand; the rest follow the page (its track is open).
@@ -56,7 +58,7 @@ export function TrackSidebar({
   const currentTrackId =
     params.trackId ?? all.find((t) => t.items.some((item) => item.id === pageItemId))?.id;
   const searching = query.trim() !== "";
-  const found = searching ? searchTracks(all, query) : null;
+  const found = searching ? searchTracks(all, query, t) : null;
   const { shown, hidden } = shortList(all, currentTrackId, showAll);
   const rows = found ?? shown.map((track) => ({ track, items: null }));
 
@@ -85,15 +87,15 @@ export function TrackSidebar({
           to="/tracks/new"
           className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-ring bg-highlight px-2.5 py-2 pointer-coarse:py-2.5 text-[13px] font-medium text-primary hover:border-solid"
         >
-          + New track
+          {t.sidebar.newTrack}
         </Link>
         <label className="flex h-8 items-center gap-2 rounded-md border px-2.5 text-subtle-foreground pointer-coarse:h-10 focus-within:border-border-strong focus-within:text-foreground">
           <Search aria-hidden className="size-3.5 shrink-0" />
           <input
             ref={search}
             type="search"
-            aria-label="Search tracks and lessons"
-            placeholder="Search"
+            aria-label={t.sidebar.searchLabel}
+            placeholder={t.sidebar.search}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -116,7 +118,7 @@ export function TrackSidebar({
           )}
         </label>
       </div>
-      <nav aria-label="Tracks" className="flex-1 overflow-auto px-2 pt-1 pb-4">
+      <nav aria-label={t.sidebar.tracks} className="flex-1 overflow-auto px-2 pt-1 pb-4">
         <ul className="flex flex-col gap-0.5">
           {rows.map(({ track, items }) => {
             const currentItem = track.items.find((item) => item.id === pageItemId);
@@ -147,16 +149,16 @@ export function TrackSidebar({
             }}
             className="mt-1.5 px-2 py-1 text-[12px] text-subtle-foreground outline-none hover:text-foreground focus-visible:underline"
           >
-            {showAll ? "Fewer tracks" : `${String(hidden)} more tracks`}
+            {showAll ? t.sidebar.fewerTracks : t.sidebar.moreTracks(hidden)}
           </button>
         )}
         {found?.length === 0 && (
           <p className="px-2 py-2 text-[12.5px] text-subtle-foreground">
-            Nothing matches &ldquo;{query.trim()}&rdquo;.
+            {t.sidebar.noMatch(query.trim())}
           </p>
         )}
         {tracks.data?.length === 0 && (
-          <p className="px-2 py-2.5 text-[12.5px] text-subtle-foreground">No tracks yet.</p>
+          <p className="px-2 py-2.5 text-[12.5px] text-subtle-foreground">{t.sidebar.noTracks}</p>
         )}
       </nav>
       <div className="shrink-0 border-t px-1.5 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))]">

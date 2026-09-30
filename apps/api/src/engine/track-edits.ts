@@ -1,4 +1,4 @@
-import type { TrackAction } from "@grounded/core";
+import type { TrackAction, ActivityNotice } from "@grounded/core";
 import type { Db } from "@grounded/db";
 import { log } from "../log.js";
 import { traced, verdictIssues, type Judge } from "./call-trace.js";
@@ -35,7 +35,7 @@ export async function recordEdits(
     actions: readonly TrackAction[];
     source: string;
     /** The activity the call's own work showed. */
-    label: string;
+    label: ActivityNotice;
     /** Asks the call again, with the rejected edits and why; returns the edits it sends instead. */
     askAgain: (feedback: string) => Promise<readonly TrackAction[]>;
     /** Records the verdict on the call that made the edits. */

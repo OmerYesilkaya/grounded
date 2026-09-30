@@ -31,7 +31,7 @@ describe("validateKey", () => {
     },
   );
 
-  it("reports a rejected key with the plain message", async () => {
+  it("reports a rejected key, naming the provider", async () => {
     const result = await validateKey(
       "openai",
       "sk-bad",
@@ -40,8 +40,7 @@ describe("validateKey", () => {
     expect(result).toEqual({
       ok: false,
       kind: "invalid-key",
-      message:
-        "Your OpenAI key was rejected. Check it in Settings, or create a new one on OpenAI's site.",
+      provider: "OpenAI",
     });
   });
 

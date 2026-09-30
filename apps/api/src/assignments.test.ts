@@ -104,7 +104,9 @@ describe("homework", () => {
     await answer(cookie, id, { prediction: "2000", observed: "1523" });
     const early = await send(cookie, `/api/assignments/${id}/submit`, "POST");
     expect(early.status).toBe(409);
-    expect(await early.json()).toEqual({ error: "Write “Reconcile” before you hand it in." });
+    expect(await early.json()).toEqual({
+      error: { code: "answer-missing", part: null, field: "reconcile" },
+    });
     await answer(cookie, id, { prediction: "2000", observed: "1523", reconcile: "Interleaved." });
     expect((await send(cookie, `/api/assignments/${id}/submit`, "POST")).status).toBe(200);
     expect((await answer(cookie, id, { prediction: "2000" })).status).toBe(409);

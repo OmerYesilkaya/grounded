@@ -1,5 +1,6 @@
 import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { currentMessages } from "@/i18n";
 import { liveProps } from "./live-props";
 
 /** Stores a picture the learner added and says where the app serves it. */
@@ -25,7 +26,9 @@ export function addPictures(editor: Editor, files: readonly File[], at: number |
         else editor.chain().focus().insertContentAt(at, image).run();
       })
       .catch((error: unknown) => {
-        onError?.(error instanceof Error ? error.message : "The picture wasn't added.");
+        onError?.(
+          error instanceof Error ? error.message : currentMessages().homework.pictureNotAdded,
+        );
       })
       .finally(() => {
         onPending?.(--storage.pending);

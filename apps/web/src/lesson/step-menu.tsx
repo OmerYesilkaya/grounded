@@ -7,6 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Inlines } from "@/content/inlines";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { jumpToStep, unlockedSteps, useCurrentStep } from "./steps";
 import type { Aside, StepProgress } from "./types";
@@ -25,6 +26,7 @@ export function StepMenu(props: {
   className?: string;
 }) {
   const { steps, totalSteps, progress, asides } = props;
+  const t = useT().lesson.steps;
   const shown = unlockedSteps(steps, progress);
   const currentId = useCurrentStep(shown);
   const at = Math.max(
@@ -43,8 +45,10 @@ export function StepMenu(props: {
           props.className,
         )}
       >
-        Step <span className="text-foreground tabular-nums">{at + 1}</span> of{" "}
-        <span className="tabular-nums">{Math.max(totalSteps, shown.length)}</span>
+        {t.stepOf(
+          <span className="text-foreground tabular-nums">{at + 1}</span>,
+          <span className="tabular-nums">{Math.max(totalSteps, shown.length)}</span>,
+        )}
         <ChevronDown aria-hidden className="size-3.5 text-subtle-foreground" />
       </DropdownMenuTrigger>
       <DropdownMenuContent
@@ -83,12 +87,12 @@ export function StepMenu(props: {
                 {(progress[step.id]?.status === "settling" || count > 0) && (
                   <span className="mt-0.5 flex gap-2 text-[11.5px] text-subtle-foreground">
                     {progress[step.id]?.status === "settling" && (
-                      <span className="text-primary">Still settling</span>
+                      <span className="text-primary">{t.stillSettling}</span>
                     )}
                     {count > 0 && (
                       <span className="flex items-center gap-1">
                         <MessageSquare aria-hidden className="size-3" />
-                        {count} {count === 1 ? "question" : "questions"}
+                        {t.questions(count)}
                       </span>
                     )}
                   </span>
@@ -101,7 +105,7 @@ export function StepMenu(props: {
           <DropdownMenuItem
             key={`locked-${String(i)}`}
             disabled
-            aria-label="Locked step"
+            aria-label={t.locked}
             className="gap-2.5 text-subtle-foreground"
           >
             <span className="w-4 shrink-0 text-right text-[12px] tabular-nums">

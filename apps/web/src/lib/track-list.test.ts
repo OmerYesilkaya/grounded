@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { messagesFor } from "@/i18n";
 import { describeItem, MANY_TRACKS, searchTracks, shortList } from "./track-list";
 import type { ExamItem, HomeworkItem, SessionItem, TrackSummary } from "./tracks";
+
+const en = messagesFor("en");
 
 const session = (number: number, fields: Partial<SessionItem> = {}): SessionItem => ({
   kind: "session",
@@ -32,8 +35,8 @@ const track = (id: string, title: string, items: SessionItem[] = []): TrackSumma
 describe("an item's row", () => {
   it("names the final, which has no lesson, and the part it is at while under way", () => {
     const final = session(7, { final: true, done: false, phase: "teach-back" });
-    expect(describeItem(final)).toEqual({ title: "The final", meta: "Session 7 · teach-back" });
-    expect(describeItem({ ...final, done: true, phase: "closed" })).toEqual({
+    expect(describeItem(final, en)).toEqual({ title: "The final", meta: "Session 7 · teach-back" });
+    expect(describeItem({ ...final, done: true, phase: "closed" }, en)).toEqual({
       title: "The final",
       meta: "Session 7 · final",
     });
@@ -51,12 +54,14 @@ describe("an item's row", () => {
       due: null,
       foldedInto: null,
     };
-    expect(describeItem(homework)).toEqual({
+    expect(describeItem(homework, en)).toEqual({
       title: "Two workers, one counter",
       meta: "Homework · session 4",
     });
-    expect(describeItem({ ...homework, done: true }).meta).toBe("Homework · session 4 · handed in");
-    expect(describeItem({ ...homework, done: true, foldedInto: 6 }).meta).toBe(
+    expect(describeItem({ ...homework, done: true }, en).meta).toBe(
+      "Homework · session 4 · handed in",
+    );
+    expect(describeItem({ ...homework, done: true, foldedInto: 6 }, en).meta).toBe(
       "Homework · session 4 · folded into session 6",
     );
   });
@@ -73,22 +78,23 @@ describe("an item's row", () => {
       activeAt: "2026-09-29T00:00:00.000Z",
       due: null,
     };
-    expect(describeItem(exam)).toEqual({
+    expect(describeItem(exam, en)).toEqual({
       title: "Counters everywhere",
       meta: "Arc exam · session 4",
     });
-    expect(describeItem({ ...exam, done: true }).meta).toBe("Arc exam · session 4 · handed in");
+    expect(describeItem({ ...exam, done: true }, en).meta).toBe("Arc exam · session 4 · handed in");
     const concurrency = { ...track("t1", "Concurrency"), items: [exam] };
-    expect(searchTracks([concurrency], "arc exam workers")[0]?.items).toEqual([exam]);
+    expect(searchTracks([concurrency], "arc exam workers", en)[0]?.items).toEqual([exam]);
   });
 
   it("says what the session's lesson teaches, over its number and phase", () => {
     expect(
       describeItem(
         session(4, { done: false, phase: "lesson", terms: ["working copy", "lost update"] }),
+        en,
       ),
     ).toEqual({ title: "Working copy, lost update", meta: "Session 4 · lesson" });
-    expect(describeItem(session(2, { terms: ["pointer"] }))).toEqual({
+    expect(describeItem(session(2, { terms: ["pointer"] }), en)).toEqual({
       title: "Pointer",
       meta: "Session 2",
     });
@@ -103,12 +109,13 @@ describe("an item's row", () => {
           terms: ["working copy", "lost update"],
           lessonTitle: "Why two writers lose an update",
         }),
+        en,
       ),
     ).toEqual({ title: "Why two writers lose an update", meta: "Session 4 · lesson" });
   });
 
   it("says what is under way before there is a lesson", () => {
-    expect(describeItem(session(1, { done: false, phase: "probe" }))).toEqual({
+    expect(describeItem(session(1, { done: false, phase: "probe" }), en)).toEqual({
       title: "Finding where you start",
       meta: "Session 1",
     });
@@ -128,7 +135,7 @@ describe("searching the track list", () => {
     track("eg", "Antik Mısır Tarihi"),
   ];
   const ids = (query: string) =>
-    searchTracks(tracks, query).map(({ track, items }) => [
+    searchTracks(tracks, query, en).map(({ track, items }) => [
       track.id,
       items?.map((i) => i.id) ?? "all",
     ]);

@@ -8,6 +8,8 @@
  * their text, capped so one file can't crowd out the lesson.
  */
 
+import type { RefusalNotice } from "./notices.js";
+
 export type AttachmentKind = "image" | "pdf" | "text" | "docx";
 
 export const ATTACHMENT_LIMITS = {
@@ -49,29 +51,27 @@ export function attachmentKind(name: string): { kind: AttachmentKind; mediaType:
   return extension && Object.hasOwn(KINDS, extension) ? (KINDS[extension] ?? null) : null;
 }
 
-export const ACCEPTED_DESCRIPTION = "images, PDFs, Word documents and text files";
-
-const megabytes = (bytes: number) => `${String(Math.round(bytes / (1024 * 1024)))} MB`;
+const megabytes = (bytes: number) => Math.round(bytes / (1024 * 1024));
 
 /**
  * The first reason a file can't be attached, from its name and size alone (the API also reads what
- * is inside); null when it can.
+ * is inside); null when it can. A notice the web words (design §9.3).
  */
-export function attachmentProblem(name: string, size: number): string | null {
+export function attachmentProblem(name: string, size: number): RefusalNotice | null {
   const kind = attachmentKind(name);
-  if (!kind) return `${name}: only ${ACCEPTED_DESCRIPTION} can be attached.`;
-  if (size === 0) return `${name} is empty.`;
+  if (!kind) return { code: "attachment-kind", name };
+  if (size === 0) return { code: "attachment-empty", name };
   const limit = kind.kind === "image" ? ATTACHMENT_LIMITS.imageBytes : ATTACHMENT_LIMITS.fileBytes;
-  if (size > limit) return `${name} is larger than ${megabytes(limit)}.`;
+  if (size > limit) return { code: "attachment-too-large", name, megabytes: megabytes(limit) };
   return null;
 }
 
 /** The first reason a set of files can't go together; null when it can. */
-export function attachmentsProblem(files: readonly { size: number }[]): string | null {
+export function attachmentsProblem(files: readonly { size: number }[]): RefusalNotice | null {
   if (files.length > ATTACHMENT_LIMITS.files)
-    return `Attach at most ${String(ATTACHMENT_LIMITS.files)} files.`;
+    return { code: "attachments-too-many", max: ATTACHMENT_LIMITS.files };
   const total = files.reduce((sum, file) => sum + file.size, 0);
   if (total > ATTACHMENT_LIMITS.totalBytes)
-    return `The files come to more than ${megabytes(ATTACHMENT_LIMITS.totalBytes)} together.`;
+    return { code: "attachments-too-large", megabytes: megabytes(ATTACHMENT_LIMITS.totalBytes) };
   return null;
 }

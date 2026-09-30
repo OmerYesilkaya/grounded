@@ -15,7 +15,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { publish, type ActivityEvent } from "./engine/events.js";
 import { ProviderCallError } from "./engine/model-call.js";
 import { recoverAbandonedWork, recoverPeriodically } from "./engine/recovery.js";
-import { checkFailedText } from "./engine/session-tasks.js";
+import { checkFailed } from "./engine/session-tasks.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -120,7 +120,7 @@ async function abandonMessage(db: Db, sessionId: string) {
   await publish(db, sessionId, "message-delta", { id: messageId, text: "So when a progr" });
   const activity: ActivityEvent = {
     id: uuidv7(),
-    label: "Thinking…",
+    label: { code: "thinking", again: false },
     detail: null,
     state: "running",
   };
@@ -143,9 +143,7 @@ describe("recovery after a worker dies mid-job", () => {
 
     expect(await eventsOf(sessionId, "message-retracted")).toEqual([{ id: messageId }]);
     expect(await eventsOf(sessionId, "activity")).toContainEqual({ ...activity, state: "done" });
-    expect(await eventsOf(sessionId, "error")).toEqual([
-      { message: "The tutor was interrupted by a problem on our side. Try again." },
-    ]);
+    expect(await eventsOf(sessionId, "error")).toEqual([{ error: { code: "interrupted" } }]);
     const after = await snapshot(cookie, sessionId);
     expect(after.messages.map((m) => m.role)).toEqual(["tutor"]);
     expect(after.activities).toEqual([]);
@@ -222,7 +220,7 @@ describe("recovery after a worker dies mid-job", () => {
     const thread = (await snapshot(cookie, sessionId)).checks;
     expect(thread.map((m) => [m.role, m.text])).toEqual([
       ["learner", "memory still holds 5"],
-      ["tutor", checkFailedText()],
+      ["tutor", checkFailed(null).text],
     ]);
     expect(await eventsOf(sessionId, "check-message")).toContainEqual(
       expect.objectContaining({ stepId: "s1", role: "tutor", verdict: null }),
@@ -294,11 +292,7 @@ describe("recovery after a worker dies mid-job", () => {
     const s = await snapshot(cookie, sessionId);
     expect(s.state.lesson.status).toBe("failed");
     expect(s.lesson?.steps).toHaveLength(1);
-    expect(await eventsOf(sessionId, "error")).toEqual([
-      {
-        message: "Writing the lesson was interrupted by a problem on our side.",
-      },
-    ]);
+    expect(await eventsOf(sessionId, "error")).toEqual([{ error: { code: "lesson-interrupted" } }]);
     expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
   });
 
@@ -332,7 +326,11 @@ describe("recovery after a worker dies mid-job", () => {
   it("leaves a lesson whose job failed alone: the job marked it failed and said why", async () => {
     const { cookie, sessionId } = await planned();
     await idle(sessionId);
-    const outOfCredit = new ProviderCallError("no-credit", "Your OpenAI account is out of credit.");
+    const outOfCredit = new ProviderCallError("no-credit", {
+      code: "provider-failed",
+      kind: "no-credit",
+      provider: "OpenAI",
+    });
     models.script(
       "lesson",
       new MockLanguageModelV4({ doGenerate: () => Promise.reject(outOfCredit) }),
@@ -344,6 +342,6 @@ describe("recovery after a worker dies mid-job", () => {
 
     // The next worker start finds nothing to recover, so the learner isn't told a second time.
     expect(await recoverAbandonedWork(t.db, { quietForMs: 0 })).toEqual([]);
-    expect(await eventsOf(sessionId, "error")).toEqual([{ message: outOfCredit.message }]);
+    expect(await eventsOf(sessionId, "error")).toEqual([{ error: outOfCredit.notice }]);
   });
 });

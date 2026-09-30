@@ -1,7 +1,9 @@
 import type { ReactNode } from "react";
 import { Brand } from "@/components/brand";
+import { LanguageSwitch } from "@/components/language-switch";
+import { useT } from "@/i18n";
 
-/** A quiet centred frame for signed-out and setup pages. */
+/** A quiet centred frame for signed-out and setup pages, with the language to read them in. */
 export function CentredPage({ children }: { children: ReactNode }) {
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
@@ -10,6 +12,7 @@ export function CentredPage({ children }: { children: ReactNode }) {
           <Brand className="text-2xl" />
         </p>
         {children}
+        <LanguageSwitch className="mt-10" />
       </div>
     </main>
   );
@@ -19,10 +22,7 @@ export function CentredPage({ children }: { children: ReactNode }) {
 export function WhatIsStored() {
   return (
     <p className="mt-8 border-t pt-4 text-xs leading-relaxed text-subtle-foreground">
-      What is stored: your answers, your progress, the questions you ask, the files you attach and
-      your API key, encrypted. Nothing is shared; the tutor&apos;s calls go to the AI provider whose
-      key you bring. Whoever runs Grounded can technically access the database, but does not read
-      it.
+      {useT().account.signIn.whatIsStored}
     </p>
   );
 }

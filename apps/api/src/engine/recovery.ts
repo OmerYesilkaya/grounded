@@ -13,14 +13,14 @@ import {
   type Db,
 } from "@grounded/db";
 import { log, withLogContext } from "../log.js";
-import { asideFailedText, loadAsides, recordAsideMessage, waitingFor } from "./asides.js";
+import { asideFailed, loadAsides, recordAsideMessage, waitingFor } from "./asides.js";
 import { messagesBeingWritten } from "./chat.js";
-import { publish, runningActivities } from "./events.js";
+import { publish, runningActivities, publishFailure } from "./events.js";
 import { jobWaiting } from "./queue.js";
 import { recoverVerdicts } from "./probe-verdict.js";
 import { recoverReviews } from "./review-recovery.js";
 import { applyEvent, loadSession } from "./session-store.js";
-import { checkFailedText, recordCheckMessage } from "./session-tasks.js";
+import { checkFailed, recordCheckMessage } from "./session-tasks.js";
 import { unlessWorkedOn } from "./work-locks.js";
 
 /** What recovery cleaned up in one session. */
@@ -37,9 +37,6 @@ export interface RecoveredSession {
   /** Whether a lesson that stopped being written was marked failed. */
   lesson: boolean;
 }
-
-const INTERRUPTED = "The tutor was interrupted by a problem on our side. Try again.";
-const LESSON_INTERRUPTED = "Writing the lesson was interrupted by a problem on our side.";
 
 /**
  * Cleans up after jobs that died without finishing (a killed or crashed worker), in every open
@@ -148,7 +145,8 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
   const checks: string[] = [];
   for (const stepId of await answersWaiting(db, sessionId)) {
     if (await jobWaiting(db, "check", sessionId, { stepId })) continue;
-    await recordCheckMessage(db, sessionId, stepId, checkFailedText(), null);
+    const failed = checkFailed({ code: "interrupted" });
+    await recordCheckMessage(db, sessionId, stepId, failed.text, null, undefined, failed.failure);
     checks.push(stepId);
   }
 
@@ -157,7 +155,10 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
   for (const aside of await loadAsides(db, sessionId)) {
     if (!waitingFor(aside) || (await jobWaiting(db, "aside", sessionId, { asideId: aside.id })))
       continue;
-    await recordAsideMessage(db, sessionId, aside.id, { role: "tutor", text: asideFailedText() });
+    await recordAsideMessage(db, sessionId, aside.id, {
+      role: "tutor",
+      ...asideFailed({ code: "interrupted" }),
+    });
     asides++;
   }
 
@@ -169,7 +170,11 @@ async function recoverSession(db: Db, sessionId: string): Promise<RecoveredSessi
   const told = messages.length > 0 || activities.length > 0 || checks.length > 0 || lesson;
   if (!told && asides === 0) return null;
   if (told)
-    await publish(db, sessionId, "error", { message: lesson ? LESSON_INTERRUPTED : INTERRUPTED });
+    await publishFailure(
+      db,
+      sessionId,
+      lesson ? { code: "lesson-interrupted" } : { code: "interrupted" },
+    );
   return {
     sessionId,
     messages: messages.length,

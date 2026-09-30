@@ -14,6 +14,7 @@ import { PlanPicture } from "@/components/session-pictures";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
+import { useT, type Messages } from "@/i18n";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel } from "@/lib/session";
 import { useTracks } from "@/lib/tracks";
@@ -21,13 +22,13 @@ import { useStickToBottom } from "@/lib/stick-to-bottom";
 import { cn } from "@/lib/utils";
 import { useVisibleViewport } from "@/lib/visible-viewport";
 import { LessonAgain } from "./lesson-again";
+import { wordNotice } from "@/i18n/notice";
 
-const KIND_LABEL: Partial<Record<ChatMessage["kind"], string>> = {
-  plan: "The plan",
-  homework: "Homework",
-  exam: "Arc exam",
-  recap: "Recap",
-};
+/** The kinds of tutor message that stand in a card of their own, under their name. */
+const kindLabel = (kind: ChatMessage["kind"], t: Messages["session"]): string | undefined =>
+  kind === "plan" || kind === "homework" || kind === "exam" || kind === "recap"
+    ? t.kind[kind]
+    : undefined;
 
 /** `footer` ends a tutor message's card (the plan's picture). */
 function Message({ message, footer }: { message: ChatMessage; footer?: ReactNode }) {
@@ -46,7 +47,7 @@ function TutorMessage({ message, footer }: { message: ChatMessage; footer?: Reac
   // The blocks wait for the reveal to finish, so the text doesn't jump ahead as it turns into them.
   const blocks = revealed.done ? message.blocks : null;
 
-  const label = KIND_LABEL[message.kind];
+  const label = kindLabel(message.kind, useT().session);
   return (
     <div
       className={cn(
@@ -66,19 +67,16 @@ function TutorMessage({ message, footer }: { message: ChatMessage; footer?: Reac
 }
 
 /** Where each of the final's parts begins in its chat (design §7.4). */
-const PART_RULE: Partial<Record<ChatMessage["kind"], string>> = {
-  audit: "The fresh audit",
-  "teach-back": "The teach-back",
-};
+const partRule = (kind: ChatMessage["kind"], t: Messages["session"]): string | undefined =>
+  kind === "audit" || kind === "teach-back" ? t.part[kind] : undefined;
 
 /** The composer's hint in each phase the learner answers in. */
-const PLACEHOLDER: Partial<Record<SessionModel["state"]["phase"], string>> = {
-  review: "Answer in your own words; “I don't know” is fine.",
-  probe: "Answer in your own words; “I don't know” is fine.",
-  audit: "Answer in your own words; “I don't know” is fine.",
-  "teach-back": "In your own words; “I don't know why” is fine too.",
-  plan: "Reply to change the plan…",
-};
+function placeholderFor(phase: SessionModel["state"]["phase"], t: Messages["session"]): string {
+  if (phase === "review" || phase === "probe" || phase === "audit") return t.placeholder.answer;
+  if (phase === "teach-back") return t.placeholder.teachBack;
+  if (phase === "plan") return t.placeholder.plan;
+  return "";
+}
 
 /** The session chat: probe, plan, homework and recap; the final's parts (design §7.1, §7.4). */
 export function ChatView({
@@ -89,6 +87,8 @@ export function ChatView({
   onOpenLesson: () => void;
 }) {
   const [draft, setDraft] = useState("");
+  const all = useT();
+  const { session: t, common } = all;
   const { phase, plan } = model.state;
   const writing = model.messages.some((m) => m.streaming);
   const hasSteps = (model.lesson?.steps.length ?? 0) > 0;
@@ -131,7 +131,7 @@ export function ChatView({
   const talking =
     phase === "review" || phase === "probe" || phase === "audit" || phase === "teach-back";
   const canWrite = (talking || (phase === "plan" && plan === "proposed")) && !writing && !waiting;
-  const placeholder = PLACEHOLDER[phase] ?? "";
+  const placeholder = placeholderFor(phase, t);
   // The seam between the probe and the plan: before the first plan, or after the probe while the
   // plan is still to come.
   const firstPlan = model.messages.findIndex((m) => m.kind === "plan");
@@ -158,8 +158,8 @@ export function ChatView({
                 <ReviewHeading takenUp={model.takenUp} />
               )}
               {before?.kind === "review" && m.kind !== "review" && !final && <ReviewDone />}
-              {PART_RULE[m.kind] && before?.kind !== m.kind && (
-                <ChatRule label={PART_RULE[m.kind] ?? ""} />
+              {partRule(m.kind, t) && before?.kind !== m.kind && (
+                <ChatRule label={partRule(m.kind, t) ?? ""} />
               )}
               <Message
                 message={m}
@@ -181,9 +181,9 @@ export function ChatView({
             stuck
               ? undefined
               : phase === "review" && model.messages.length === 0
-                ? "Looking over what came up since last time…"
+                ? t.lookingOver
                 : waiting || (phase === "plan" && plan !== "proposed" && !writing)
-                  ? "Thinking…"
+                  ? t.thinking
                   : undefined
           }
         />
@@ -191,13 +191,13 @@ export function ChatView({
         {lessonFailed && <LessonAgain model={model} />}
         {phase === "lesson" && hasSteps && !lessonFailed && (
           <div className="rounded-xl border bg-card px-5 py-4 text-sm">
-            The lesson is on.{" "}
+            {t.lessonOn}{" "}
             <Button
               variant="link"
               className="h-auto px-0 pointer-coarse:h-auto"
               onClick={onOpenLesson}
             >
-              Open the lesson
+              {t.openLesson}
             </Button>
           </div>
         )}
@@ -206,26 +206,19 @@ export function ChatView({
           <FinalOutcomeCard
             sessionId={model.id}
             footer={
-              track &&
-              !track.openSession && (
-                <NextSession track={track} lead="A next session takes up what the final found." />
-              )
+              track && !track.openSession && <NextSession track={track} lead={t.finalFoundNext} />
             }
           />
         )}
         {phase === "closed" && !final && track && !track.openSession && (
           <div className="border-t pt-5">
-            <NextSession
-              track={track}
-              lead="This session is done."
-              label="Start the next session"
-            />
+            <NextSession track={track} lead={t.sessionDone} label={t.startNext} />
           </div>
         )}
         {stuck ? (
           <div className="flex flex-wrap items-center gap-3">
             <p className="text-sm text-destructive">
-              {model.error ?? "The tutor stopped before finishing."}
+              {model.error === null ? t.stopped : wordNotice(model.error, all)}
             </p>
             <Button
               size="sm"
@@ -235,12 +228,15 @@ export function ChatView({
                 retry.mutate();
               }}
             >
-              Try again
+              {common.tryAgain}
             </Button>
             {retry.error && <p className="text-sm text-destructive">{retry.error.message}</p>}
           </div>
         ) : (
-          model.error && !lessonFailed && <p className="text-sm text-destructive">{model.error}</p>
+          model.error !== null &&
+          !lessonFailed && (
+            <p className="text-sm text-destructive">{wordNotice(model.error, all)}</p>
+          )
         )}
       </div>
 
@@ -253,9 +249,9 @@ export function ChatView({
               approve.mutate();
             }}
           >
-            Approve the plan
+            {t.approvePlan}
           </Button>
-          <span className="text-sm text-subtle-foreground">or reply below to change it</span>
+          <span className="text-sm text-subtle-foreground">{t.orReply}</span>
         </div>
       )}
 
@@ -273,7 +269,7 @@ export function ChatView({
             }}
           >
             <ArrowDown aria-hidden />
-            Jump to latest
+            {t.jumpToLatest}
           </Button>
         </div>
       )}
@@ -286,8 +282,8 @@ export function ChatView({
         >
           <div className="mx-auto max-w-[68ch] px-6">
             <Composer
-              label="Message"
-              submitLabel="Send"
+              label={t.message}
+              submitLabel={t.send}
               submitIcon
               value={draft}
               onChange={setDraft}

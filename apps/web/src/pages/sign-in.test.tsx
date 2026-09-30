@@ -20,7 +20,7 @@ describe("the sign-in page", () => {
   });
 
   it("says when the email isn't invited, and stays put", async () => {
-    auth.signIn.mockRejectedValueOnce(new ApiError("That email isn't invited.", 403));
+    auth.signIn.mockRejectedValueOnce(new ApiError({ code: "not-invited" }, 403));
     const onSignedIn = vi.fn();
     render(<SignInPage onSignedIn={onSignedIn} />);
 

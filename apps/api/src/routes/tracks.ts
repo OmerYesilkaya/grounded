@@ -1,4 +1,4 @@
-import { ATTACHMENT_LIMITS, needsNaming, standInTitle } from "@grounded/core";
+import { ATTACHMENT_LIMITS, needsNaming, standInTitle, refusal } from "@grounded/core";
 import { and, eq, importedLessons, trackFiles, tracks, type Db } from "@grounded/db";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -9,14 +9,16 @@ import { FileNotFound, type FileStore } from "../files/store.js";
 import { createTrack, deleteTrack } from "../files/track-files.js";
 import { addLogContext } from "../log.js";
 import { trackList } from "../track-list.js";
+import { notFound, refuse } from "../refusals.js";
 
 interface Env {
   Variables: { user: { id: string; email: string } };
 }
 
 // No language: the tutor infers it from the learner's messages and records it (set-language).
-const trackInput = z.object({ goal: z.string().trim().min(1).max(4000) });
-const GOAL_REQUIRED = "Say what you want to learn, in at most 4,000 characters.";
+const GOAL_MAX = 4000;
+const trackInput = z.object({ goal: z.string().trim().min(1).max(GOAL_MAX) });
+const GOAL_REQUIRED = refusal({ code: "goal-required", max: GOAL_MAX });
 
 /**
  * A new track's input: JSON `{ goal }`, or a form with `goal` and any number of `files` (the web
@@ -48,13 +50,13 @@ export function registerTrackRoutes(
   // The files' limit (design §4.5), with room for the form around them.
   const uploadLimit = bodyLimit({
     maxSize: ATTACHMENT_LIMITS.totalBytes + 1024 * 1024,
-    onError: (c) => c.json({ error: "The files are too large together." }, 413),
+    onError: (c) => c.json(refuse("files-too-large"), 413),
   });
 
   app.post("/api/tracks", uploadLimit, async (c) => {
     const input = await trackInputOf(c);
     const parsed = trackInput.safeParse({ goal: input?.goal });
-    if (!input || !parsed.success) return c.json({ error: GOAL_REQUIRED }, 400);
+    if (!input || !parsed.success) return c.json(GOAL_REQUIRED, 400);
     const read = await readAttachments(input.files);
     if (!read.ok) return c.json({ error: read.error }, 400);
     const { goal } = parsed.data;
@@ -79,7 +81,7 @@ export function registerTrackRoutes(
   app.get("/api/tracks/:id/files/:fileId", async (c) => {
     const { id: trackId, fileId } = c.req.param();
     if (!z.uuid().safeParse(trackId).success || !z.uuid().safeParse(fileId).success)
-      return c.json({ error: "Not found." }, 404);
+      return c.json(notFound, 404);
     addLogContext({ trackId });
     const [file] = await db
       .select({
@@ -96,12 +98,12 @@ export function registerTrackRoutes(
           eq(tracks.userId, c.get("user").id),
         ),
       );
-    if (!file) return c.json({ error: "Not found." }, 404);
+    if (!file) return c.json(notFound, 404);
     let bytes: Uint8Array;
     try {
       bytes = await files.get(file.key);
     } catch (error) {
-      if (error instanceof FileNotFound) return c.json({ error: "Not found." }, 404);
+      if (error instanceof FileNotFound) return c.json(notFound, 404);
       throw error;
     }
     return c.body(bytes.slice(), 200, {
@@ -115,7 +117,7 @@ export function registerTrackRoutes(
   /** The last lesson imported from the learner's earlier setup (design §10), for its owner only. */
   app.get("/api/tracks/:id/imported-lesson", async (c) => {
     const trackId = c.req.param("id");
-    if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    if (!z.uuid().safeParse(trackId).success) return c.json(notFound, 404);
     addLogContext({ trackId });
     const [lesson] = await db
       .select({
@@ -126,7 +128,7 @@ export function registerTrackRoutes(
       .from(importedLessons)
       .innerJoin(tracks, eq(tracks.id, importedLessons.trackId))
       .where(and(eq(importedLessons.trackId, trackId), eq(tracks.userId, c.get("user").id)));
-    if (!lesson) return c.json({ error: "Not found." }, 404);
+    if (!lesson) return c.json(notFound, 404);
     return c.json(lesson);
   });
 
@@ -139,10 +141,10 @@ export function registerTrackRoutes(
    */
   app.delete("/api/tracks/:id", async (c) => {
     const trackId = c.req.param("id");
-    if (!z.uuid().safeParse(trackId).success) return c.json({ error: "Not found." }, 404);
+    if (!z.uuid().safeParse(trackId).success) return c.json(notFound, 404);
     addLogContext({ trackId });
     const deleted = await deleteTrack(db, files, { userId: c.get("user").id, trackId });
-    if (!deleted) return c.json({ error: "Not found." }, 404);
+    if (!deleted) return c.json(notFound, 404);
     return c.body(null, 204);
   });
 }

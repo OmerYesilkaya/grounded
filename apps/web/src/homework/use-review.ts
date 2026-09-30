@@ -48,10 +48,10 @@ export function reduceReview(
         if (comment.messages.some((m) => m.id === message.id)) return comment;
         // The answer keeps the text it streamed as, so the card finishes revealing it first.
         const text = message.role === "tutor" ? (comment.draft ?? message.text) : message.text;
-        const { id, role, blocks } = message;
+        const { id, role, blocks, failure } = message;
         return {
           ...comment,
-          messages: [...comment.messages, { id, role, text, blocks }],
+          messages: [...comment.messages, { id, role, text, blocks, failure: failure ?? null }],
           draft: null,
         };
       });

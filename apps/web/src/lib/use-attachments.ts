@@ -1,5 +1,6 @@
 import { attachmentKind, attachmentProblem, attachmentsProblem } from "@grounded/core/attachments";
 import { useEffect, useRef, useState } from "react";
+import { type RefusalNotice } from "@grounded/core/notices";
 
 export interface PendingFile {
   id: string;
@@ -8,7 +9,8 @@ export interface PendingFile {
   /** An image's thumbnail (an object URL, revoked when the file is removed). */
   preview: string | null;
   /** Why the file can't be attached, from its name and size (the server reads what is inside). */
-  problem: string | null;
+  /** Why it can't be attached, worded by the chip. */
+  problem: RefusalNotice | null;
 }
 
 let next = 0;

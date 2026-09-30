@@ -396,14 +396,21 @@ describe("importTrack: failed replies", () => {
             chunks: [
               { type: "text-start", id: "t" },
               { type: "text-delta", id: "t", delta: '{"dependencies": [' },
-              { type: "error", error: new ProviderCallError("timeout", "Too slow.") },
+              {
+                type: "error",
+                error: new ProviderCallError("timeout", {
+                  code: "provider-failed",
+                  kind: "timeout",
+                  provider: "OpenAI",
+                }),
+              },
             ],
           }),
         }),
     });
     models.script("import", failing, reply(fixtureReading()));
 
-    await expect(run({ write: true })).rejects.toThrow("Too slow.");
+    await expect(run({ write: true })).rejects.toThrow("OpenAI: timeout");
     expect(models.used).toHaveLength(1);
     expect(await t.db.select().from(tracks)).toEqual([]);
   });

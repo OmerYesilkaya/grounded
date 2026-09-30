@@ -2,7 +2,9 @@ import { answerFields, type TaskAnswer, type TaskForm } from "@grounded/core/ass
 import { parseAnswer } from "@grounded/content";
 import type { ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
+import { useT } from "@/i18n";
 import { FieldLabel, LockedBadge } from "./task-fields";
+import { fieldWords } from "./words";
 
 /**
  * Where a field of a task's answer is on the page: its section's `data-step`, which the margin
@@ -22,6 +24,7 @@ export function AnswerView(props: {
   after?: ((scope: string) => ReactNode) | undefined;
 }) {
   const { taskId, form, answer } = props;
+  const t = useT().homework;
   const fields = answerFields(form, answer);
   const body = (key: string) => {
     const scope = fieldScope(taskId, key);
@@ -46,11 +49,11 @@ export function AnswerView(props: {
           if (!step || !because) return null;
           return (
             <li key={step.key} className="flex flex-col gap-2">
-              <FieldLabel number={i + 1} label={step.label} />
+              <FieldLabel number={i + 1} label={fieldWords(step, t).label} />
               {body(step.key)}
               <div className="mt-1 ml-4 border-l-2 border-primary/40 pl-4">
                 <div className="mb-1 font-serif text-[15px] text-muted-foreground italic">
-                  Because…
+                  {t.because}
                 </div>
                 {body(because.key)}
               </div>
@@ -66,7 +69,7 @@ export function AnswerView(props: {
         <div key={field.key} className="flex flex-col gap-2">
           <FieldLabel
             number={fields.length > 1 ? i + 1 : null}
-            label={field.label}
+            label={fieldWords(field, t).label}
             aside={
               field.key === "prediction" && answer?.lockedAt ? (
                 <LockedBadge at={answer.lockedAt} />

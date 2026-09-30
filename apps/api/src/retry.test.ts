@@ -19,7 +19,11 @@ beforeEach(() => {
 });
 
 const outOfCredit = () =>
-  new ProviderCallError("no-credit", "Your OpenAI account is out of credit.");
+  new ProviderCallError("no-credit", {
+    code: "provider-failed",
+    kind: "no-credit",
+    provider: "OpenAI",
+  });
 /** A model whose every call fails, as a provider out of credit does. */
 const failing = () =>
   new MockLanguageModelV4({
@@ -87,7 +91,7 @@ describe("a job the learner can't set going again by writing", () => {
 
     const again = await retry(cookie, sessionId);
     expect(again.status).toBe(409);
-    expect(await again.json()).toEqual({ error: "There is nothing to try again." });
+    expect(await again.json()).toEqual({ error: { code: "nothing-to-retry" } });
   });
 
   it("keeps a recap the learner has read when the close failed after it", async () => {

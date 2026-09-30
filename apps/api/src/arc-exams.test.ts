@@ -166,7 +166,7 @@ describe("the arc exam", () => {
     const early = await post(cookie, `/api/assignments/${id}/submit`);
     expect(early.status).toBe(409);
     expect(await early.json()).toEqual({
-      error: "Lock your prediction in “A shared bank balance” before you check it.",
+      error: { code: "lock-prediction-first", part: "A shared bank balance" },
     });
     expect((await snapshot(cookie, sessionId)).assignments[1]?.submittedAt).toBeNull();
   });
@@ -188,7 +188,7 @@ describe("the arc exam", () => {
     const warned = await post(cookie, `/api/tracks/${trackId}/sessions`);
     expect(warned.status).toBe(409);
     expect(await warned.json()).toMatchObject({
-      code: "exam-open",
+      error: { code: "exam-open", title: "Counters everywhere" },
       exam: { title: "Counters everywhere" },
     });
     models.script("probe", { text: FIRST_QUESTION });

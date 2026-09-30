@@ -9,6 +9,7 @@ import {
   type RefObject,
 } from "react";
 import { LearnerText } from "@/content/learner-text";
+import { useT } from "@/i18n";
 import { isTouchScreen } from "@/lib/media-query";
 import { cn } from "@/lib/utils";
 import { AskDraft, AsideThread, QuotedPassage, Thinking } from "./aside-card";
@@ -68,6 +69,7 @@ export interface AsideLayerProps extends LessonAsides {
  */
 export function AsideLayer(props: AsideLayerProps) {
   const { items, canAsk, wide, lesson, grid, margin } = props;
+  const t = useT().lesson.asides;
   const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
   const [sheet, setSheet] = useState(false);
@@ -225,9 +227,7 @@ export function AsideLayer(props: AsideLayerProps) {
           >
             <MessageSquarePlus className="size-3.5" aria-hidden />
             {/* On a touch screen, holding a passage is what selects it. */}
-            {isTouchScreen()
-              ? "Hold any passage to ask about it."
-              : "Select any passage to ask about it."}
+            {isTouchScreen() ? t.holdToAsk : t.selectToAsk}
           </p>
         )}
         {selected && !draft && !sheet && (
@@ -240,7 +240,7 @@ export function AsideLayer(props: AsideLayerProps) {
         )}
         {sheet && (draft ?? activeAside) && (
           <AsideSheet
-            label="Question in the margin"
+            label={t.sheet}
             quote={draft?.anchor.quote ?? activeAside?.anchor.quote ?? ""}
             onClose={() => {
               close();
@@ -277,7 +277,7 @@ export function AsideLayer(props: AsideLayerProps) {
             className="pointer-events-auto absolute left-0 z-20 flex items-center gap-1.5 rounded-md border border-border-strong bg-card px-2.5 py-1.5 font-sans text-[12.5px] font-medium text-primary shadow-md transition-colors hover:bg-highlight motion-safe:animate-in motion-safe:fade-in-0"
           >
             <MessageSquarePlus className="size-3.5" aria-hidden />
-            Ask about this
+            {t.askAboutThis}
           </button>
         )}
         {items.map((aside) => {
@@ -288,7 +288,7 @@ export function AsideLayer(props: AsideLayerProps) {
               id={aside.id}
               top={layout?.tops[aside.id]}
               active={isActive}
-              label={`Question on “${short(aside.anchor.quote)}”`}
+              label={t.questionOn(short(aside.anchor.quote))}
               onActivate={() => {
                 setActive(aside.id);
               }}
@@ -301,12 +301,7 @@ export function AsideLayer(props: AsideLayerProps) {
           );
         })}
         {draft && (
-          <MarginCard
-            id={DRAFT}
-            top={layout?.tops[DRAFT]}
-            active
-            label="Your question about this passage"
-          >
+          <MarginCard id={DRAFT} top={layout?.tops[DRAFT]} active label={t.yourQuestion}>
             {draftBody}
           </MarginCard>
         )}

@@ -5,6 +5,7 @@ import { createLessonMedia } from "./lesson-media.js";
 import { createVerifier } from "./verify.js";
 import { createWebAccess, isPublicAddress, type WebAccess } from "./web.js";
 import { parseDuration } from "./youtube.js";
+import { type ActivityNotice } from "@grounded/core";
 
 /*
  * Media is found and verified against a web the test makes up: no test reaches the network.
@@ -277,7 +278,7 @@ describe("createLessonMedia", () => {
 
   it("finds images for the outline, lists them for the writer, and verifies them without asking again", async () => {
     const internet = web();
-    const labels: string[] = [];
+    const labels: ActivityNotice[] = [];
     const media = createLessonMedia({
       web: internet,
       activity: (label, run) => {
@@ -301,7 +302,9 @@ describe("createLessonMedia", () => {
         },
       ],
     });
-    expect(labels).toEqual(["Looking for an image of “a mechanical counter”"]);
+    expect(labels).toEqual([
+      { code: "finding-media", kind: "image", query: "a mechanical counter" },
+    ]);
     expect(media.found()).toContain("- image `commons:File:Counter.png` (864×384)");
 
     const { steps } = parseLesson(

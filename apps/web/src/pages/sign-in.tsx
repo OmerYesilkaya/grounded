@@ -2,12 +2,14 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { signIn } from "@/lib/auth";
 import { CentredPage, WhatIsStored } from "./auth-layout";
 
 /** Sign-in is the invited email, nothing else (design §4.3). */
 export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
+  const t = useT();
   const [email, setEmail] = useState("");
   const [state, setState] = useState<
     { kind: "idle" | "sending" } | { kind: "failed"; message: string }
@@ -22,9 +24,7 @@ export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
       setState({
         kind: "failed",
         message:
-          error instanceof ApiError && error.status === 403
-            ? error.message
-            : "That didn't go through. Try again in a moment.",
+          error instanceof ApiError && error.status === 403 ? error.message : t.common.failedMoment,
       });
     }
   };
@@ -39,7 +39,7 @@ export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
         }}
       >
         <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
+          <Label htmlFor="email">{t.account.signIn.email}</Label>
           <Input
             id="email"
             type="email"
@@ -56,12 +56,10 @@ export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
           className="w-full"
           disabled={state.kind === "sending" || !email.trim()}
         >
-          {state.kind === "sending" ? "Signing in…" : "Sign in"}
+          {state.kind === "sending" ? t.account.signIn.signingIn : t.account.signIn.signIn}
         </Button>
         {state.kind === "failed" && <p className="text-sm text-destructive">{state.message}</p>}
-        <p className="text-xs text-subtle-foreground">
-          Grounded is invite-only: enter the email you were invited with. No password needed.
-        </p>
+        <p className="text-xs text-subtle-foreground">{t.account.signIn.inviteOnly}</p>
       </form>
       <WhatIsStored />
     </CentredPage>

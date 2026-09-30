@@ -1,9 +1,10 @@
 import type { SessionPhase } from "@grounded/core";
 import { Check } from "lucide-react";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /** The final's parts, in order (design §7.4), as the learner reads them. */
-const PARTS = ["Fresh audit", "Teach-back", "What it found"] as const;
+const PARTS = ["audit", "teachBack", "found"] as const;
 
 /** Which part the final is in: none yet while its review looks back, the last once it closes. */
 const partOf = (phase: SessionPhase) =>
@@ -23,12 +24,13 @@ const partOf = (phase: SessionPhase) =>
 export function FinalParts({ phase }: { phase: SessionPhase }) {
   const current = partOf(phase);
   const done = phase === "closed";
+  const t = useT().session.final;
   return (
     <div className="flex min-w-0 items-center gap-3 text-[12.5px]">
       <span className="shrink-0 text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-        The final
+        {t.title}
       </span>
-      <ol className="flex min-w-0 items-center gap-1" aria-label="Its parts">
+      <ol className="flex min-w-0 items-center gap-1" aria-label={t.parts}>
         {PARTS.map((part, i) => {
           const passed = i < current || (done && i === current);
           const here = i === current && !done;
@@ -54,7 +56,7 @@ export function FinalParts({ phase }: { phase: SessionPhase }) {
                   )}
                 />
               )}
-              {part}
+              {t.partNames[part]}
             </li>
           );
         })}
@@ -65,16 +67,13 @@ export function FinalParts({ phase }: { phase: SessionPhase }) {
 
 /** The top of the final's chat: what it is. */
 export function FinalIntro() {
+  const t = useT().session.final;
   return (
     <div className="flex flex-col gap-1.5">
       <h2 className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-        The final
+        {t.title}
       </h2>
-      <p className="font-serif text-[17px] leading-relaxed text-muted-foreground">
-        Two parts and no homework. A fresh audit of where you stand across the whole subject, then a
-        teach-back: you rebuild it from its foundations, and the tutor keeps asking why and what if.
-        Answer in your own words; there is nothing to look up.
-      </p>
+      <p className="font-serif text-[17px] leading-relaxed text-muted-foreground">{t.intro}</p>
     </div>
   );
 }

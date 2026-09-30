@@ -1,5 +1,5 @@
 import type { CheckBlock, Inline } from "@grounded/content";
-import type { LessonMedia } from "@grounded/core";
+import type { LessonMedia, ActivityNotice } from "@grounded/core";
 import { tool } from "ai";
 import { z } from "zod";
 import { log } from "../log.js";
@@ -8,7 +8,7 @@ import { createVerifier, type VerifierOptions } from "./verify.js";
 
 export interface LessonMediaOptions extends VerifierOptions {
   /** Runs a search under an activity the learner sees ("Looking for an image of …"). */
-  activity?: <T>(label: string, run: () => Promise<T>) => Promise<T>;
+  activity?: <T>(label: ActivityNotice, run: () => Promise<T>) => Promise<T>;
 }
 
 const queryInput = z.object({
@@ -30,7 +30,7 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
   const found = new Map<string, CommonsCandidate & { query: string }>();
   const activity = options.activity ?? ((_label, run) => run());
 
-  const find = (kind: CommonsKind, label: string) =>
+  const find = (kind: CommonsKind) =>
     tool({
       description:
         kind === "image"
@@ -39,7 +39,7 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
       inputSchema: queryInput,
       execute: async ({ query }) => {
         try {
-          const results = await activity(`${label} “${query}”`, () =>
+          const results = await activity({ code: "finding-media", kind, query }, () =>
             searchCommons(options.web, kind, query),
           );
           for (const result of results) {
@@ -63,8 +63,8 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
 
   return {
     tools: {
-      find_image: find("image", "Looking for an image of"),
-      find_audio: find("audio", "Looking for a recording of"),
+      find_image: find("image"),
+      find_audio: find("audio"),
     },
     found() {
       if (found.size === 0) return "";

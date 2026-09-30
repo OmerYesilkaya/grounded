@@ -1,5 +1,4 @@
-import { answerProblem, TASK_FORM_SPECS } from "@grounded/core/assignment";
-import { fieldLabel } from "@grounded/core/assignment-review";
+import { answerProblem } from "@grounded/core/assignment";
 import type { Snooze } from "@grounded/core/snooze";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
@@ -17,11 +16,14 @@ import { ReviewSummary } from "@/homework/review-summary";
 import { ExamPart, TaskAnswerArea } from "@/homework/task-part";
 import { useAnswers, type SaveStatus } from "@/homework/use-answers";
 import { useReview } from "@/homework/use-review";
+import { duePrefix, fieldLabelOf, formLabel, whenShort } from "@/homework/words";
+import { useFormat, useT } from "@/i18n";
 import { assignmentApi, useAssignment, type Assignment } from "@/lib/assignments";
 import { useMediaQuery } from "@/lib/media-query";
 import { scrollBehavior, scrollIntoViewThen } from "@/lib/motion";
-import { dueWords, useNow } from "@/lib/snooze";
+import { useNow } from "@/lib/snooze";
 import { cn } from "@/lib/utils";
+import { wordNotice } from "@/i18n/notice";
 
 /** Wide enough for the margin's comments, as the lesson's (design §9.1); below, under each field. */
 const WIDE = "(min-width: 1100px)";
@@ -35,15 +37,6 @@ export function HomeworkRoute() {
   return <HomeworkPage key={assignment.data.id} assignment={assignment.data} />;
 }
 
-/** "29 Sep, 14:30": when it was assigned or handed in. */
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 /**
  * Homework or an arc exam on a page of its own (design §7.4): what it asks, the answer boxes of
  * its kind (an exam's parts each with their own), what a good answer shows to check against, and
@@ -53,6 +46,9 @@ const when = (iso: string) =>
  */
 export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   const queryClient = useQueryClient();
+  const all = useT();
+  const { homework: t, common } = all;
+  const format = useFormat();
   const { answers, status, error, setError, change, lock, flush } = useAnswers(assignment);
   const [submittedAt, setSubmittedAt] = useState(assignment.submittedAt);
   const [waiting, setWaiting] = useState(assignment.session.waiting);
@@ -111,10 +107,10 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
 
   const handIn = async () => {
     const problem = assignment.tasks
-      .map((t) => answerProblem(t, answers[t.id], { complete: true }))
+      .map((of) => answerProblem(of, answers[of.id], { complete: true }))
       .find(Boolean);
     if (problem) {
-      setError(problem);
+      setError(wordNotice(problem, all));
       return;
     }
     setBusy(true);
@@ -125,7 +121,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
       setError(null);
       await refresh();
     } catch (failed) {
-      setError(failed instanceof Error ? failed.message : "It wasn't handed in. Try again.");
+      setError(failed instanceof Error ? failed.message : t.notHandedIn);
     } finally {
       setBusy(false);
     }
@@ -141,7 +137,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
       setError(null);
       await refresh();
     } catch (failed) {
-      setError(failed instanceof Error ? failed.message : "That didn't go through. Try again.");
+      setError(failed instanceof Error ? failed.message : common.failed);
     } finally {
       setBusy(false);
     }
@@ -177,15 +173,18 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
         <main className="col-start-2 min-w-0">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
             {exam
-              ? `Arc exam · ${String(assignment.tasks.length)} parts`
-              : `Homework · ${TASK_FORM_SPECS[task.form].label}`}
+              ? t.examEyebrow(assignment.tasks.length)
+              : t.homeworkEyebrow(formLabel(task.form, t))}
           </p>
           <h1 className="mt-2 font-serif text-[30px] leading-tight font-semibold tracking-tight text-balance">
             {assignment.title}
           </h1>
           <p className="mt-2 text-[13px] text-subtle-foreground">
-            From session {assignment.session.number} of {assignment.trackTitle} · set{" "}
-            {when(assignment.createdAt)}
+            {t.setLine({
+              session: assignment.session.number,
+              track: assignment.trackTitle,
+              when: whenShort(assignment.createdAt, format),
+            })}
           </p>
 
           {exam ? (
@@ -220,7 +219,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
 
           {exam ? (
             // Every part, each with its own boxes; the review's comments find their words in all.
-            <article ref={answer} aria-label="The exam">
+            <article ref={answer} aria-label={t.theExam}>
               {assignment.tasks.map((part, i) => (
                 <ExamPart key={part.id} task={part} number={i + 1}>
                   {answerArea(part)}
@@ -228,7 +227,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
               ))}
             </article>
           ) : (
-            <section ref={answer} aria-label="Your answer" className="mt-10 border-t pt-8">
+            <section ref={answer} aria-label={t.yourAnswer} className="mt-10 border-t pt-8">
               {answerArea(task)}
             </section>
           )}
@@ -251,7 +250,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
         {/* The right margin: what a good answer shows, then (reviewed) the review's comments. */}
         <aside
           ref={margin}
-          aria-label={review?.status === "done" ? "Comments" : "A good answer shows"}
+          aria-label={review?.status === "done" ? t.comments : t.goodAnswerShows}
           className="col-start-3 mr-5 ml-10 max-w-[300px] max-[1100px]:hidden"
         >
           {review?.status !== "done" && (
@@ -273,8 +272,8 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             margin={margin}
             wide={wide}
             fieldLabel={(comment) => {
-              const on = assignment.tasks.find((t) => t.id === comment.anchor.taskId) ?? task;
-              const label = fieldLabel(on.form, comment.anchor.field);
+              const on = assignment.tasks.find((of) => of.id === comment.anchor.taskId) ?? task;
+              const label = fieldLabelOf(comment.anchor.field, t);
               return on.title ? `${on.title}: ${label}` : label;
             }}
           />
@@ -284,14 +283,9 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   );
 }
 
-const SAVE_WORDS: Record<SaveStatus, string> = {
-  saved: "Saved",
-  saving: "Saving…",
-  failed: "Not saved",
-};
-
 /** The page's header band, level with the sidebar's: the way back to its session, and saving. */
 function TopBar({ assignment, status }: { assignment: Assignment; status: SaveStatus | null }) {
+  const { homework: t, common } = useT();
   return (
     <PageBar
       start={
@@ -301,7 +295,7 @@ function TopBar({ assignment, status }: { assignment: Assignment; status: SaveSt
           className="touch-target relative flex items-center gap-1.5 rounded-md px-2 py-1 text-[13px] whitespace-nowrap text-muted-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
           <ArrowLeft className="size-3.5" aria-hidden />
-          Session {assignment.session.number}
+          {common.session(assignment.session.number)}
         </Link>
       }
       end={
@@ -313,7 +307,7 @@ function TopBar({ assignment, status }: { assignment: Assignment; status: SaveSt
               status === "failed" && "text-destructive",
             )}
           >
-            {SAVE_WORDS[status]}
+            {t.saveStatus[status]}
           </span>
         )
       }
@@ -328,18 +322,17 @@ function TopBar({ assignment, status }: { assignment: Assignment; status: SaveSt
 function OneSitting() {
   return (
     <p className="mt-6 border-l-2 border-primary/50 pl-4 text-[14.5px] leading-relaxed text-muted-foreground">
-      Everything here is new ground, built from the whole arc. Take it in one sitting, when you have
-      room for it: your answers are kept as you write, and it is handed in, and reviewed, only once
-      every part is answered. If now isn't the time, put it off with Later.
+      {useT().homework.oneSitting}
     </p>
   );
 }
 
 /** Folded into a later homework (method.md, "Homework"): that one covers this one's ground. */
 function Folded({ into }: { into: { id: string; title: string } }) {
+  const t = useT().homework;
   return (
     <div className="mt-12 rounded-xl border bg-card px-4 py-3.5 text-[14px]">
-      Folded into a later homework, which covers this one too:{" "}
+      {t.foldedInto}{" "}
       <Link
         to="/homework/$assignmentId"
         params={{ assignmentId: into.id }}
@@ -367,26 +360,31 @@ function HandIn(props: {
   onLater: (snooze: Snooze) => void;
 }) {
   const now = useNow();
+  const t = useT().homework;
+  const format = useFormat();
   if (props.submittedAt)
     return (
       <div className="mt-12 flex items-center gap-2.5 rounded-xl border bg-card px-4 py-3.5 text-[14px]">
         <span className="flex size-5 items-center justify-center rounded-full bg-success/15 text-success">
           <Check className="size-3.5" strokeWidth={3} aria-hidden />
         </span>
-        Handed in {when(props.submittedAt)}.
+        {t.handedInAt(whenShort(props.submittedAt, format))}
       </div>
     );
   return (
     <div className="mt-12 border-t pt-6">
       <div className="flex flex-wrap items-center gap-3">
         <Button type="button" disabled={props.busy} onClick={props.onHandIn}>
-          Hand it in
+          {t.handIn}
         </Button>
         <LaterMenu disabled={props.busy} onChoose={props.onLater} />
         <span className="text-[12.5px] text-subtle-foreground">
           {props.waiting
-            ? "Later closes the session; the homework waits in your track until then."
-            : `${props.snoozedUntil ? dueWords(props.snoozedUntil, now) : "Open:"} it waits in your track until you hand it in${props.exam ? ", every part answered" : ""}.`}
+            ? t.laterCloses
+            : t.waitsInTrack(
+                props.snoozedUntil ? duePrefix(props.snoozedUntil, now, t, format) : null,
+                props.exam,
+              )}
         </span>
       </div>
       {props.error && (

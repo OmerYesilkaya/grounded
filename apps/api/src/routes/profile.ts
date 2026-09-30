@@ -12,6 +12,8 @@ import {
 import type { Hono } from "hono";
 import { z } from "zod";
 import { TEACHING_NOTES_MAX } from "../engine/profile.js";
+import { notFound, refuse } from "../refusals.js";
+import { refusal } from "@grounded/core";
 
 interface Env {
   Variables: { user: { id: string; email: string } };
@@ -82,14 +84,14 @@ export function registerProfileRoutes(app: Hono<Env>, deps: { db: Db }) {
 
   app.post("/api/profile/notes", async (c) => {
     const parsed = noteText.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Write the note first." }, 400);
+    if (!parsed.success) return c.json(refuse("write-note"), 400);
     const userId = c.get("user").id;
     const [{ count } = { count: 0 }] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(learnerProfileNotes)
       .where(eq(learnerProfileNotes.userId, userId));
     if (count >= TEACHING_NOTES_MAX)
-      return c.json({ error: `Keep it to ${String(TEACHING_NOTES_MAX)} notes.` }, 400);
+      return c.json(refusal({ code: "notes-limit", max: TEACHING_NOTES_MAX }), 400);
     await db
       .insert(learnerProfileNotes)
       .values({ userId, text: parsed.data.text, byLearner: true });
@@ -98,22 +100,22 @@ export function registerProfileRoutes(app: Hono<Env>, deps: { db: Db }) {
 
   app.patch("/api/profile/notes/:id", async (c) => {
     const id = c.req.param("id");
-    if (!z.uuid().safeParse(id).success) return c.json({ error: "Not found." }, 404);
+    if (!z.uuid().safeParse(id).success) return c.json(notFound, 404);
     const parsed = noteText.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Write the note first." }, 400);
+    if (!parsed.success) return c.json(refuse("write-note"), 400);
     const userId = c.get("user").id;
     const updated = await db
       .update(learnerProfileNotes)
       .set({ text: parsed.data.text, byLearner: true, revisedAt: sql`now()` })
       .where(owned(userId, id))
       .returning({ id: learnerProfileNotes.id });
-    if (updated.length === 0) return c.json({ error: "Not found." }, 404);
+    if (updated.length === 0) return c.json(notFound, 404);
     return c.json(await teachingNotes(db, userId));
   });
 
   app.delete("/api/profile/notes/:id", async (c) => {
     const id = c.req.param("id");
-    if (!z.uuid().safeParse(id).success) return c.json({ error: "Not found." }, 404);
+    if (!z.uuid().safeParse(id).success) return c.json(notFound, 404);
     const userId = c.get("user").id;
     await db.delete(learnerProfileNotes).where(owned(userId, id));
     return c.json(await teachingNotes(db, userId));

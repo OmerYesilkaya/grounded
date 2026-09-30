@@ -2,6 +2,7 @@ import type { LessonStep } from "@grounded/content";
 import { useEffect, useRef, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
+import { useT } from "@/i18n";
 import { useMediaQuery } from "@/lib/media-query";
 import { AsideLayer } from "./aside-layer";
 import { CheckCard } from "./check-card";
@@ -45,6 +46,7 @@ const OPEN: StepProgress = { status: "open", thread: [] };
  */
 export function LessonView(props: LessonViewProps) {
   const { steps, totalSteps, progress, asides } = props;
+  const t = useT().lesson;
   const shown = unlockedSteps(steps, progress);
   const lockedCount = Math.max(0, totalSteps - shown.length);
   const currentStepId = useCurrentStep(shown);
@@ -95,14 +97,14 @@ export function LessonView(props: LessonViewProps) {
               </h2>
               {stepProgress.status === "settling" && (
                 <p className="-mt-2 mb-3 font-sans text-xs tracking-wider text-primary uppercase">
-                  Still settling
+                  {t.steps.stillSettling}
                 </p>
               )}
               <Blocks blocks={step.body} />
               {stepProgress.note && (
                 <div className="my-4 rounded-r-lg border-l-3 border-primary bg-highlight px-3.5 py-2.5 font-sans text-sm">
                   <b className="mb-0.5 block text-[11.5px] tracking-wider text-primary uppercase">
-                    After the check
+                    {t.steps.afterCheck}
                   </b>
                   {stepProgress.note}
                 </div>
@@ -127,8 +129,7 @@ export function LessonView(props: LessonViewProps) {
               )}
               {index === shown.length - 1 && lockedCount > 0 && (
                 <p className="my-8 rounded-xl border border-dashed border-border-strong p-5 text-center font-sans text-sm text-subtle-foreground">
-                  {lockedCount} more {lockedCount === 1 ? "step" : "steps"} · each opens when the
-                  check before it lands
+                  {t.steps.moreLocked(lockedCount)}
                 </p>
               )}
             </section>
@@ -140,7 +141,7 @@ export function LessonView(props: LessonViewProps) {
       {/* Right margin: aside cards (design §7.5), laid over it by the aside layer. */}
       <aside
         ref={margin}
-        aria-label="Questions"
+        aria-label={t.asides.margin}
         className="col-start-3 ml-10 max-w-[300px] max-[1100px]:hidden"
       />
       {asides && (

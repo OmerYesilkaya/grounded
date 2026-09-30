@@ -2,7 +2,6 @@ import { asc, checkMessages, eq, sessionEvents } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { ProviderCallError } from "./engine/model-call.js";
-import { OUTLINE_FAILED } from "./engine/session-tasks.js";
 import { captureLogs } from "./log.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -136,7 +135,11 @@ describe("a lesson that failed", () => {
   it("can be written again when it failed before its outline, from the start only", async () => {
     const session = await planned();
     const { cookie, sessionId } = session;
-    const outOfCredit = new ProviderCallError("no-credit", "Your OpenAI account is out of credit.");
+    const outOfCredit = new ProviderCallError("no-credit", {
+      code: "provider-failed",
+      kind: "no-credit",
+      provider: "OpenAI",
+    });
     models.script(
       "lesson",
       new MockLanguageModelV4({ doGenerate: () => Promise.reject(outOfCredit) }),
@@ -147,7 +150,7 @@ describe("a lesson that failed", () => {
     const rest = await post(cookie, sessionId, "lesson/write-rest");
     expect(rest.status).toBe(409);
     expect(await rest.json()).toEqual({
-      error: "The lesson has no outline yet: start it over instead.",
+      error: { code: "no-outline" },
     });
 
     models.script("lesson", {
@@ -170,7 +173,7 @@ describe("a lesson that failed", () => {
     await until(cookie, sessionId, (s) => s.state.lesson.status === "failed");
     await t.waitFor(async () => (await eventsOf(sessionId, "error")).length > 0);
 
-    expect(await eventsOf(sessionId, "error")).toEqual([{ message: OUTLINE_FAILED }]);
+    expect(await eventsOf(sessionId, "error")).toEqual([{ error: { code: "outline-failed" } }]);
     const lines = captured.lines.filter((l) => String(l.message).startsWith("lesson outline"));
     expect(lines.map((l) => [l.message, l.codes, l.steps])).toEqual([
       ["lesson outline didn't fit the term list; asking again", { "outline/not-held": 1 }, [1]],
@@ -204,7 +207,7 @@ describe("a lesson that failed", () => {
     const again = await post(cookie, sessionId, "lesson/start-over");
     expect(again.status).toBe(409);
     expect(await again.json()).toEqual({
-      error: "Only a lesson that failed can be written again.",
+      error: { code: "only-failed-lesson" },
     });
   });
 });

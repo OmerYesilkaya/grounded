@@ -57,12 +57,12 @@ describe("API key credentials", () => {
 
   it("stores nothing when the provider rejects the key, and says why", async () => {
     const cookie = await signedIn();
-    t.setKeyCheck({ ok: false, kind: "invalid-key", message: "Your OpenAI key was rejected." });
+    t.setKeyCheck({ ok: false, kind: "invalid-key", provider: "OpenAI" });
     const response = await put(cookie, { provider: "openai", model: "gpt-6-luna", apiKey: KEY });
 
     expect(response.status).toBe(422);
     expect(await response.json()).toEqual({
-      error: "Your OpenAI key was rejected.",
+      error: { code: "provider-failed", kind: "invalid-key", provider: "OpenAI" },
       kind: "invalid-key",
     });
     expect(await t.db.select().from(credentials)).toEqual([]);
@@ -77,7 +77,7 @@ describe("API key credentials", () => {
     });
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "That model isn't available for this provider.",
+      error: { code: "model-unavailable" },
     });
   });
 

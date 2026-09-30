@@ -3,6 +3,8 @@ import {
   REVIEW_REPLY_RECORD_PROMPT,
   reviewRecord,
   reviewReplyRecordSchema,
+  type Cause,
+  type FailureNotice,
 } from "@grounded/core";
 import { parseBlocks, type Block } from "@grounded/content";
 import { assignments, eq } from "@grounded/db";
@@ -11,7 +13,6 @@ import type { Task } from "graphile-worker";
 import { addLogContext, log } from "../log.js";
 import { composeReply } from "./chat.js";
 import { publish } from "./events.js";
-import { NoCredentialError, ProviderCallError } from "./model-call.js";
 import { reportHandledFailure } from "./queue.js";
 import { createReviewer } from "./review.js";
 import { reviewPrompt } from "./review-call.js";
@@ -24,6 +25,7 @@ import {
   reviewedAssignment,
   type ReviewMessageView,
 } from "./reviews.js";
+import { causeOf } from "./model-call.js";
 
 interface ReplyJob {
   sessionId: string;
@@ -31,9 +33,18 @@ interface ReplyJob {
   commentId: string;
 }
 
-/** The tutor's answer when a reply couldn't be answered, so the learner can reply again. */
-export const replyFailedText = (reason = "") =>
-  `That didn't go through.${reason} Reply again when you're ready.`;
+/**
+ * The app's answer when a reply couldn't be answered, so the learner can reply again: a notice the
+ * web words (design §9.3), and the same in English for the tutor's later calls.
+ */
+export const replyFailed = (cause: Cause | null) => {
+  const text = "That didn't go through. Reply again when you're ready.";
+  return {
+    text,
+    blocks: parseBlocks(text).blocks,
+    failure: { code: "thread-failed", thread: "reply", cause } satisfies FailureNotice,
+  };
+};
 
 /** The reply a comment's card waits on: its thread ends with the learner. */
 export const waitingReply = (messages: readonly ReviewMessageView[]) => {
@@ -115,12 +126,11 @@ export function createReplyTask(deps: ReviewTaskDependencies): Task {
       await recordReviewMessage(db, assignment, commentId, { role: "tutor", ...answer });
     } catch (error) {
       // Otherwise the card waits forever: say so in it, so the learner can reply again.
-      const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
-      const text = replyFailedText(known ? ` ${error.message}` : "");
+      const cause = causeOf(error);
+      const known = cause !== null;
       await recordReviewMessage(db, assignment, commentId, {
         role: "tutor",
-        text,
-        blocks: parseBlocks(text).blocks,
+        ...replyFailed(cause),
       });
       if (!known) throw error;
       reportHandledFailure(error);

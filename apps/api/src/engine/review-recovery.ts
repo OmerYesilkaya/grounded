@@ -1,13 +1,10 @@
-import { parseBlocks } from "@grounded/content";
 import { and, assignments, eq, reviews, sql, type Db } from "@grounded/db";
 import { log } from "../log.js";
 import { jobWaiting } from "./queue.js";
-import { replyFailedText } from "./review-reply.js";
+import { replyFailed } from "./review-reply.js";
 import { publishReview, recordReviewMessage } from "./reviews.js";
 import { loadSession } from "./session-store.js";
 import { unlessWorkedOn } from "./work-locks.js";
-
-const INTERRUPTED = "The review was interrupted by a problem on our side.";
 
 /**
  * Reviews and replies that a job which died left waiting (design §4.2), in open sessions and closed
@@ -37,7 +34,7 @@ export async function recoverReviews(db: Db, quietForMs: number): Promise<void> 
       if (await jobWaiting(db, "review", assignment.sessionId)) return false;
       const rows = await db
         .update(reviews)
-        .set({ status: "failed", failure: INTERRUPTED })
+        .set({ status: "failed", failure: { code: "interrupted" } })
         .where(and(eq(reviews.id, review.id), eq(reviews.status, "reviewing")))
         .returning({ id: reviews.id });
       return rows.length > 0;
@@ -66,12 +63,11 @@ export async function recoverReviews(db: Db, quietForMs: number): Promise<void> 
     const told = await unlessWorkedOn(db, row.session_id, async () => {
       if (await jobWaiting(db, "review-reply", row.session_id, { commentId: row.comment_id }))
         return false;
-      const text = replyFailedText(" The tutor was interrupted by a problem on our side.");
       await recordReviewMessage(
         db,
         { id: row.assignment_id, sessionId: row.session_id },
         row.comment_id,
-        { role: "tutor", text, blocks: parseBlocks(text).blocks },
+        { role: "tutor", ...replyFailed({ code: "interrupted" }) },
       );
       return true;
     });

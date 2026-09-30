@@ -23,18 +23,30 @@ describe("attachments", () => {
 
   it("refuses a kind it doesn't take, an empty file and one too large", () => {
     expect(attachmentProblem("cv.pdf", 2 * MB)).toBeNull();
-    expect(attachmentProblem("sheet.xlsx", 10)).toMatch(/only images, PDFs/);
-    expect(attachmentProblem("cv.pdf", 0)).toBe("cv.pdf is empty.");
-    expect(attachmentProblem("photo.png", 6 * MB)).toBe("photo.png is larger than 5 MB.");
-    expect(attachmentProblem("cv.pdf", 11 * MB)).toBe("cv.pdf is larger than 10 MB.");
+    expect(attachmentProblem("sheet.xlsx", 10)).toEqual({
+      code: "attachment-kind",
+      name: "sheet.xlsx",
+    });
+    expect(attachmentProblem("cv.pdf", 0)).toEqual({ code: "attachment-empty", name: "cv.pdf" });
+    expect(attachmentProblem("photo.png", 6 * MB)).toEqual({
+      code: "attachment-too-large",
+      name: "photo.png",
+      megabytes: 5,
+    });
+    expect(attachmentProblem("cv.pdf", 11 * MB)).toEqual({
+      code: "attachment-too-large",
+      name: "cv.pdf",
+      megabytes: 10,
+    });
   });
 
   it("refuses too many files, or too much together", () => {
     expect(attachmentsProblem([{ size: MB }, { size: MB }])).toBeNull();
     const many = Array.from({ length: ATTACHMENT_LIMITS.files + 1 }, () => ({ size: 1 }));
-    expect(attachmentsProblem(many)).toBe("Attach at most 8 files.");
-    expect(attachmentsProblem([{ size: 9 * MB }, { size: 9 * MB }, { size: 3 * MB }])).toBe(
-      "The files come to more than 20 MB together.",
-    );
+    expect(attachmentsProblem(many)).toEqual({ code: "attachments-too-many", max: 8 });
+    expect(attachmentsProblem([{ size: 9 * MB }, { size: 9 * MB }, { size: 3 * MB }])).toEqual({
+      code: "attachments-too-large",
+      megabytes: 20,
+    });
   });
 });

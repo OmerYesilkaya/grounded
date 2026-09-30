@@ -17,6 +17,18 @@ export type {
 } from "./prompt.js";
 export { NOTES_PHASES, selectTrackView, WHOLE_PLAN_PHASES } from "./track-view.js";
 export type { TrackView, TrackViewInput } from "./track-view.js";
+export { bare, isNotice, refusal } from "./notices.js";
+export type {
+  ActivityNotice,
+  BareRefusalCode,
+  Cause,
+  FailureNotice,
+  FieldRef,
+  Notice,
+  NoticeCode,
+  ProviderFailureKind,
+  RefusalNotice,
+} from "./notices.js";
 export { awaitedJob, initialFinal, initialSession, resolved, transition } from "./session.js";
 export { breakDemotions, finalStanding, type FinalStanding } from "./final.js";
 export {
@@ -145,7 +157,6 @@ export { allowedBlocksLine } from "./blocks-line.js";
 export { importReadingSchema, type ImportReading } from "./import.js";
 export { cleanTitle, needsNaming, standInTitle, TITLE_MAX } from "./track-title.js";
 export {
-  ACCEPTED_DESCRIPTION,
   ATTACHMENT_ACCEPT,
   ATTACHMENT_LIMITS,
   attachmentKind,
@@ -153,4 +164,12 @@ export {
   attachmentsProblem,
 } from "./attachments.js";
 export type { AttachmentKind } from "./attachments.js";
-export { dueTag, isTimeZone, snoozeChoices, snoozeUntil, SNOOZES, type Snooze } from "./snooze.js";
+export {
+  dueTag,
+  type DueTag,
+  isTimeZone,
+  snoozeChoices,
+  snoozeUntil,
+  SNOOZES,
+  type Snooze,
+} from "./snooze.js";

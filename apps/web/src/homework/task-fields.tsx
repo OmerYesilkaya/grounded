@@ -12,7 +12,9 @@ import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { AnswerEditor } from "@/editor/answer-editor";
 import type { UploadPicture } from "@/editor/pictures";
+import { useFormat, useT } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { fieldWords, whenShort } from "./words";
 
 export interface TaskFieldsProps {
   form: TaskForm;
@@ -25,15 +27,6 @@ export interface TaskFieldsProps {
   onError: (message: string) => void;
 }
 
-/** When a prediction was locked, as the learner reads it: "29 Sep, 14:02". */
-export const lockedTime = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
 /**
  * A task's answer boxes, the kind's own (design §7.4): predict → verify's prediction, locked
  * before what happened and the reconciling open; a derivation's steps, each with its "because…";
@@ -41,6 +34,7 @@ export const lockedTime = (iso: string) =>
  */
 export function TaskFields(props: TaskFieldsProps) {
   const { form, answer, readOnly } = props;
+  const t = useT().homework;
   // A derivation grows by the steps the learner adds, written or not yet.
   const [added, setAdded] = useState(0);
   const locked = answer?.lockedAt ?? null;
@@ -54,8 +48,8 @@ export function TaskFields(props: TaskFieldsProps) {
       onChange={(value) => {
         props.onChange(field.key, value);
       }}
-      label={field.label}
-      placeholder={field.placeholder}
+      label={fieldWords(field, t).label}
+      placeholder={fieldWords(field, t).placeholder}
       readOnly={readOnly || options.readOnly === true}
       upload={props.upload}
       onError={props.onError}
@@ -71,11 +65,11 @@ export function TaskFields(props: TaskFieldsProps) {
           if (!step || !because) return null;
           return (
             <li key={step.key} className="flex flex-col gap-2">
-              <FieldLabel number={i + 1} label={step.label} />
+              <FieldLabel number={i + 1} label={fieldWords(step, t).label} />
               {editor(step, { compact: true })}
               <div className="ml-4 border-l-2 border-primary/40 pl-4">
                 <div className="mb-1.5 font-serif text-[15px] text-muted-foreground italic">
-                  Because…
+                  {t.because}
                 </div>
                 {editor(because, { compact: true })}
               </div>
@@ -93,7 +87,7 @@ export function TaskFields(props: TaskFieldsProps) {
               }}
               className="border-dashed text-muted-foreground"
             >
-              <Plus aria-hidden /> Add a step
+              <Plus aria-hidden /> {t.addStep}
             </Button>
           </li>
         )}
@@ -110,12 +104,12 @@ export function TaskFields(props: TaskFieldsProps) {
           <div key={field.key} className="flex flex-col gap-2">
             <FieldLabel
               number={fields.length > 1 ? i + 1 : null}
-              label={field.label}
+              label={fieldWords(field, t).label}
               aside={isPrediction && locked ? <LockedBadge at={locked} /> : null}
             />
             {waitsForLock ? (
               <p className="rounded-lg border border-dashed px-3.5 py-3 text-[13.5px] text-subtle-foreground">
-                Opens once your prediction is locked.
+                {t.opensOnceLocked}
               </p>
             ) : (
               editor(field, { readOnly: isPrediction && locked !== null })
@@ -149,16 +143,19 @@ export function FieldLabel(props: { number: number | null; label: string; aside?
 }
 
 export function LockedBadge({ at }: { at: string }) {
+  const t = useT().homework;
+  const format = useFormat();
   return (
     <span className="ml-auto flex items-center gap-1 text-[12px] text-muted-foreground">
       <Lock className="size-3" aria-hidden />
-      Locked {lockedTime(at)}
+      {t.locked(whenShort(at, format))}
     </span>
   );
 }
 
 function LockPrediction(props: { onLock: () => Promise<void>; empty: boolean }) {
   const [locking, setLocking] = useState(false);
+  const t = useT().homework;
   return (
     <div className="flex flex-wrap items-center gap-3">
       <Button
@@ -173,11 +170,9 @@ function LockPrediction(props: { onLock: () => Promise<void>; empty: boolean }) 
           });
         }}
       >
-        <Lock aria-hidden /> Lock my prediction
+        <Lock aria-hidden /> {t.lockPrediction}
       </Button>
-      <span className="text-[12.5px] text-subtle-foreground">
-        It can&apos;t change once locked. Then check it.
-      </span>
+      <span className="text-[12.5px] text-subtle-foreground">{t.lockNote}</span>
     </div>
   );
 }

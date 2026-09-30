@@ -1,9 +1,14 @@
 import type { Block, CommonsFile } from "@grounded/content";
+import { useT } from "@/i18n";
 import { hostname } from "./visual-blocks";
 
-const unavailable = (
-  <p className="my-4 font-sans text-sm text-subtle-foreground">Media unavailable</p>
-);
+function Unavailable() {
+  return (
+    <p className="my-4 font-sans text-sm text-subtle-foreground">
+      {useT().lesson.blocks.mediaUnavailable}
+    </p>
+  );
+}
 
 const creditLink = "underline decoration-border underline-offset-2 hover:decoration-primary";
 
@@ -29,7 +34,7 @@ function Credit({ file }: { file: CommonsFile }) {
 /** A Commons image, as the server verified it (the block carries the file it resolved). */
 export function ImageView({ block }: { block: Extract<Block, { type: "image" }> }) {
   const { file } = block;
-  if (!file) return unavailable;
+  if (!file) return <Unavailable />;
   return (
     <figure data-block={block.id} className="my-6">
       <img
@@ -48,7 +53,7 @@ export function ImageView({ block }: { block: Extract<Block, { type: "image" }> 
 
 export function AudioView({ block }: { block: Extract<Block, { type: "audio" }> }) {
   const { file } = block;
-  if (!file) return unavailable;
+  if (!file) return <Unavailable />;
   return (
     <figure data-block={block.id} className="my-6 rounded-lg border bg-card p-4">
       <audio controls preload="none" src={file.url} className="w-full" />
@@ -61,6 +66,7 @@ export function AudioView({ block }: { block: Extract<Block, { type: "audio" }> 
 }
 
 export function VideoView({ block }: { block: Extract<Block, { type: "video" }> }) {
+  const t = useT().lesson.blocks;
   const params = new URLSearchParams();
   if (block.start !== null) params.set("start", String(block.start));
   if (block.end !== null) params.set("end", String(block.end));
@@ -68,7 +74,7 @@ export function VideoView({ block }: { block: Extract<Block, { type: "video" }> 
   return (
     <figure data-block={block.id} className="my-6">
       <iframe
-        title={block.caption ?? "Video"}
+        title={block.caption ?? t.video}
         src={`https://www.youtube-nocookie.com/embed/${encodeURIComponent(block.videoId)}${query}`}
         loading="lazy"
         allow="encrypted-media; picture-in-picture"

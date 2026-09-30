@@ -5,6 +5,7 @@ import type { Snooze } from "@grounded/core/snooze";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "./api";
 import { browserTimeZone } from "./snooze";
+import { type Cause, type FailureNotice } from "@grounded/core/notices";
 
 /** An assignment as its session's chat and snapshot know it (api: engine/assignments.ts). */
 export interface AssignmentSummary {
@@ -50,6 +51,8 @@ export interface ReviewMessage {
   role: "learner" | "tutor";
   text: string;
   blocks: Block[] | null;
+  /** The app's answer in place of the tutor's, when it couldn't be given (design §9.3). */
+  failure?: FailureNotice | null;
 }
 
 /** A comment in the margin of a reviewed answer, where the learner's model leaked (design §7.4). */
@@ -69,7 +72,8 @@ export interface Review {
   id: string;
   status: "reviewing" | "done" | "failed";
   /** Why it failed, for the learner. */
-  failure: string | null;
+  /** Why it failed: a notice (design §9.3), or words stored before notices. */
+  failure: Cause | string | null;
   checklist: ChecklistMark[];
   comments: ReviewComment[];
 }

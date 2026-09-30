@@ -4,6 +4,8 @@ import {
   type ChecklistMark,
   type ReviewAnchor,
   type ReviewedAssignment,
+  type Cause,
+  type FailureNotice,
 } from "@grounded/core";
 import type { Block } from "@grounded/content";
 import {
@@ -41,6 +43,8 @@ export interface ReviewMessageView {
   role: "learner" | "tutor";
   text: string;
   blocks: Block[] | null;
+  /** The app's message in place of an answer that couldn't be given (design §9.3). */
+  failure: FailureNotice | null;
 }
 
 export interface ReviewCommentView {
@@ -55,7 +59,8 @@ export interface ReviewCommentView {
 export interface ReviewView {
   id: string;
   status: ReviewRow["status"];
-  failure: string | null;
+  /** Why it failed: a notice the web words (design §9.3), or words stored before them. */
+  failure: Cause | string | null;
   checklist: ChecklistMark[];
   comments: ReviewCommentView[];
 }
@@ -100,7 +105,13 @@ export async function loadReview(db: Db, assignmentId: string): Promise<ReviewVi
       anchor: c.anchor,
       items: c.items,
       resolvedAt: c.resolvedAt?.toISOString() ?? null,
-      messages: c.messages.map(({ id, role, text, blocks }) => ({ id, role, text, blocks })),
+      messages: c.messages.map(({ id, role, text, blocks, failure }) => ({
+        id,
+        role,
+        text,
+        blocks,
+        failure,
+      })),
     })),
   };
 }
@@ -142,14 +153,31 @@ export async function recordReviewMessage(
   db: Db,
   assignment: Pick<AssignmentRow, "id" | "sessionId">,
   commentId: string,
-  message: { role: "learner" | "tutor"; text: string; blocks?: Block[] | null },
+  message: {
+    role: "learner" | "tutor";
+    text: string;
+    blocks?: Block[] | null;
+    failure?: FailureNotice;
+  },
 ): Promise<ReviewMessageView> {
   const [row] = await db
     .insert(reviewMessages)
-    .values({ commentId, role: message.role, text: message.text, blocks: message.blocks ?? null })
+    .values({
+      commentId,
+      role: message.role,
+      text: message.text,
+      blocks: message.blocks ?? null,
+      failure: message.failure ?? null,
+    })
     .returning();
   if (!row) throw new Error("review message insert returned nothing");
-  const view = { id: row.id, role: row.role, text: row.text, blocks: row.blocks };
+  const view = {
+    id: row.id,
+    role: row.role,
+    text: row.text,
+    blocks: row.blocks,
+    failure: row.failure,
+  };
   await publish(db, assignment.sessionId, "review-message", {
     assignmentId: assignment.id,
     commentId,

@@ -41,24 +41,24 @@ describe("reading attachments", () => {
     });
     expect(await one("photo.png", text("not an image"))).toEqual({
       ok: false,
-      error: "photo.png doesn't look like the file its name says it is.",
+      error: { code: "attachment-not-what-it-says", name: "photo.png" },
     });
     expect(await one("cv.pdf", PNG)).toMatchObject({ ok: false });
     expect(await one("cv.docx", PNG)).toMatchObject({ ok: false });
     expect(await one("notes.txt", Uint8Array.from([0xff, 0xfe, 0x00]))).toEqual({
       ok: false,
-      error: "notes.txt isn't plain text (UTF-8).",
+      error: { code: "attachment-not-utf8", name: "notes.txt" },
     });
   });
 
   it("refuses files with no text, too much text, or too many PDF pages", async () => {
     expect(await one("empty.txt", text("  \n "))).toEqual({
       ok: false,
-      error: "empty.txt has no text in it.",
+      error: { code: "attachment-no-text", name: "empty.txt" },
     });
     expect(await one("book.txt", text("x".repeat(50_001)))).toEqual({
       ok: false,
-      error: "book.txt has 50,001 characters of text; at most 50,000 can be attached.",
+      error: { code: "attachment-too-long", name: "book.txt", characters: 50_001, max: 50_000 },
     });
     const result = await readAttachments([
       { name: "a.pdf", bytes: await pdf(30) },
@@ -66,15 +66,18 @@ describe("reading attachments", () => {
     ]);
     expect(result).toEqual({
       ok: false,
-      error: "The PDFs come to 51 pages; at most 50 can be attached.",
+      error: { code: "attachments-pdf-pages", pages: 51, max: 50 },
     });
   });
 
   it("refuses a kind it doesn't take, and too many files", async () => {
     const refused = await one("sheet.xlsx", PNG);
-    expect(refused.ok || refused.error).toContain("sheet.xlsx: only images, PDFs");
+    expect(refused.ok || refused.error).toEqual({ code: "attachment-kind", name: "sheet.xlsx" });
     const many = Array.from({ length: 9 }, (_, i) => ({ name: `${String(i)}.png`, bytes: PNG }));
-    expect(await readAttachments(many)).toEqual({ ok: false, error: "Attach at most 8 files." });
+    expect(await readAttachments(many)).toEqual({
+      ok: false,
+      error: { code: "attachments-too-many", max: 8 },
+    });
   });
 
   it("keeps a file's own name, without folders or control characters", () => {

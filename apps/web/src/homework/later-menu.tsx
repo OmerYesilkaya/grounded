@@ -8,11 +8,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { browserTimeZone, choicesNow, SNOOZE_WORDS, useNow } from "@/lib/snooze";
-
-/** "20:00", or "8 PM": when a snooze ends, on the learner's clock. */
-const clock = (instant: Date) =>
-  instant.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+import { useFormat, useT } from "@/i18n";
+import { browserTimeZone, choicesNow, useNow } from "@/lib/snooze";
 
 /**
  * "Later" (design §7.4): homework is put off until a time, never skipped, so the button asks when:
@@ -24,17 +21,21 @@ export function LaterMenu(props: {
   size?: "sm" | "default";
 }) {
   const now = useNow();
+  const { homework: t, common } = useT();
+  const format = useFormat();
+  // "20:00", or "8 PM": when a snooze ends, on the learner's clock, in the app's language.
+  const clock = (instant: Date) => format.date(instant, { hour: "numeric", minute: "2-digit" });
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild disabled={props.disabled}>
         <Button type="button" variant="ghost" size={props.size ?? "default"}>
-          Later
+          {t.later}
           <ChevronDown aria-hidden />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
         <DropdownMenuLabel className="text-[12px] font-normal text-subtle-foreground">
-          Remind me
+          {t.remindMe}
         </DropdownMenuLabel>
         {choicesNow(now).map((snooze) => {
           const until = snoozeUntil(snooze, now, browserTimeZone());
@@ -45,7 +46,7 @@ export function LaterMenu(props: {
                 props.onChoose(snooze);
               }}
             >
-              {SNOOZE_WORDS[snooze]}
+              {common.snooze[snooze]}
               {until && (
                 <span className="ml-auto text-[12px] text-subtle-foreground">{clock(until)}</span>
               )}

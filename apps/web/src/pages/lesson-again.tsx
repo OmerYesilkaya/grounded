@@ -1,8 +1,10 @@
 import { useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import { api } from "@/lib/api";
 import { readableSteps, type SessionModel } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { wordNotice } from "@/i18n/notice";
 
 /**
  * A lesson that failed (design §4.2), and the ways back: "Write the rest again" keeps its outline
@@ -16,20 +18,19 @@ export function LessonAgain({ model, className }: { model: SessionModel; classNa
     mutationFn: (path: "write-rest" | "start-over") =>
       api(`/api/sessions/${model.id}/lesson/${path}`, { method: "POST" }),
   });
+  const all = useT();
+  const t = all.track.again;
   // Why, where it is known: the job's error, or the step that kept breaking the lesson's rules.
   const reason =
-    model.error ??
-    (gap
-      ? `Step ${String(written + 1)}, “${gap.heading}”, kept breaking the lesson's rules.`
-      : null);
+    model.error !== null
+      ? wordNotice(model.error, all)
+      : gap
+        ? t.brokeRules(written + 1, gap.heading)
+        : null;
 
   return (
     <div className={cn("rounded-xl border bg-card px-5 py-4 font-sans text-sm", className)}>
-      <p className="font-medium">
-        {written > 0
-          ? "The rest of the lesson couldn't be written."
-          : "The lesson couldn't be written."}
-      </p>
+      <p className="font-medium">{written > 0 ? t.restFailed : t.failed}</p>
       {reason && <p className="mt-1 text-muted-foreground">{reason}</p>}
       <div className="mt-3 flex flex-wrap items-center gap-2">
         {written > 0 ? (
@@ -41,7 +42,7 @@ export function LessonAgain({ model, className }: { model: SessionModel; classNa
                 again.mutate("write-rest");
               }}
             >
-              Write the rest again
+              {t.writeRest}
             </Button>
             <Button
               size="sm"
@@ -51,7 +52,7 @@ export function LessonAgain({ model, className }: { model: SessionModel; classNa
                 again.mutate("start-over");
               }}
             >
-              Start the lesson over
+              {t.startOver}
             </Button>
           </>
         ) : (
@@ -62,7 +63,7 @@ export function LessonAgain({ model, className }: { model: SessionModel; classNa
               again.mutate("start-over");
             }}
           >
-            Write the lesson again
+            {t.writeAgain}
           </Button>
         )}
       </div>

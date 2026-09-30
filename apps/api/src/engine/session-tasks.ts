@@ -21,6 +21,8 @@ import {
   type Phase,
   type PromptContext,
   type SessionState,
+  type Cause,
+  type FailureNotice,
 } from "@grounded/core";
 import { parseBlocks, validate, type TrackTerm } from "@grounded/content";
 import {
@@ -73,7 +75,7 @@ import {
   isFirstSession,
   ORIGINALS_PHASES,
 } from "./brought.js";
-import { publish, startActivity, withActivity, type Activity } from "./events.js";
+import { publish, startActivity, withActivity, type Activity, publishFailure } from "./events.js";
 import {
   AUDIT_DECISION_PROMPT,
   auditOpening,
@@ -94,7 +96,7 @@ import {
   LEFT_OFF_PROMPT,
   writeLeftOff,
 } from "./left-off.js";
-import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
+import { type ModelAccess, causeOf } from "./model-call.js";
 import type { FileStore } from "../files/store.js";
 import { createLessonMedia } from "../media/lesson-media.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
@@ -170,10 +172,6 @@ const HOMEWORK_REQUEST = `(The lesson's checks are done. Assign the homework: on
 const HOMEWORK_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the homework you just wrote: the kind of its task, a few words naming it, and what a good answer demonstrates.";
 
-/** What the learner is told when no outline fitted the term list: the lesson can be written again. */
-export const OUTLINE_FAILED =
-  "The lesson's outline didn't fit your term list after three tries: it named terms the list doesn't have, or used them before teaching them.";
-
 /**
  * An outline's problems for the log: how many, of which kinds, at which steps. Their messages quote
  * term names, so they are logged only with LOG_CONTENT.
@@ -189,9 +187,14 @@ function outlineProblemFields(problems: readonly OutlineProblem[]) {
   };
 }
 
-/** The tutor's reply when an answer couldn't be checked, so the learner can answer again. */
-export const checkFailedText = (reason = "") =>
-  `That didn't go through.${reason} Answer again when you're ready.`;
+/**
+ * The app's reply when an answer couldn't be checked, so the learner can answer again: a notice the
+ * web words (design §9.3), and the same in English for the tutor's later calls.
+ */
+export const checkFailed = (cause: Cause | null) => ({
+  text: "That didn't go through. Answer again when you're ready.",
+  failure: { code: "thread-failed", thread: "check", cause } satisfies FailureNotice,
+});
 
 /**
  * Adds a tutor message to a step's check thread and publishes it; a model's reply has its links
@@ -204,12 +207,13 @@ export async function recordCheckMessage(
   text: string,
   verdict: "landed" | "missed" | null,
   media?: VerifierOptions,
+  failure: FailureNotice | null = null,
 ): Promise<void> {
   const parsed = parseBlocks(text).blocks;
   const blocks = media ? await withVerifiedLinks(parsed, media) : parsed;
   const [row] = await db
     .insert(checkMessages)
-    .values({ sessionId, stepId, role: "tutor", text, blocks, verdict })
+    .values({ sessionId, stepId, role: "tutor", text, blocks, verdict, failure })
     .returning();
   if (!row) throw new Error("check message insert returned nothing");
   await publish(db, sessionId, "check-message", {
@@ -218,6 +222,7 @@ export async function recordCheckMessage(
     role: "tutor",
     blocks,
     verdict,
+    failure,
   });
 }
 
@@ -418,7 +423,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       });
       message = { id: reply.messageId, text: reply.text, blocks: reply.blocks };
     }
-    const record = await withActivity(db, sessionId, "Noting what a good answer shows", () =>
+    const record = await withActivity(db, sessionId, { code: "noting-good-answer" }, () =>
       recordAssignment({
         model,
         system,
@@ -554,7 +559,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         }),
         system: systemFor("close", whole),
         messages: [{ role: "user", content: LEFT_OFF_CATCH_UP_PROMPT }],
-        label: "Reading where you left off",
+        label: { code: "reading-left-off" },
       });
       return true;
     } catch {
@@ -575,7 +580,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     if (track?.brief !== null || (await isFirstSession(db, session.id, session.trackId)))
       return false;
     try {
-      const brief = await withActivity(db, session.id, "Reading what you brought", () =>
+      const brief = await withActivity(db, session.id, { code: "reading-brought" }, () =>
         briefTrack({ db, store: files, models, trackId: session.trackId }),
       );
       return brief !== null;
@@ -603,17 +608,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             outlineProblemFields(error.problems),
             "lesson outline didn't fit the term list in any attempt",
           );
-        const known =
-          error instanceof ProviderCallError ||
-          error instanceof NoCredentialError ||
-          error instanceof LessonOutlineError;
-        const message =
+        const cause = causeOf(error);
+        const known = cause !== null || error instanceof LessonOutlineError;
+        await publishFailure(
+          db,
+          job.sessionId,
           error instanceof LessonOutlineError
-            ? OUTLINE_FAILED
-            : known
-              ? error.message
-              : "Something went wrong on our side. Try again in a moment.";
-        await publish(db, job.sessionId, "error", { message });
+            ? { code: "outline-failed" }
+            : (cause ?? { code: "our-side" }),
+        );
         if (!known) throw error;
         reportHandledFailure(error);
       }
@@ -668,7 +671,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           { role: "user", content: REVIEW_DECISION_PROMPT },
         ];
         const decided = await traced(() =>
-          withActivity(db, sessionId, "Noting what your answers showed", () =>
+          withActivity(db, sessionId, { code: "noting-answers" }, () =>
             generateText({
               model: decider,
               system: context.system,
@@ -684,7 +687,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             trackId: session.trackId,
             actions: output.actions,
             source: "review",
-            label: "Noting what your answers showed",
+            label: { code: "noting-answers" },
             judge: decided.judge,
             askAgain: async (feedback) =>
               (
@@ -711,7 +714,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           const { text: summary } = await withActivity(
             db,
             sessionId,
-            "Taking stock of what held",
+            { code: "taking-stock" },
             () =>
               generateText({
                 model: summarizer,
@@ -777,7 +780,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
         const decider = await modelFor("probe-decision");
         const decided = await traced(() =>
-          withActivity(db, sessionId, "Noting what your answers showed", () =>
+          withActivity(db, sessionId, { code: "noting-answers" }, () =>
             generateText({
               model: decider,
               system: context.system,
@@ -793,7 +796,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             trackId: session.trackId,
             actions: output.actions,
             source: "probe",
-            label: "Noting what your answers showed",
+            label: { code: "noting-answers" },
             judge: decided.judge,
             askAgain: async (feedback) =>
               (
@@ -819,7 +822,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           const { text: summary } = await withActivity(
             db,
             sessionId,
-            "Working out where your knowledge ends",
+            { code: "finding-where-knowledge-ends" },
             () =>
               generateText({
                 model: summarizer,
@@ -899,7 +902,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 messages: asking,
               }).then(({ output }) => output);
         const decided = await traced(() =>
-          withActivity(db, sessionId, "Noting what your answers showed", decide),
+          withActivity(db, sessionId, { code: "noting-answers" }, decide),
         );
         const output = decided.value;
         // A break takes its term back to taught, the app's to derive (final.ts in core).
@@ -910,7 +913,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             trackId: session.trackId,
             actions,
             source: part,
-            label: "Noting what your answers showed",
+            label: { code: "noting-answers" },
             judge: decided.judge,
             askAgain: async (feedback) =>
               (
@@ -1001,7 +1004,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             messages,
             search,
             request: LESSON_RESEARCH_PROMPT,
-            label: "Checking the facts the lesson needs",
+            label: { code: "checking-facts" },
           });
           log.info({ searches: found.searches.length }, "lesson research done");
           await storeResearch(db, { trackId: session.trackId, sessionId }, "lesson", found);
@@ -1017,7 +1020,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         : "";
       const outlining = resume
         ? undefined
-        : await startActivity(db, sessionId, "Outlining the lesson");
+        : await startActivity(db, sessionId, { code: "outlining" });
       let writing: Activity | undefined;
       let totalSteps = resume?.outline.steps.length ?? 0;
       try {
@@ -1067,12 +1070,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 "lesson step broke rules; rewriting it",
               );
             await writing?.done();
-            const which = `step ${String(index + 1)} of ${String(Math.max(totalSteps, index + 1))}`;
-            writing = await startActivity(
-              db,
-              sessionId,
-              attempt === 0 ? `Writing ${which}` : `Rewriting ${which} (the draft broke a rule)`,
-            );
+            writing = await startActivity(db, sessionId, {
+              code: "writing-step",
+              step: index + 1,
+              of: Math.max(totalSteps, index + 1),
+              again: attempt > 0,
+            });
           },
         });
         for (const { stepId, issues } of result.degraded)
@@ -1122,7 +1125,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         // Traced, so each grading's verdict is stored on its call (call-trace.ts).
         const grade = (feedback: string) =>
           traced(() =>
-            withActivity(db, sessionId, "Checking your answer", async () => {
+            withActivity(db, sessionId, { code: "checking-answer" }, async () => {
               const { output } = await generateText({
                 model,
                 system,
@@ -1188,7 +1191,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             trackId: session.trackId,
             actions: graded.actions,
             source: `check ${stepId}`,
-            label: "Checking your answer",
+            label: { code: "checking-answer" },
             judge,
             askAgain: async (feedback) =>
               (
@@ -1253,11 +1256,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       } catch (error) {
         // Otherwise the answer stays "being checked" forever: say so in the thread, so the learner
         // can answer again.
-        const reason =
-          error instanceof ProviderCallError || error instanceof NoCredentialError
-            ? ` ${error.message}`
-            : "";
-        await recordCheckMessage(db, sessionId, stepId, checkFailedText(reason), null);
+        const failed = checkFailed(causeOf(error));
+        await recordCheckMessage(
+          db,
+          sessionId,
+          stepId,
+          failed.text,
+          null,
+          undefined,
+          failed.failure,
+        );
         throw error;
       }
     }),
@@ -1273,7 +1281,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "check",
         role: "strong",
       });
-      const { text } = await withActivity(db, sessionId, "Writing a fresh question", () =>
+      const { text } = await withActivity(db, sessionId, { code: "writing-fresh-question" }, () =>
         generateText({
           model,
           system,
@@ -1361,7 +1369,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         });
         // Traced, so each attempt's verdict (the edits rejected) is stored on its call.
         const swept = await traced(() =>
-          withActivity(db, sessionId, "Updating your term list", () =>
+          withActivity(db, sessionId, { code: "updating-terms" }, () =>
             generateText({
               model,
               system,
@@ -1425,7 +1433,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           }),
           system: closed.system,
           messages: [...closed.messages, { role: "user", content: LEFT_OFF_PROMPT }],
-          label: "Noting where you left off",
+          label: { code: "noting-left-off" },
         });
       } catch {
         await db.update(tracks).set({ leftOff: null }).where(eq(tracks.id, session.trackId));
@@ -1470,7 +1478,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             messages,
             search,
             request: PLAN_RESEARCH_PROMPT,
-            label: "Researching the subject",
+            label: { code: "researching" },
           })
         : undefined;
       if (found) await storeResearch(db, { trackId: session.trackId, sessionId }, "plan", found);
@@ -1505,7 +1513,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           });
           // Traced, so the record's verdict (its edits rejected) is stored on its call.
           const recorded = await traced(() =>
-            withActivity(db, sessionId, "Recording the plan's terms", () =>
+            withActivity(db, sessionId, { code: "recording-plan" }, () =>
               generateText({
                 model,
                 system,
@@ -1554,11 +1562,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           await publish(db, sessionId, "message-retracted", { id: reply.messageId });
           await revising?.done();
           if (attempt + 1 < PLAN_ATTEMPTS)
-            revising = await startActivity(
-              db,
-              sessionId,
-              "Revising the plan (the first draft didn't fit)",
-            );
+            revising = await startActivity(db, sessionId, { code: "revising-plan" });
           feedback = [
             { role: "assistant", content: reply.text },
             {
@@ -1571,9 +1575,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         await revising?.done();
       }
       log.warn({ attempts: PLAN_ATTEMPTS }, "plan couldn't be recorded in any attempt");
-      await publish(db, sessionId, "error", {
-        message: "The plan couldn't be put together. Try asking for it again.",
-      });
+      await publishFailure(db, sessionId, { code: "plan-failed" });
     }),
   };
 }

@@ -1,6 +1,7 @@
 import type { Block, DiagramFrame } from "@grounded/content";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useFormat, useT } from "@/i18n";
 import { useContentEnvironment } from "./environment";
 
 const figureClass = "my-6 rounded-lg border bg-card px-4 pt-5 pb-3";
@@ -34,11 +35,12 @@ function useDiagram(source: string, highlight: string | null): Rendered {
 
 function Drawing({ source, highlight }: { source: string; highlight: string | null }) {
   const rendered = useDiagram(source, highlight);
+  const t = useT().lesson.blocks;
   if (rendered === null) return <div className="h-24 animate-pulse rounded-md bg-muted/40" />;
   if ("failed" in rendered) {
     return (
       <p className="py-6 text-center font-sans text-sm text-subtle-foreground">
-        Diagram unavailable
+        {t.diagramUnavailable}
       </p>
     );
   }
@@ -62,6 +64,8 @@ export function DiagramView({ block }: { block: Extract<Block, { type: "diagram"
 
 export function StepperView({ block }: { block: Extract<Block, { type: "stepper" }> }) {
   const [index, setIndex] = useState(0);
+  const t = useT().lesson.blocks;
+  const format = useFormat();
   const frame: DiagramFrame | undefined = block.frames[index];
   if (!frame) return null;
   const last = block.frames.length - 1;
@@ -74,7 +78,7 @@ export function StepperView({ block }: { block: Extract<Block, { type: "stepper"
       <div className="mt-2 flex items-center justify-center gap-3 font-sans text-[13px] text-muted-foreground">
         <button
           type="button"
-          aria-label="Previous frame"
+          aria-label={t.previousFrame}
           disabled={index === 0}
           onClick={() => {
             setIndex(index - 1);
@@ -85,7 +89,7 @@ export function StepperView({ block }: { block: Extract<Block, { type: "stepper"
         </button>
         <input
           type="range"
-          aria-label="Frame"
+          aria-label={t.frame}
           min={0}
           max={last}
           value={index}
@@ -94,12 +98,10 @@ export function StepperView({ block }: { block: Extract<Block, { type: "stepper"
           }}
           className="w-40 accent-primary"
         />
-        <span>
-          {index + 1} / {block.frames.length}
-        </span>
+        <span>{t.frameOf(format.number(index + 1), format.number(block.frames.length))}</span>
         <button
           type="button"
-          aria-label="Next frame"
+          aria-label={t.nextFrame}
           disabled={index === last}
           onClick={() => {
             setIndex(index + 1);
@@ -117,6 +119,7 @@ export function ChartView({ block }: { block: Extract<Block, { type: "chart" }> 
   const { charts, theme } = useContentEnvironment();
   const ref = useRef<HTMLDivElement>(null);
   const [failed, setFailed] = useState(false);
+  const t = useT().lesson.blocks;
   useEffect(() => {
     const element = ref.current;
     if (!element) return;
@@ -140,14 +143,14 @@ export function ChartView({ block }: { block: Extract<Block, { type: "chart" }> 
     <figure data-block={block.id} className={figureClass}>
       {failed ? (
         <p className="py-6 text-center font-sans text-sm text-subtle-foreground">
-          Chart unavailable
+          {t.chartUnavailable}
         </p>
       ) : (
         <div ref={ref} className="flex justify-center overflow-x-auto" />
       )}
       {block.source && (
         <figcaption className={captionClass}>
-          Source:{" "}
+          {t.source}{" "}
           {/^https?:\/\//i.test(block.source) ? (
             <a
               href={block.source}

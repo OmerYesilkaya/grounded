@@ -8,6 +8,9 @@ import {
   verdictText,
   type Method,
   type ProbeVerdict,
+  bare,
+  type RefusalNotice,
+  type Cause,
 } from "@grounded/core";
 import type { Issue, TrackTerm } from "@grounded/content";
 import {
@@ -36,7 +39,7 @@ import { traced, verdictIssues } from "./call-trace.js";
 import { chatIssues } from "./chat.js";
 import { conversationFor } from "./conversation.js";
 import { publish } from "./events.js";
-import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
+import { type ModelAccess, causeOf } from "./model-call.js";
 import { jobWaiting, reportHandledFailure, type JobQueue } from "./queue.js";
 import { createReviewer } from "./review.js";
 import { unlessWorkedOn } from "./work-locks.js";
@@ -56,12 +59,9 @@ export interface VerdictState {
   /** offered: the learner hasn't asked yet. */
   status: "offered" | "writing" | "written" | "failed";
   verdict: ProbeVerdict | null;
-  /** Why it couldn't be written, when it failed. */
-  failure: string | null;
+  /** Why it couldn't be written, when it failed: a notice (or words stored before them). */
+  failure: Cause | string | null;
 }
-
-const INTERRUPTED = "Writing it was interrupted by a problem on our side.";
-const WENT_WRONG = "Something went wrong on our side.";
 
 /** The session's verdict as it stands, or null when none is offered. */
 export async function verdictState(db: Db, session: Session): Promise<VerdictState | null> {
@@ -99,7 +99,7 @@ async function publishVerdict(db: Db, sessionId: string): Promise<VerdictState |
   return state;
 }
 
-export type AskResult = { ok: true; state: VerdictState } | { ok: false; reason: string };
+export type AskResult = { ok: true; state: VerdictState } | { ok: false; reason: RefusalNotice };
 
 /**
  * The learner asked to see where they stand: the verdict's job is queued, unless it is written or
@@ -107,7 +107,7 @@ export type AskResult = { ok: true; state: VerdictState } | { ok: false; reason:
  */
 export async function askForVerdict(db: Db, queue: JobQueue, session: Session): Promise<AskResult> {
   const state = await verdictState(db, session);
-  if (!state) return { ok: false, reason: "There is nothing to show yet." };
+  if (!state) return { ok: false, reason: bare("nothing-to-show") };
   if (state.status === "written" || state.status === "writing") return { ok: true, state };
   // Only the first of two taps at once queues the job.
   const [claimed] = await db
@@ -329,10 +329,10 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
       await settle({ probeVerdict: verdict, probeVerdictStatus: "written" });
     } catch (error) {
       // Otherwise the seam waits forever: say why, and let the learner ask again.
-      const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
+      const known = causeOf(error) !== null;
       await settle({
         probeVerdictStatus: "failed",
-        probeVerdictFailure: known ? error.message : WENT_WRONG,
+        probeVerdictFailure: causeOf(error) ?? { code: "our-side" },
       });
       await publishVerdict(db, sessionId);
       if (!known) throw error;
@@ -369,7 +369,7 @@ export async function recoverVerdicts(db: Db, quietForMs: number): Promise<void>
         .update(learningSessions)
         .set({
           probeVerdictStatus: "failed",
-          probeVerdictFailure: INTERRUPTED,
+          probeVerdictFailure: { code: "interrupted" },
           probeVerdictAt: new Date(),
         })
         .where(and(eq(learningSessions.id, id), eq(learningSessions.probeVerdictStatus, "writing")))

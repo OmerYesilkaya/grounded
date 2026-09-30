@@ -31,7 +31,7 @@ describe("sign-in by email", () => {
   it("refuses an uninvited email, saying so, and creates no one", async () => {
     const stranger = await signInRequest("eve@example.com");
     expect(stranger.status).toBe(403);
-    expect(await stranger.json()).toEqual({ error: "That email isn't invited." });
+    expect(await stranger.json()).toEqual({ error: { code: "not-invited" } });
     expect(sessionCookie(stranger)).toBeUndefined();
     expect(await t.db.select().from(users).where(eq(users.email, "eve@example.com"))).toEqual([]);
   });
@@ -39,7 +39,7 @@ describe("sign-in by email", () => {
   it("asks for an email when none was sent", async () => {
     const empty = await t.request("/api/auth/sign-in", { method: "POST", body: "{}" });
     expect(empty.status).toBe(400);
-    expect(await empty.json()).toEqual({ error: "Enter your email." });
+    expect(await empty.json()).toEqual({ error: { code: "enter-email" } });
   });
 
   it("refuses requests without a cookie, with a forged one, and with one naming nobody", async () => {

@@ -15,7 +15,7 @@ import type { Task, TaskList } from "graphile-worker";
 import { addLogContext, log } from "../log.js";
 import type { VerifierOptions } from "../media/verify.js";
 import {
-  asideFailedText,
+  asideFailed,
   asThreads,
   loadAsides,
   openSteps,
@@ -28,7 +28,7 @@ import {
 import { systemMessages } from "./call-options.js";
 import { composeReply } from "./chat.js";
 import { publish } from "./events.js";
-import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
+import { type ModelAccess, causeOf } from "./model-call.js";
 import { reportHandledFailure } from "./queue.js";
 import { createReviewer } from "./review.js";
 import { loadSession } from "./session-store.js";
@@ -148,11 +148,9 @@ export function createAsideTasks(deps: AsideTaskDependencies): TaskList {
       await recordAsideMessage(db, sessionId, asideId, { role: "tutor", ...answer });
     } catch (error) {
       // Otherwise the card waits forever: say so in it, so the learner can ask again.
-      const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
-      await recordAsideMessage(db, sessionId, asideId, {
-        role: "tutor",
-        text: asideFailedText(known ? ` ${error.message}` : ""),
-      });
+      const cause = causeOf(error);
+      const known = cause !== null;
+      await recordAsideMessage(db, sessionId, asideId, { role: "tutor", ...asideFailed(cause) });
       if (!known) throw error;
       reportHandledFailure(error);
       return;

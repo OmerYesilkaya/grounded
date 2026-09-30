@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { ExamOpenWarning, useStartSession } from "@/components/start-session";
 import { Button } from "@/components/ui/button";
+import { useT } from "@/i18n";
 import type { TrackSummary } from "@/lib/tracks";
 
 /**
@@ -11,7 +12,7 @@ import type { TrackSummary } from "@/lib/tracks";
 export function NextSession({
   track,
   lead,
-  label = "Start a session",
+  label,
 }: {
   track: Pick<TrackSummary, "id" | "final">;
   /** Said before the button, in a closed session: "This session is done." */
@@ -19,6 +20,7 @@ export function NextSession({
   label?: string;
 }) {
   const start = useStartSession(track.id);
+  const t = useT().track.start;
   const error = start.error && <p className="mt-3 text-sm text-destructive">{start.error}</p>;
   if (start.examOpen)
     return (
@@ -46,14 +48,13 @@ export function NextSession({
     <>
       {track.final === "after-exam" && (
         <p className="mb-3 max-w-prose text-[14px] leading-relaxed text-muted-foreground">
-          The plan is taught through. Once your arc exam is handed in, the track ends with its
-          final.
+          {t.afterExam}
         </p>
       )}
       <div className="flex flex-wrap items-center gap-3">
         {lead && <span className="text-sm text-muted-foreground">{lead}</span>}
         <Button size={lead ? "sm" : "default"} disabled={start.pending} onClick={start.start}>
-          {label}
+          {label ?? t.session}
         </Button>
       </div>
       {error}
@@ -70,28 +71,25 @@ export function FinalOffer(props: {
   onStartFinal: () => void;
   onStartSession: () => void;
 }) {
+  const t = useT().track.start;
   return (
     <section
       aria-labelledby="final-offer"
       className="rounded-xl border border-primary/40 bg-card px-5 py-4.5 sm:px-6"
     >
       <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-        The final
+        {t.finalEyebrow}
       </p>
       <h2 id="final-offer" className="mt-1 font-serif text-[21px] leading-snug font-semibold">
-        The plan is taught through
+        {t.finalTitle}
       </h2>
-      <p className="mt-2 text-[14.5px] leading-relaxed text-muted-foreground">
-        One last session, with no homework. First a fresh look at where you stand across the whole
-        subject; then you explain it back from its foundations, while the tutor keeps asking why and
-        what if. At the end you see what it found beside what was found along the way.
-      </p>
+      <p className="mt-2 text-[14.5px] leading-relaxed text-muted-foreground">{t.finalWhat}</p>
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <Button disabled={props.pending} onClick={props.onStartFinal}>
-          Start the final
+          {t.startFinal}
         </Button>
         <Button variant="ghost" disabled={props.pending} onClick={props.onStartSession}>
-          Another session first
+          {t.anotherFirst}
         </Button>
       </div>
     </section>

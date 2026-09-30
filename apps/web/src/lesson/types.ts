@@ -1,5 +1,6 @@
 import type { Block } from "@grounded/content";
 import type { AsideAnchor } from "@grounded/core/aside-anchor";
+import type { FailureNotice } from "@grounded/core/notices";
 
 export type { AsideAnchor };
 
@@ -9,6 +10,8 @@ export interface AsideMessage {
   role: "learner" | "tutor";
   text: string | null;
   blocks: Block[] | null;
+  /** The app's answer in place of the tutor's, when it couldn't be given (design §9.3). */
+  failure?: FailureNotice | null;
 }
 
 /** A question asked on a passage of the lesson, answered in the margin (design §7.5). */
@@ -39,7 +42,13 @@ export interface LessonAsides {
 
 export type CheckMessage =
   | { from: "learner"; text: string }
-  | { from: "tutor"; blocks: Block[]; verdict?: "landed" | "missed" };
+  | {
+      from: "tutor";
+      blocks: Block[];
+      verdict?: "landed" | "missed";
+      /** The app's reply in place of the tutor's (design §9.3), shown in its place. */
+      failure?: FailureNotice;
+    };
 
 /**
  * open: waiting for an answer · passed: the check landed · settling: continued past while shaky ·

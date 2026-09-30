@@ -97,7 +97,7 @@ describe("the final", () => {
     const refused = await post(cookie, `/api/tracks/${trackId}/sessions`, { kind: "final" });
     expect(refused.status).toBe(409);
     expect(await refused.json()).toMatchObject({
-      error: "The final comes once the plan is taught through.",
+      error: { code: "final-after-plan" },
     });
   });
 
@@ -118,7 +118,7 @@ describe("the final", () => {
       kind: "final",
     });
     expect(await refused.json()).toMatchObject({
-      error: "The final comes once your arc exam is handed in.",
+      error: { code: "final-after-exam" },
     });
   });
 

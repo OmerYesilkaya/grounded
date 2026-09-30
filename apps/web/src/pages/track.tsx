@@ -4,11 +4,13 @@ import { AttachmentChip } from "@/components/attachment-chip";
 import { FinalOutcomeCard } from "@/components/final-outcome";
 import { NextSession } from "@/components/next-session";
 import { OpenWork, TrackProgressView } from "@/components/track-progress";
+import { useT } from "@/i18n";
 import { useTracks } from "@/lib/tracks";
 
 export function TrackPage({ trackId }: { trackId: string }) {
   const tracks = useTracks();
-  const track = tracks.data?.find((t) => t.id === trackId);
+  const t = useT().track.page;
+  const track = tracks.data?.find((each) => each.id === trackId);
 
   if (!track) return null;
   const open = track.items.filter((item) => !item.done);
@@ -17,7 +19,7 @@ export function TrackPage({ trackId }: { trackId: string }) {
       <PhoneBar />
       <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24 max-md:pt-10">
         <p className="text-xs tracking-widest text-subtle-foreground uppercase">
-          Track{track.language ? ` · taught in ${track.language}` : ""}
+          {track.language ? t.taughtIn(track.language) : t.eyebrow}
         </p>
         <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">{track.title}</h1>
         <div className="mt-8">
@@ -26,21 +28,14 @@ export function TrackPage({ trackId }: { trackId: string }) {
             <div className="mb-8">
               <FinalOutcomeCard
                 sessionId={track.finishedIn}
-                footer={
-                  !track.openSession && (
-                    <NextSession
-                      track={track}
-                      lead="A next session takes up what the final found."
-                    />
-                  )
-                }
+                footer={!track.openSession && <NextSession track={track} lead={t.afterFinal} />}
               />
             </div>
           )}
           {open.length > 0 && (
             <section className="mb-6">
               <h2 className="mb-3 text-xs tracking-widest text-subtle-foreground uppercase">
-                Open now
+                {t.openNow}
               </h2>
               <OpenWork items={open} />
             </section>
@@ -51,7 +46,7 @@ export function TrackPage({ trackId }: { trackId: string }) {
         {track.files.length > 0 && (
           <section className="mt-10">
             <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">
-              What you brought
+              {t.brought}
             </h2>
             <ul className="mt-3 flex flex-wrap gap-2">
               {track.files.map((file) => (
@@ -72,7 +67,7 @@ export function TrackPage({ trackId }: { trackId: string }) {
             params={{ trackId }}
             className="mt-10 block rounded-md border px-4 py-3 hover:bg-muted"
           >
-            <span className="block text-sm font-medium">Last lesson (from your earlier setup)</span>
+            <span className="block text-sm font-medium">{t.lastLesson}</span>
             <span className="block text-sm text-subtle-foreground">
               {track.importedLesson.title}
             </span>

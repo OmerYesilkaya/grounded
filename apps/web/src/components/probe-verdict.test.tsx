@@ -1,10 +1,11 @@
 import type { ProbeVerdict } from "@grounded/core/probe-verdict";
 import type { SessionState } from "@grounded/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "@/i18n";
 import { api } from "@/lib/api";
 import type { ChatMessage, SessionModel, VerdictState } from "@/lib/session";
 import { ChatView } from "@/pages/chat-view";
@@ -169,5 +170,36 @@ describe("where you started, on the track page", () => {
     await userEvent.click(entry);
     expect(entry.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("You have something to build on.")).toBeTruthy();
+  });
+});
+
+describe("in Turkish", () => {
+  afterEach(() => {
+    act(() => {
+      setLanguage("en");
+    });
+    localStorage.clear();
+  });
+
+  it("names the bands and its own words in the app's language; the verdict stays as written", async () => {
+    act(() => {
+      setLanguage("tr");
+    });
+    render(<WhereYouStarted verdict={VERDICT} />);
+    const entry = screen.getByRole("button", { name: /Nereden başladın/ });
+    expect(entry.textContent).toContain("İş görüyor");
+    await userEvent.click(entry);
+    expect(screen.getByText("Genel")).toBeTruthy();
+    expect(screen.getByText("Sağlam")).toBeTruthy();
+    // The verdict itself is the tutor's, in the teaching language.
+    expect(screen.getByText("You have something to build on.")).toBeTruthy();
+  });
+
+  it("offers it in Turkish at the seam", () => {
+    act(() => {
+      setLanguage("tr");
+    });
+    render(inClient(<VerdictSeam model={model(offered)} />));
+    expect(screen.getByRole("button", { name: "Nerede durduğunu gör" })).toBeTruthy();
   });
 });

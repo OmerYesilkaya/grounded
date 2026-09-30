@@ -1,4 +1,4 @@
-import { awaitedJob, type AwaitedJob } from "@grounded/core";
+import { awaitedJob, type AwaitedJob, bare, type RefusalNotice } from "@grounded/core";
 import { desc, eq, sessionMessages, type Db } from "@grounded/db";
 import { reviewsUnderWay } from "./opening-review.js";
 import { jobWaiting, type JobQueue } from "./queue.js";
@@ -39,7 +39,7 @@ async function waitedOn(
   return { job, queued };
 }
 
-export type RetryResult = { ok: true; job: AwaitedJob } | { ok: false; reason: string };
+export type RetryResult = { ok: true; job: AwaitedJob } | { ok: false; reason: RefusalNotice };
 
 /**
  * Queues the job a stalled session waits on again. The job starts once this is done, so two clicks
@@ -52,10 +52,10 @@ export async function retryStalled(
 ): Promise<RetryResult> {
   const result = await unlessWorkedOn(db, sessionId, async (): Promise<RetryResult> => {
     const waiting = await waitedOn(db, sessionId);
-    if (!waiting) return { ok: false, reason: "There is nothing to try again." };
-    if (waiting.queued) return { ok: false, reason: "The tutor is already on it." };
+    if (!waiting) return { ok: false, reason: bare("nothing-to-retry") };
+    if (waiting.queued) return { ok: false, reason: bare("tutor-on-it") };
     await queue.enqueue(waiting.job, { sessionId });
     return { ok: true, job: waiting.job };
   });
-  return result ?? { ok: false, reason: "The tutor is still at work here." };
+  return result ?? { ok: false, reason: bare("tutor-busy") };
 }

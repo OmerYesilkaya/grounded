@@ -255,7 +255,7 @@ describe("request lines", () => {
         route: "/api/sessions/:id",
         path: "/api/sessions/not-a-session",
         status: 404,
-        reason: "Not found.",
+        reason: "not-found",
         durationMs: expect.any(Number) as number,
       }),
     ]);

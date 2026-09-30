@@ -1,5 +1,6 @@
 import type { Block } from "@grounded/content";
 import { z } from "zod";
+import type { FieldRef, RefusalNotice } from "./notices.js";
 
 /*
  * Homework and arc exams (design §7.4, method.md "Homework"): an assignment is one or more tasks,
@@ -162,8 +163,15 @@ function fieldAllowed(form: TaskForm, key: string): boolean {
   return n >= 1 && n <= ANSWER_LIMITS.steps;
 }
 
+/** A field's key as a notice names it: "step-2" is the second step. */
+function fieldRef(key: string): FieldRef {
+  const step = /^(step|because)-(\d+)$/.exec(key);
+  if (step) return { field: step[1] as "step" | "because", step: Number(step[2]) };
+  return { field: key as Exclude<FieldRef, { step: number }>["field"] };
+}
+
 /**
- * What is wrong with a task's answer, in words for the learner, or null. `complete`: it is being
+ * What is wrong with a task's answer, for the learner (a notice the web words), or null. `complete`: it is being
  * handed in, so every field must be written (an assignment is never handed in half-done; method.md,
  * "The arc exam"), and a prediction must have been locked first.
  */
@@ -171,19 +179,18 @@ export function answerProblem(
   task: Pick<AssignmentTask, "form" | "title">,
   answer: TaskAnswer | undefined,
   options: { complete: boolean },
-): string | null {
+): RefusalNotice | null {
   const fields = answer?.fields ?? {};
   for (const [key, value] of Object.entries(fields)) {
-    if (!fieldAllowed(task.form, key)) return `This task has no "${key}" to write.`;
+    if (!fieldAllowed(task.form, key)) return { code: "no-such-field", key };
     if (value.length > ANSWER_LIMITS.field)
-      return `An answer can be at most ${ANSWER_LIMITS.field.toLocaleString("en")} characters long.`;
+      return { code: "answer-too-long", max: ANSWER_LIMITS.field };
   }
   if (!options.complete) return null;
-  const where = task.title ? ` in “${task.title}”` : "";
-  if (task.form === "predict" && !answer?.lockedAt)
-    return `Lock your prediction${where} before you check it.`;
+  const part = task.title === "" ? null : task.title;
+  if (task.form === "predict" && !answer?.lockedAt) return { code: "lock-prediction-first", part };
   const missing = answerFields(task.form, answer).find((f) => !fields[f.key]?.trim());
-  return missing ? `Write “${missing.label}”${where} before you hand it in.` : null;
+  return missing ? { code: "answer-missing", part, ...fieldRef(missing.key) } : null;
 }
 
 /**

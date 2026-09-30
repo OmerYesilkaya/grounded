@@ -11,6 +11,7 @@
     "./aside-anchor": "./src/aside-anchor.ts",
     "./probe-verdict": "./src/probe-verdict.ts",
     "./session": "./src/session.ts",
+    "./notices": "./src/notices.ts",
     "./snooze": "./src/snooze.ts"
   },
   "scripts": {

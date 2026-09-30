@@ -1,7 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { Check, ChevronRight } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { tagOf, useNow } from "@/lib/snooze";
+import { useFormat, useT } from "@/i18n";
+import { dueLabel, tagOf, useNow } from "@/lib/snooze";
 import { describeItem } from "@/lib/track-list";
 import { isAssigned, isDue, type TrackItem, type TrackSummary } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
@@ -27,6 +28,7 @@ export function TrackGroup(props: {
 }) {
   const { track, current, currentItemId, expanded, onToggle } = props;
   const now = useNow();
+  const t = useT().sidebar;
   const waiting = track.items.filter((item) => !item.done).length;
   // Homework or an exam whose snooze ran out is what is waiting most (design §9.2).
   const due = track.items.filter((item) => isDue(item, now)).length;
@@ -36,7 +38,7 @@ export function TrackGroup(props: {
         <button
           type="button"
           aria-expanded={expanded}
-          aria-label={`${expanded ? "Hide" : "Show"} what is in ${track.title}`}
+          aria-label={expanded ? t.hide(track.title) : t.show(track.title)}
           onClick={onToggle}
           className="touch-target relative flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
@@ -71,16 +73,16 @@ export function TrackGroup(props: {
           >
             {waiting > 0 ? (
               due > 0 ? (
-                `${String(due)} due`
+                t.due(due)
               ) : (
-                `${String(waiting)} open`
+                t.open(waiting)
               )
             ) : track.final === "ready" ? (
-              "final ready"
+              t.finalReady
             ) : (
               <>
                 <Check className="size-3 text-success" aria-hidden />
-                finished
+                {t.finished}
               </>
             )}
           </span>
@@ -111,6 +113,7 @@ function TrackItems({
   const rest = track.items.filter((item) => !item.done);
   // The item on the page is never folded away.
   const [showDone, setShowDone] = useState(false);
+  const t = useT().sidebar;
   const doneShown = showDone || done.some((item) => item.id === currentItemId);
 
   return (
@@ -125,7 +128,7 @@ function TrackItems({
             }}
             className="flex items-center gap-1 py-1 pl-3 text-[11.5px] pointer-coarse:py-2.5 text-subtle-foreground outline-none hover:text-foreground focus-visible:underline"
           >
-            {done.length} done
+            {t.done(done.length)}
             <ChevronRight
               className={cn(
                 "size-3 transition-transform motion-reduce:transition-none",
@@ -141,7 +144,7 @@ function TrackItems({
         <ItemRow key={item.id} item={item} currentItemId={currentItemId} />
       ))}
       {track.items.length === 0 && (
-        <li className="py-1 pl-3 text-[12.5px] text-subtle-foreground">Nothing here yet</li>
+        <li className="py-1 pl-3 text-[12.5px] text-subtle-foreground">{t.empty}</li>
       )}
     </ItemList>
   );
@@ -149,8 +152,9 @@ function TrackItems({
 
 /** The thread line sits under the chevron's centre, tying the items to their track. */
 function ItemList({ track, children }: { track: TrackSummary; children: ReactNode }) {
+  const t = useT().sidebar;
   return (
-    <ul className="mt-0.5 mb-2 ml-3.5 border-l" aria-label={`In ${track.title}`}>
+    <ul className="mt-0.5 mb-2 ml-3.5 border-l" aria-label={t.within(track.title)}>
       {children}
     </ul>
   );
@@ -164,7 +168,7 @@ export const itemLink = (item: TrackItem) =>
 
 function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: string | undefined }) {
   const current = item.id === currentItemId;
-  const { title, meta } = describeItem(item);
+  const { title, meta } = describeItem(item, useT());
   return (
     <li>
       <Link
@@ -196,6 +200,8 @@ function ItemRow({ item, currentItemId }: { item: TrackItem; currentItemId: stri
 /** When homework or an exam put off is due (design §9.2): "tonight", "tomorrow"; "due" once it is. */
 export function DueTag({ due }: { due: string }) {
   const now = useNow();
+  const t = useT();
+  const format = useFormat();
   const tag = tagOf(due, now);
   return (
     <span
@@ -204,7 +210,7 @@ export function DueTag({ due }: { due: string }) {
         tag === "due" ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary",
       )}
     >
-      {tag}
+      {dueLabel(due, now, t, format)}
     </span>
   );
 }

@@ -185,7 +185,7 @@ describe("creating a track with files", () => {
     );
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "photo.png doesn't look like the file its name says it is.",
+      error: { code: "attachment-not-what-it-says", name: "photo.png" },
     });
     expect(t.files.keys()).toHaveLength(before);
     expect(await t.db.select().from(tracks)).toHaveLength(0);
@@ -207,7 +207,7 @@ describe("creating a track with files", () => {
   it("removes stored bytes again when the track can't be created", async () => {
     const store = createMemoryFileStore();
     const read = await readAttachments([{ name: "cv.pdf", bytes: await pdf(1) }]);
-    if (!read.ok) throw new Error(read.error);
+    if (!read.ok) throw new Error(read.error.code);
     // No such learner: the insert fails after the bytes are stored.
     await expect(
       createTrack(
@@ -363,9 +363,7 @@ describe("the tutor reading what the learner brought", () => {
     const { system } = await probeCall();
     expect(system).toContain(BRIEF);
     expect(await briefOf()).toBe(BRIEF);
-    const reading = (await activities(sessionId)).find(
-      (a) => a.label === "Reading what you brought",
-    );
+    const reading = (await activities(sessionId)).find((a) => a.label.code === "reading-brought");
     expect(reading?.state).toBe("done");
   });
 });

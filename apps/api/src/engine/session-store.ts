@@ -1,12 +1,19 @@
-import { resolved, transition, type SessionEvent, type SessionState } from "@grounded/core";
+import {
+  resolved,
+  transition,
+  type RefusalNotice,
+  type SessionEvent,
+  type SessionState,
+} from "@grounded/core";
 import { eq, learningSessions, sql, type Db } from "@grounded/db";
 import { log } from "../log.js";
 import { appendEvent, lockSessionEvents } from "./events.js";
 import type { JobQueue } from "./queue.js";
 
+/** An event the state machine turned down, with why (a notice the web words, design §9.3). */
 export class RejectedEvent extends Error {
-  constructor(reason: string) {
-    super(reason);
+  constructor(readonly reason: RefusalNotice) {
+    super(reason.code);
     this.name = "RejectedEvent";
   }
 }
@@ -46,7 +53,7 @@ export async function applyEvent(
           sessionId,
           ...eventFields(event),
           state: describeState(row.state),
-          reason: result.reason,
+          reason: result.reason.code,
         },
         "session event rejected",
       );

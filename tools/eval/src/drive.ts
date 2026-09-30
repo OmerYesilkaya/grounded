@@ -71,7 +71,8 @@ export async function driveSession(options: DriveOptions): Promise<string> {
       .where(sql`${sessionEvents.sessionId} = ${sessionId} and ${sessionEvents.type} = 'error'`);
     if (errors.length > errorsSeen)
       throw new DriveError(
-        `the app showed an error: ${(errors.at(-1)?.data as { message?: string }).message ?? ""}`,
+        // The failure as the app stores it: a notice (design §9.3), or words from before them.
+        `the app showed an error: ${JSON.stringify((errors.at(-1)?.data as { error?: unknown; message?: string }).error ?? (errors.at(-1)?.data as { message?: string }).message ?? "")}`,
       );
     errorsSeen = errors.length;
   };

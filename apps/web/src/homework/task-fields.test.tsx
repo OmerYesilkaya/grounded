@@ -1,6 +1,7 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "@/i18n";
 import { TaskFields, type TaskFieldsProps } from "./task-fields";
 
 const renderFields = (props: Partial<TaskFieldsProps>) => {
@@ -60,5 +61,36 @@ describe("TaskFields", () => {
       "contenteditable",
       "false",
     );
+  });
+
+  describe("in Turkish", () => {
+    afterEach(() => {
+      act(() => {
+        setLanguage("en");
+      });
+      localStorage.clear();
+    });
+
+    it("words the boxes, the lock and the time it was locked", () => {
+      act(() => {
+        setLanguage("tr");
+      });
+      renderFields({
+        answer: { fields: { prediction: "2000" }, lockedAt: "2026-09-29T10:02:00.000Z" },
+      });
+      expect(screen.getByRole("textbox", { name: "Tahminin" })).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Gerçekte ne oldu" })).toBeInTheDocument();
+      expect(screen.getByText(/^Kilitlendi: 29 Eyl/)).toBeInTheDocument();
+    });
+
+    it("words a derivation's steps", async () => {
+      act(() => {
+        setLanguage("tr");
+      });
+      renderFields({ form: "derivation" });
+      await userEvent.setup().click(screen.getByRole("button", { name: "Adım ekle" }));
+      expect(screen.getByRole("textbox", { name: "2. adım" })).toBeInTheDocument();
+      expect(screen.getAllByRole("textbox", { name: "Çünkü…" })).toHaveLength(2);
+    });
   });
 });

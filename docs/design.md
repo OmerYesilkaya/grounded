@@ -62,7 +62,9 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 - Sections are **tagged by phase**; the server assembles each phase's prompt from the sections it
   needs (plus the learner profile and track state). One document to read and maintain; shorter,
   focused prompts per call — cheaper and much better for weaker models.
-- Teach in the learner's language; terms are gated in the language taught.
+- Teach in the learner's language; terms are gated in the language taught. The teaching language
+  is the track's, inferred from the learner's messages; the app's own language (§9.3) is a separate
+  choice and never feeds it.
 - Omer migrates his existing tracks with an import script (`pnpm import-track`, §10) and becomes
   user #1.
 
@@ -117,7 +119,8 @@ pnpm workspaces, TypeScript end to end.
 
 ```
 apps/
-  web/          Vite + React SPA, shadcn/ui (Tailwind + Radix), Tiptap, TanStack Router/Query
+  web/          Vite + React SPA, shadcn/ui (Tailwind + Radix), Tiptap, TanStack Router/Query;
+                everything the app says, in every language (`src/i18n`, §9.3)
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
                 worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
@@ -1605,7 +1608,7 @@ and marked the current track with bolder text):
   counts as "1 due" on a closed track and sorts the track by its due time once it has come
   too.
 - **Account** at the bottom, in the sidebar: an initial and the email; it opens a menu upward (API
-  key, theme, sign out).
+  key, theme, language, sign out).
 
 ### 9.3 Look
 
@@ -1615,6 +1618,37 @@ and marked the current track with bolder text):
   it and nothing waits on the API; `index.html` applies it before the first paint. "Follow system"
   tracks `prefers-color-scheme` live, and a choice made in another tab is taken up. Diagrams,
   charts and highlighted code are drawn in the page's theme and redrawn when it changes.
+- **The app's language** (decided 2026-09-30, #59): English, and Turkish as the first translation.
+  It is chosen beside the theme in the account menu (EN / TR, the menu staying open), and on the
+  pages outside the app's shell (signing in, the first key) from a quiet switch at their foot, and
+  remembered the same way: per browser (`localStorage`, `apps/web/src/i18n/language.ts`), so the
+  sign-in page already speaks it and nothing waits on the API; `index.html` sets the page's `lang`
+  before the first paint. English is the default. It is what the app says, never what the tutor
+  teaches in (§3.1): a Turkish page can hold a lesson in German.
+  - **Everything the app says is in the catalog** (`apps/web/src/i18n/messages/*.ts`), by area
+    (common, account, sidebar, track, session, lesson, homework, notices), each area with its
+    languages side by side (`defineMessages`): English sets the shape, and a string missing from
+    another language, or taking other values, fails typecheck; a test checks the same at run
+    time. A message with values is a function in each language, so each writes its own grammar
+    (Turkish has no plural after a number). Enum-driven labels (the verdict's bands, review
+    marks, phases, task kinds and their answer boxes) are keyed by the value. Components read it
+    with `useT()`, and re-render when the language changes.
+  - **The API says nothing in words.** Its refusals are `{ error: <notice> }`, a code with its
+    values (`packages/core/src/notices.ts`: `{ code: "exam-open", title }`); so are what it
+    stores in the learner's view (a job's `error` event, an activity's label, a failed review's
+    or verdict's reason, the app's reply in a check, aside or comment thread when the tutor's
+    couldn't be given, in their `failure` columns) and what the shared checks in core return
+    (`answerProblem`, `attachmentProblem`). The web words each notice in the app's language
+    (`messages/notices.ts`), so what was stored reads in whatever language the page is in when it
+    is read; words stored before notices are shown as they are, and a code the page doesn't know
+    says only that something didn't go through. A notice added to core without words in every
+    language fails the web's typecheck. The thread messages keep an English `text` beside the
+    notice for the tutor's later calls, so the prompts don't change.
+  - **Dates, numbers and money** are written in the app's language (`useFormat()`,
+    `apps/web/src/i18n/format.ts`), never the browser's locale: "September 30" and "$3.42" in
+    English, "30 Eylül" and "$3,42" in Turkish. Times stay in the browser's time zone. Lesson
+    content (a chart's axes, a code block) stays as the lesson wrote it.
+  - The Turkish addresses the learner as "sen", plainly and warmly, like the English.
 - Serif for lesson text (Source Serif 4 in the prototype), clean sans for the app (Montserrat), Notable for the
   wordmark only.
 - The brand is lucide's `layer-arrow-up` mark beside the Notable wordmark, both in the accent colour

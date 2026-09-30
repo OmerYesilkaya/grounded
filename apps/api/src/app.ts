@@ -23,6 +23,8 @@ import { registerProfileRoutes } from "./routes/profile.js";
 import { registerProgressRoutes } from "./routes/progress.js";
 import { registerTrackRoutes } from "./routes/tracks.js";
 import { registerUsageRoutes } from "./routes/usage.js";
+import { notFound, refuse } from "./refusals.js";
+import { refusal } from "@grounded/core";
 
 export interface AppDependencies {
   db: Db;
@@ -105,16 +107,22 @@ export function createApp(deps: AppDependencies) {
 
   app.put("/api/credentials", async (c) => {
     const parsed = credentialInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success)
-      return c.json({ error: "Choose a provider and a model, and paste your API key." }, 400);
+    if (!parsed.success) return c.json(refuse("credential-incomplete"), 400);
     const { provider, model, apiKey } = parsed.data;
     const offered = offeredModels(provider, { includeUngated: deps.includeUngatedModels });
     if (!offered.some((m) => m.id === model)) {
-      return c.json({ error: "That model isn't available for this provider." }, 400);
+      return c.json(refuse("model-unavailable"), 400);
     }
 
     const check = await deps.validateKey(provider, apiKey);
-    if (!check.ok) return c.json({ error: check.message, kind: check.kind }, 422);
+    if (!check.ok)
+      return c.json(
+        refusal(
+          { code: "provider-failed", kind: check.kind, provider: check.provider },
+          { kind: check.kind },
+        ),
+        422,
+      );
 
     const userId = c.get("user").id;
     const values = {
@@ -136,14 +144,14 @@ export function createApp(deps: AppDependencies) {
   /** The session's event log over SSE: replayed after Last-Event-ID, then live. */
   app.get("/api/sessions/:id/stream", async (c) => {
     const sessionId = c.req.param("id");
-    if (!z.uuid().safeParse(sessionId).success) return c.json({ error: "Not found." }, 404);
+    if (!z.uuid().safeParse(sessionId).success) return c.json(notFound, 404);
     const [session] = await db
       .select({ id: learningSessions.id })
       .from(learningSessions)
       .where(
         and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, c.get("user").id)),
       );
-    if (!session) return c.json({ error: "Not found." }, 404);
+    if (!session) return c.json(notFound, 404);
     addLogContext({ sessionId });
     const lastId = Number(c.req.header("last-event-id") ?? c.req.query("after") ?? 0) || 0;
     log.debug({ after: lastId }, "stream opened");

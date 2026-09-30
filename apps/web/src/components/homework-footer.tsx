@@ -4,9 +4,11 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { LaterMenu } from "@/homework/later-menu";
+import { duePrefix } from "@/homework/words";
+import { useFormat, useT } from "@/i18n";
 import { assignmentApi } from "@/lib/assignments";
 import type { SessionModel } from "@/lib/session";
-import { dueWords, useNow } from "@/lib/snooze";
+import { useNow } from "@/lib/snooze";
 
 /**
  * Under the homework's or the arc exam's message in the chat (design §7.4): the way to its page,
@@ -18,6 +20,8 @@ export function HomeworkFooter({ model, messageId }: { model: SessionModel; mess
   const queryClient = useQueryClient();
   const assignment = model.assignments.find((a) => a.messageId === messageId);
   const now = useNow();
+  const t = useT().homework;
+  const format = useFormat();
   const later = useMutation({
     mutationFn: ({ id, snooze }: { id: string; snooze: Snooze }) => assignmentApi.later(id, snooze),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tracks"] }),
@@ -29,19 +33,13 @@ export function HomeworkFooter({ model, messageId }: { model: SessionModel; mess
   const waiting = !exam && state.phase === "homework" && state.homework === "assigned";
   const handedIn = assignment.submittedAt !== null;
   const folded = assignment.subsumedBy !== null;
-  const due = assignment.snoozedUntil ? `${dueWords(assignment.snoozedUntil, now)} ` : null;
+  const due = assignment.snoozedUntil ? duePrefix(assignment.snoozedUntil, now, t, format) : null;
 
   return (
     <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-2 border-t pt-3.5">
       <Button asChild size="sm" variant={handedIn ? "outline" : "default"}>
         <Link to="/homework/$assignmentId" params={{ assignmentId: assignment.id }}>
-          {handedIn
-            ? "See the review"
-            : folded
-              ? "See it"
-              : exam
-                ? "Open the exam"
-                : "Open the homework"}
+          {handedIn ? t.seeReview : folded ? t.seeIt : exam ? t.openExam : t.openHomework}
           <ArrowRight aria-hidden />
         </Link>
       </Button>
@@ -49,13 +47,11 @@ export function HomeworkFooter({ model, messageId }: { model: SessionModel; mess
         <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground">
           <Check className="size-3.5 text-success" strokeWidth={3} aria-hidden />
           {!exam && state.phase === "homework" && state.homework === "reviewing"
-            ? "Handed in: the review is on its way, beside your answer"
-            : "Handed in"}
+            ? t.handedInReviewing
+            : t.handedIn}
         </span>
       ) : folded ? (
-        <span className="text-[12.5px] text-subtle-foreground">
-          Folded into a later homework, which covers it too.
-        </span>
+        <span className="text-[12.5px] text-subtle-foreground">{t.foldedCovers}</span>
       ) : waiting || exam ? (
         <>
           <LaterMenu
@@ -66,16 +62,11 @@ export function HomeworkFooter({ model, messageId }: { model: SessionModel; mess
             }}
           />
           <span className="text-[12.5px] text-subtle-foreground">
-            {exam
-              ? `${due ?? ""}${due ? "take" : "Take"} it in one sitting when you have room; it is handed in whole.`
-              : "Later closes the session; the homework waits in your track until then."}
+            {exam ? t.examSitting(due) : t.laterCloses}
           </span>
         </>
       ) : (
-        <span className="text-[12.5px] text-subtle-foreground">
-          {due ?? "Still open: "}
-          it waits in your track until you hand it in.
-        </span>
+        <span className="text-[12.5px] text-subtle-foreground">{t.stillOpen(due)}</span>
       )}
       {later.error && (
         <p role="alert" className="w-full text-[13px] text-destructive">

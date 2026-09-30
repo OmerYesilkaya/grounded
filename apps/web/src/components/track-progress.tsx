@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, X } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useFormat, useT } from "@/i18n";
 import { progressQuery, type Idea, type TrackProgress } from "@/lib/progress";
 import { describeItem } from "@/lib/track-list";
 import { isAssigned, type TrackItem } from "@/lib/tracks";
@@ -22,11 +23,11 @@ export function TrackProgressView({ trackId, items }: { trackId: string; items: 
 
 type Place = "settling" | "owned" | "map";
 
-const plural = (n: number, one: string, many: string) => `${String(n)} ${n === 1 ? one : many}`;
-
 function Progress({ progress, items }: { progress: TrackProgress; items: TrackItem[] }) {
   // The idea opened, and where: its details open beside the list or the map it was opened from.
   const [open, setOpen] = useState<{ term: string; place: Place } | null>(null);
+  const t = useT().track.progress;
+  const format = useFormat();
   const ideas = new Map([...progress.owned, ...progress.settling].map((i) => [i.term, i]));
   const chosen = open ? ideas.get(open.term) : undefined;
   const selected = open?.term ?? null;
@@ -43,34 +44,35 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
     <div className="mt-12">
       {started && (
         <dl className="grid grid-cols-3 border-y">
-          <Figure value={progress.owned.length} label="ideas you own" />
-          <Figure value={progress.settling.length} label="still settling" />
+          <Figure value={progress.owned.length} label={t.owned} />
+          <Figure value={progress.settling.length} label={t.settling} />
           <Figure
             value={sessionsDone}
-            label={sessionsDone === 1 ? "session done" : "sessions done"}
+            label={
+              new Intl.PluralRules(format.locale).select(sessionsDone) === "one"
+                ? t.sessionsDone.one
+                : t.sessionsDone.other
+            }
           />
         </dl>
       )}
 
       {progress.settling.length > 0 && (
-        <Section
-          title="Still settling"
-          note="Ideas you have met but not yet made your own. The next sessions and homework come back to them."
-        >
+        <Section title={t.settlingTitle} note={t.settlingNote}>
           <Ideas ideas={progress.settling} selected={selected} onSelect={choose("settling")} />
           {chosen && open?.place === "settling" && <Detail idea={chosen} onClose={close} />}
         </Section>
       )}
 
       {progress.owned.length > 0 && (
-        <Section title="Ideas you own" note="You have used these in your own words.">
+        <Section title={t.ownedTitle} note={t.ownedNote}>
           <Ideas ideas={progress.owned} selected={selected} onSelect={choose("owned")} />
           {chosen && open?.place === "owned" && <Detail idea={chosen} onClose={close} />}
         </Section>
       )}
 
       {progress.revisit.length > 0 && (
-        <Section title="To revisit" note="What the tutor noticed and will come back to.">
+        <Section title={t.revisitTitle} note={t.revisitNote}>
           <ul className="space-y-2">
             {progress.revisit.map((text) => (
               <li key={text} className="flex gap-3 text-[14.5px] leading-relaxed">
@@ -103,10 +105,11 @@ function Progress({ progress, items }: { progress: TrackProgress; items: TrackIt
  * it: the open session, and homework and arc exams not handed in yet, with when they are due.
  */
 export function OpenWork({ items }: { items: readonly TrackItem[] }) {
+  const t = useT();
   return (
     <ul className="divide-y rounded-lg border bg-card">
       {items.map((item) => {
-        const { title, meta } = describeItem(item);
+        const { title, meta } = describeItem(item, t);
         return (
           <li key={item.id}>
             <Link
@@ -159,6 +162,7 @@ function Ideas({
   selected: string | null;
   onSelect: (term: string) => void;
 }) {
+  const t = useT().track.progress;
   return (
     <ul className="flex flex-wrap gap-2">
       {ideas.map((idea) => (
@@ -180,7 +184,7 @@ function Ideas({
             {idea.term}
             {(idea.from ?? idea.brought) && (
               <span className="ml-1.5 text-[11px] text-subtle-foreground">
-                {idea.from ? `from ${idea.from}` : "you brought it"}
+                {idea.from ? t.from(idea.from) : t.youBroughtIt}
               </span>
             )}
           </button>
@@ -192,14 +196,17 @@ function Ideas({
 
 /** Where an idea stands, in plain words: what showed it, when, and what it rests on. */
 function Detail({ idea, onClose }: { idea: Idea; onClose: () => void }) {
-  const when = new Date(idea.since).toLocaleDateString("en", { day: "numeric", month: "long" });
+  const { track, common } = useT();
+  const t = track.progress;
+  const format = useFormat();
+  const when = format.date(idea.since, { day: "numeric", month: "long" });
   const origin = idea.from
-    ? `You hold it from ${idea.from}, so this track builds on it without teaching it again.`
+    ? t.originFrom(idea.from)
     : idea.brought
-      ? "You already knew it when this track began."
+      ? t.originBrought
       : idea.standing === "owned"
-        ? "You used it correctly in your own words."
-        : "You have met it; it isn't solid yet.";
+        ? t.originOwned
+        : t.originSettling;
   // Opened below a map taller than the screen, it would open out of sight.
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -209,7 +216,7 @@ function Detail({ idea, onClose }: { idea: Idea; onClose: () => void }) {
     <div ref={box} className="relative mt-4 scroll-mb-6 rounded-lg border bg-card px-5 py-4">
       <button
         type="button"
-        aria-label="Close"
+        aria-label={t.close}
         onClick={onClose}
         className="absolute top-3 right-3 rounded-md p-1 text-subtle-foreground hover:bg-muted hover:text-foreground"
       >
@@ -230,14 +237,14 @@ function Detail({ idea, onClose }: { idea: Idea; onClose: () => void }) {
               params={{ sessionId: idea.session.id }}
               className="underline underline-offset-2 hover:text-foreground"
             >
-              Session {idea.session.number}
+              {common.session(idea.session.number)}
             </Link>
             {`, ${when}`}
           </>
         ) : (
           when
         )}
-        {idea.restsOn.length > 0 && ` · rests on ${idea.restsOn.join(", ")}`}
+        {idea.restsOn.length > 0 && t.restsOn(format.list(idea.restsOn))}
       </p>
     </div>
   );
@@ -263,11 +270,12 @@ function MapSection({
     progress.arcs.findIndex((a) => a.current),
   );
   const [index, setIndex] = useState(initial);
+  const t = useT().track.progress;
   const arc = progress.arcs[index];
   if (!arc) return null;
   return (
-    <Section title="The map">
-      <div role="tablist" aria-label="Arcs" className="-mx-1 flex flex-wrap gap-1">
+    <Section title={t.mapTitle}>
+      <div role="tablist" aria-label={t.arcs} className="-mx-1 flex flex-wrap gap-1">
         {progress.arcs.map((a, i) => (
           <button
             key={a.title}
@@ -283,15 +291,15 @@ function MapSection({
             )}
           >
             {a.title}
-            {a.current && <span className="ml-1.5 text-[11px] opacity-70">now</span>}
+            {a.current && <span className="ml-1.5 text-[11px] opacity-70">{t.now}</span>}
           </button>
         ))}
       </div>
       <p className="mt-3 text-[12.5px] text-subtle-foreground">
         {[
-          arc.counts.owned && `${String(arc.counts.owned)} you own`,
-          arc.counts.settling && `${String(arc.counts.settling)} still settling`,
-          arc.counts.coming && plural(arc.counts.coming, "idea to come", "ideas to come"),
+          arc.counts.owned && t.arcOwned(arc.counts.owned),
+          arc.counts.settling && t.arcSettling(arc.counts.settling),
+          arc.counts.coming && t.arcComing(arc.counts.coming),
         ]
           .filter(Boolean)
           .join(" · ")}
@@ -303,7 +311,7 @@ function MapSection({
           onSelect={(node) => {
             if (ideas.has(node.term)) onSelect(node.term);
           }}
-          label={`${arc.title}: its ideas above what they rest on`}
+          label={t.arcPicture(arc.title)}
         />
       </div>
       {detail}

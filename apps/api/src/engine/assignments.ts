@@ -7,6 +7,7 @@ import {
   type AssignmentTask,
   type ChecklistItem,
   type TaskForm,
+  bare,
 } from "@grounded/core";
 import {
   parseBlocks,
@@ -53,8 +54,8 @@ export function assignmentSummary(row: AssignmentRow) {
  * a later homework.
  */
 export function closedReason(row: Pick<AssignmentRow, "submittedAt" | "subsumedBy">) {
-  if (row.submittedAt) return "This has been handed in.";
-  if (row.subsumedBy) return "This homework was folded into a later one; do that one instead.";
+  if (row.submittedAt) return bare("handed-in");
+  if (row.subsumedBy) return bare("folded-into-later");
   return null;
 }
 

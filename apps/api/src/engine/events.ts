@@ -1,3 +1,4 @@
+import type { ActivityNotice, FailureNotice } from "@grounded/core";
 import { and, asc, eq, gt, lte, sessionEvents, sql, type Db } from "@grounded/db";
 import type { Sql } from "postgres";
 import { v7 as uuidv7 } from "uuid";
@@ -8,7 +9,7 @@ const CHANNEL = "session_events";
 /*
  * Activity events tell the learner what a job is doing right now, for a live status line:
  *
- *   activity            { id, label, detail: string | null, state: "running" | "done" }
+ *   activity            { id, label: ActivityNotice, detail: string | null, state: "running" | "done" }
  *   activity-reasoning  { id, text }
  *
  * The latest `activity` event for an id is that activity's current state; a later one may change its
@@ -21,7 +22,8 @@ const CHANNEL = "session_events";
  */
 export interface ActivityEvent {
   id: string;
-  label: string;
+  /** What the job is doing: a notice the web words (design §9.3). */
+  label: ActivityNotice;
   detail: string | null;
   state: "running" | "done";
 }
@@ -115,7 +117,7 @@ export function batcher(flush: (text: string) => Promise<void>) {
 }
 
 export interface Activity {
-  update(change: { label?: string; detail?: string | null }): Promise<void>;
+  update(change: { label?: ActivityNotice; detail?: string | null }): Promise<void>;
   /** Appends to the activity's reasoning summary (batched). */
   reasoning(text: string): Promise<void>;
   /** Ends the activity; later calls do nothing. */
@@ -126,7 +128,7 @@ export interface Activity {
 export async function startActivity(
   db: Db,
   sessionId: string,
-  label: string,
+  label: ActivityNotice,
   detail: string | null = null,
 ): Promise<Activity> {
   const id = uuidv7();
@@ -153,11 +155,19 @@ export async function startActivity(
   };
 }
 
+/**
+ * Tells the learner a job failed (an `error` event: `{ error: <notice> }`, worded by the web, design
+ * §9.3), for what they can act on.
+ */
+export async function publishFailure(db: Db, sessionId: string, failure: FailureNotice) {
+  await publish(db, sessionId, "error", { error: failure });
+}
+
 /** Runs the work as an activity, ended however the work ends. */
 export async function withActivity<T>(
   db: Db,
   sessionId: string,
-  label: string,
+  label: ActivityNotice,
   run: (activity: Activity) => Promise<T>,
 ): Promise<T> {
   const activity = await startActivity(db, sessionId, label);

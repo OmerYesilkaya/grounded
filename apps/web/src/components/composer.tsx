@@ -11,6 +11,7 @@ import {
 } from "react";
 import { Button } from "@/components/ui/button";
 import { LineEditor } from "@/editor/line-editor";
+import { useT } from "@/i18n";
 import { isTouchScreen } from "@/lib/media-query";
 import { cn } from "@/lib/utils";
 
@@ -104,6 +105,7 @@ export function Composer({
   const field = () => (rich ? lineRef.current : textareaRef.current);
   const pickerRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const t = useT().session;
   const acceptsFiles = onAddFiles !== undefined && !disabled;
   const canSubmit = !disabled && !submitDisabled && value.trim() !== "";
 
@@ -218,8 +220,8 @@ export function Composer({
               type="button"
               variant="ghost"
               size="icon-sm"
-              aria-label="Attach files"
-              title="Attach files"
+              aria-label={t.attachFiles}
+              title={t.attachFiles}
               disabled={disabled}
               className="mr-auto rounded-full text-muted-foreground"
               onClick={() => pickerRef.current?.click()}

@@ -5,6 +5,7 @@ import { Pencil, Plus, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
 import { teachingNotesQuery, useNoteChange, type TeachingNote } from "@/lib/teaching-notes";
 
@@ -15,22 +16,19 @@ import { teachingNotesQuery, useNoteChange, type TeachingNote } from "@/lib/teac
 export function TeachingNotesPage() {
   const notes = useQuery(teachingNotesQuery);
   const [adding, setAdding] = useState(false);
+  const t = useT().account.notes;
   return (
     <>
       <PhoneBar />
       <main className="mx-auto w-full max-w-2xl px-6 pt-24 pb-24 max-md:pt-10">
-        <p className="text-xs tracking-widest text-subtle-foreground uppercase">Teaching notes</p>
-        <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">How you learn</h1>
-        <p className="mt-2 max-w-prose text-sm text-muted-foreground">
-          What the tutor has noticed helps you learn, across your tracks. It reads these before
-          every lesson and check. Change anything that doesn&apos;t sound like you.
-        </p>
+        <p className="text-xs tracking-widest text-subtle-foreground uppercase">{t.eyebrow}</p>
+        <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">{t.title}</h1>
+        <p className="mt-2 max-w-prose text-sm text-muted-foreground">{t.intro}</p>
         {notes.data && (
           <>
             {notes.data.length === 0 && !adding && (
               <p className="mt-10 rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
-                Nothing yet. After about six sessions the tutor starts noting what helps you, each
-                note resting on at least three of them.
+                {t.none}
               </p>
             )}
             {notes.data.length > 0 && (
@@ -57,15 +55,13 @@ export function TeachingNotesPage() {
                   }}
                 >
                   <Plus />
-                  Add a note
+                  {t.add}
                 </Button>
               )}
             </div>
           </>
         )}
-        {notes.error && (
-          <p className="mt-10 text-sm text-destructive">Your notes couldn&apos;t be loaded.</p>
-        )}
+        {notes.error && <p className="mt-10 text-sm text-destructive">{t.failed}</p>}
       </main>
     </>
   );
@@ -76,6 +72,7 @@ function Note({ note }: { note: TeachingNote }) {
   const [editing, setEditing] = useState(false);
   const [why, setWhy] = useState(false);
   const remove = useNoteChange();
+  const t = useT().account.notes;
   const sessions = new Set(note.evidence.map((e) => e.session?.id ?? e.what)).size;
   if (editing)
     return (
@@ -97,7 +94,7 @@ function Note({ note }: { note: TeachingNote }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Edit this note"
+            aria-label={t.edit}
             onClick={() => {
               setEditing(true);
             }}
@@ -107,7 +104,7 @@ function Note({ note }: { note: TeachingNote }) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Remove this note"
+            aria-label={t.remove}
             disabled={remove.isPending}
             onClick={() => {
               remove.mutate({ id: note.id });
@@ -118,9 +115,7 @@ function Note({ note }: { note: TeachingNote }) {
         </div>
       </div>
       <p className="mt-1 text-[12.5px] text-subtle-foreground">
-        {note.byLearner && (
-          <span>{note.evidence.length ? "You edited this" : "You wrote this"}</span>
-        )}
+        {note.byLearner && <span>{note.evidence.length ? t.youEdited : t.youWrote}</span>}
         {note.byLearner && sessions > 0 && " · "}
         {sessions > 0 && (
           <button
@@ -131,14 +126,12 @@ function Note({ note }: { note: TeachingNote }) {
             }}
             className="underline-offset-2 hover:text-foreground hover:underline"
           >
-            Seen in {sessions} {sessions === 1 ? "session" : "sessions"}
+            {t.seenIn(sessions)}
           </button>
         )}
       </p>
       {why && <Evidence evidence={note.evidence} />}
-      {remove.error && (
-        <p className="mt-2 text-sm text-destructive">It couldn&apos;t be removed.</p>
-      )}
+      {remove.error && <p className="mt-2 text-sm text-destructive">{t.removeFailed}</p>}
     </li>
   );
 }
@@ -147,6 +140,8 @@ function Note({ note }: { note: TeachingNote }) {
 function NoteEditor({ id, initial, onDone }: { id?: string; initial: string; onDone: () => void }) {
   const [text, setText] = useState(initial);
   const save = useNoteChange();
+  const { account, common } = useT();
+  const t = account.notes;
   const submit = () => {
     if (!text.trim()) return;
     save.mutate({ ...(id ? { id } : {}), text }, { onSuccess: onDone });
@@ -160,10 +155,10 @@ function NoteEditor({ id, initial, onDone }: { id?: string; initial: string; onD
     >
       <Textarea
         autoFocus
-        aria-label={id ? "The note" : "A new note"}
+        aria-label={id ? t.theNote : t.aNewNote}
         value={text}
         maxLength={500}
-        placeholder="For example: a picture first, then the words."
+        placeholder={t.placeholder}
         onChange={(event) => {
           setText(event.target.value);
         }}
@@ -175,14 +170,14 @@ function NoteEditor({ id, initial, onDone }: { id?: string; initial: string; onD
       />
       <div className="mt-2 flex items-center gap-2">
         <Button type="submit" size="sm" disabled={save.isPending || !text.trim()}>
-          {id ? "Save" : "Add"}
+          {id ? common.save : common.add}
         </Button>
         <Button type="button" variant="ghost" size="sm" onClick={onDone}>
-          Cancel
+          {common.cancel}
         </Button>
         {save.error && (
           <p className="text-sm text-destructive">
-            {save.error instanceof ApiError ? save.error.message : "It couldn't be saved."}
+            {save.error instanceof ApiError ? save.error.message : t.saveFailed}
           </p>
         )}
       </div>
@@ -192,6 +187,7 @@ function NoteEditor({ id, initial, onDone }: { id?: string; initial: string; onD
 
 /** What a note rests on: each time it was seen, and the session it was seen in. */
 function Evidence({ evidence }: { evidence: TeachingNote["evidence"] }) {
+  const t = useT().account.notes;
   return (
     <ul className="mt-2 space-y-1.5 border-l-2 border-primary/40 pl-3">
       {evidence.map((e, i) => (
@@ -208,7 +204,7 @@ function Evidence({ evidence }: { evidence: TeachingNote["evidence"] }) {
                 params={{ sessionId: e.session.id }}
                 className="text-subtle-foreground underline underline-offset-2 hover:text-foreground"
               >
-                {e.session.trackTitle}, session {e.session.number}
+                {t.where(e.session.trackTitle, e.session.number)}
               </Link>
             </>
           )}

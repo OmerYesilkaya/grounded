@@ -4,6 +4,7 @@ import type {
   LanguageModelV4StreamPart,
   LanguageModelV4Usage,
 } from "@ai-sdk/provider";
+import type { Cause } from "@grounded/core";
 import type { KeyVault } from "@grounded/crypto";
 import { credentials, eq, modelCalls, sql, usageEvents, type Db } from "@grounded/db";
 import {
@@ -34,30 +35,41 @@ import {
 import { shapeCall } from "./call-options.js";
 import { currentTrace, type Trace } from "./call-trace.js";
 
-/** A provider failure with the plain message the learner is shown (design §4.4). */
+/**
+ * A provider failure (design §4.4), with what the learner is told: a notice the web words in the
+ * app's language (design §9.3).
+ */
 export class ProviderCallError extends Error {
   constructor(
     readonly kind: ProviderErrorKind,
-    message: string,
+    readonly notice: Cause,
   ) {
-    super(message);
+    super(notice.code === "provider-failed" ? `${notice.provider}: ${kind}` : notice.code);
     this.name = "ProviderCallError";
   }
 }
 
 export class NoCredentialError extends Error {
+  readonly notice: Cause = { code: "no-credential" };
   constructor() {
-    super("Add your AI key in Settings first.");
+    super("no credential");
     this.name = "NoCredentialError";
   }
+}
+
+/** What the learner is told of a failed model call, or null for a failure that isn't theirs. */
+export function causeOf(error: unknown): Cause | null {
+  return error instanceof ProviderCallError || error instanceof NoCredentialError
+    ? error.notice
+    : null;
 }
 
 /** Turns any failure of a model call into a ProviderCallError, unwrapping the SDK's retry wrapper. */
 export function providerErrorFrom(provider: ProviderId, error: unknown): ProviderCallError {
   if (error instanceof ProviderCallError) return error;
   const cause = RetryError.isInstance(error) ? error.lastError : error;
-  const { kind, message } = classifyProviderError(provider, cause);
-  return new ProviderCallError(kind, message);
+  const { kind, provider: name } = classifyProviderError(provider, cause);
+  return new ProviderCallError(kind, { code: "provider-failed", kind, provider: name });
 }
 
 export interface ModelCallerDependencies {

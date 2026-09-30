@@ -125,13 +125,15 @@ describe("the lesson", () => {
   it("says it is outlining, then which step it is writing", async () => {
     const { sessionId } = await inLesson();
     const lessonLabels = async () =>
-      (await activities(sessionId)).filter((a) => /Outlining|step/.test(a.label));
+      (await activities(sessionId)).filter((a) =>
+        ["outlining", "writing-step"].includes(a.label.code),
+      );
     await t.waitFor(async () => (await lessonLabels()).every((a) => a.state === "done"));
     expect((await lessonLabels()).map((a) => a.label)).toEqual([
-      "Outlining the lesson",
-      "Writing step 1 of 3",
-      "Writing step 2 of 3",
-      "Writing step 3 of 3",
+      { code: "outlining" },
+      { code: "writing-step", step: 1, of: 3, again: false },
+      { code: "writing-step", step: 2, of: 3, again: false },
+      { code: "writing-step", step: 3, of: 3, again: false },
     ]);
   });
 });
@@ -182,8 +184,8 @@ describe("researching the lesson", () => {
       [session.sessionId, "lesson", ["lost update"]],
     ]);
     const labels = (await activities(session.sessionId)).map((a) => a.label);
-    expect(labels).toContain("Checking the facts the lesson needs");
-    expect(labels).toContain("Searching the web for “lost update”");
+    expect(labels).toContainEqual({ code: "checking-facts" });
+    expect(labels).toContainEqual({ code: "searching-web", query: "lost update" });
   });
 
   it("keeps nothing when it searched nothing", async () => {
@@ -218,7 +220,7 @@ describe("checks", () => {
       ["s1", "tutor", "landed"],
     ]);
     const checking = (await activities(sessionId)).filter(
-      (a) => a.label === "Checking your answer",
+      (a) => a.label.code === "checking-answer",
     );
     expect(checking.map((a) => a.state)).toEqual(["done"]);
   });
@@ -365,7 +367,7 @@ describe("checks", () => {
 
     const blocked = await answer(cookie, sessionId, "s1", { text: "one more try" });
     expect(blocked.status).toBe(409);
-    expect(await blocked.json()).toEqual({ error: "Choose to pause or continue first." });
+    expect(await blocked.json()).toEqual({ error: { code: "pause-or-continue-first" } });
 
     expect(
       (await t.request(`/api/sessions/${sessionId}/steps/s1/pause`, { method: "POST", cookie }))
@@ -495,7 +497,7 @@ describe("checks", () => {
     const { cookie, sessionId } = await inLesson();
     const early = await answer(cookie, sessionId, "s2", { text: "jumping ahead" });
     expect(early.status).toBe(409);
-    expect(await early.json()).toEqual({ error: "That step isn't the one being checked." });
+    expect(await early.json()).toEqual({ error: { code: "step-not-checked" } });
   });
 });
 

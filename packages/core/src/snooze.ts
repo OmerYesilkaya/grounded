@@ -120,14 +120,18 @@ export function snoozeChoices(now: Date, timeZone: string): Snooze[] {
   return SNOOZES.filter((snooze) => snoozeUntil(snooze, now, timeZone) !== null);
 }
 
+/** What a snoozed item's tag says; "later" is its date, which the browser writes in its language. */
+export type DueTag = "due" | "today" | "tonight" | "tomorrow" | "later";
+
 /**
  * The tag on a snoozed item (design §9.2): "due" once its time has come; before that, when it is
- * due in the learner's days: "tonight" (or "today", before the evening), "tomorrow", or the date.
+ * due in the learner's days: "tonight" (or "today", before the evening), "tomorrow", or later (the
+ * date).
  */
-export function dueTag(until: Date, now: Date, timeZone: string, locale?: string): string {
+export function dueTag(until: Date, now: Date, timeZone: string): DueTag {
   if (until <= now) return "due";
   const days = daysBetween(learnerDay(now, timeZone), learnerDay(until, timeZone));
   if (days <= 0) return wallClock(until, timeZone).hour >= 17 ? "tonight" : "today";
   if (days === 1) return "tomorrow";
-  return until.toLocaleDateString(locale, { timeZone, day: "numeric", month: "short" });
+  return "later";
 }

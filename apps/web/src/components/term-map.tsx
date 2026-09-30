@@ -1,13 +1,7 @@
 import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useT } from "@/i18n";
 import { layers, type MapNode, type Standing, type TermMap } from "@/lib/term-map";
 import { cn } from "@/lib/utils";
-
-/** The learner's words for where they stand (design §8), for the key under a picture. */
-export const STANDING_LABEL: Record<Standing, string> = {
-  owned: "You own it",
-  settling: "Still settling",
-  coming: "Coming up",
-};
 
 /**
  * Solid ground is filled in, what is still settling only outlined, and what is still to be built
@@ -169,6 +163,7 @@ function Idea({
   onPoint: (on: boolean) => void;
   onSelect?: (node: MapNode) => void;
 }) {
+  const t = useT().track.map;
   const className = cn(
     "relative max-w-[15rem] rounded-[4px] border px-2.5 py-1 text-center text-[13px] leading-snug transition-opacity duration-150",
     nodeClass[node.standing],
@@ -183,7 +178,7 @@ function Idea({
     <>
       <span className="block">{node.term}</span>
       {node.from && (
-        <span className="block text-[10.5px] text-subtle-foreground">from {node.from}</span>
+        <span className="block text-[10.5px] text-subtle-foreground">{t.from(node.from)}</span>
       )}
     </>
   );
@@ -225,6 +220,7 @@ function Idea({
 
 /** The key: the standings the picture shows, and that the paler ideas are what it rests on. */
 function Key({ map }: { map: TermMap }) {
+  const t = useT().track.map;
   const present = (["owned", "settling", "coming"] as const).filter((s) =>
     map.nodes.some((n) => n.standing === s),
   );
@@ -234,10 +230,10 @@ function Key({ map }: { map: TermMap }) {
       {present.map((standing) => (
         <span key={standing} className="flex items-center gap-1.5">
           <span aria-hidden className={cn("size-2.5 rounded-[2px] border", nodeClass[standing])} />
-          {STANDING_LABEL[standing]}
+          {t.standing[standing]}
         </span>
       ))}
-      {ground && <span>Paler: what these rest on</span>}
+      {ground && <span>{t.paler}</span>}
     </p>
   );
 }

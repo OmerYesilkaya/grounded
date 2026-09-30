@@ -20,19 +20,29 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { LANGUAGE_NAMES, LANGUAGES, setLanguage, useLanguage, useT, type Language } from "@/i18n";
 import { signOut } from "@/lib/auth";
 import { setThemeChoice, useThemeChoice, type ThemeChoice } from "@/lib/theme";
+import { cn } from "@/lib/utils";
 
-const THEMES: { value: ThemeChoice; label: string; icon: LucideIcon }[] = [
-  { value: "dark", label: "Dark", icon: Moon },
-  { value: "light", label: "Light", icon: Sun },
-  { value: "system", label: "Follow system", icon: Monitor },
+const THEMES: { value: ThemeChoice; icon: LucideIcon }[] = [
+  { value: "dark", icon: Moon },
+  { value: "light", icon: Sun },
+  { value: "system", icon: Monitor },
 ];
 
-/** The account row at the foot of the sidebar (design §9.2); its actions sit in a menu. */
+const CHOICE =
+  "size-6 justify-center rounded-[3px] p-0 text-subtle-foreground pointer-coarse:size-9 pointer-coarse:p-0 focus:text-foreground data-[state=checked]:bg-highlight data-[state=checked]:text-primary";
+
+/**
+ * The account row at the foot of the sidebar (design §9.2); its actions sit in a menu, with the
+ * theme and the language (design §9.3).
+ */
 export function AccountMenu({ email }: { email: string }) {
   const navigate = useNavigate();
   const theme = useThemeChoice();
+  const language = useLanguage();
+  const t = useT().account.menu;
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50 data-[state=open]:bg-accent">
@@ -57,26 +67,26 @@ export function AccountMenu({ email }: { email: string }) {
         <DropdownMenuItem asChild>
           <Link to="/teaching-notes">
             <NotebookPen />
-            How you learn
+            {t.howYouLearn}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/settings/key">
             <KeyRound />
-            API key
+            {t.apiKey}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
           <Link to="/usage">
             <ChartNoAxesColumn />
-            Usage
+            {t.usage}
           </Link>
         </DropdownMenuItem>
         {/* The theme (design §9.3) as three icons in a row. Choosing one leaves the menu open, so
             the change is seen in place. */}
         <div className="flex items-center justify-between py-0.5 pr-1 pl-2">
           <span id="theme-label" className="text-[13px]">
-            Theme
+            {t.theme}
           </span>
           <DropdownMenuRadioGroup
             aria-labelledby="theme-label"
@@ -86,18 +96,49 @@ export function AccountMenu({ email }: { email: string }) {
             }}
             className="flex gap-px rounded-[4px] border p-px"
           >
-            {THEMES.map(({ value, label, icon: Icon }) => (
+            {THEMES.map(({ value, icon: Icon }) => (
               <DropdownMenuRadioItem
                 key={value}
                 value={value}
-                aria-label={label}
-                title={label}
+                aria-label={t.themes[value]}
+                title={t.themes[value]}
                 onSelect={(event) => {
                   event.preventDefault();
                 }}
-                className="size-6 justify-center rounded-[3px] p-0 text-subtle-foreground pointer-coarse:size-9 pointer-coarse:p-0 focus:text-foreground data-[state=checked]:bg-highlight data-[state=checked]:text-primary"
+                className={CHOICE}
               >
                 <Icon className="size-3.5" />
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </div>
+        {/* The app's language (design §9.3), the same way: each in its own words, the menu staying
+            open so the change is seen. */}
+        <div className="flex items-center justify-between py-0.5 pr-1 pl-2">
+          <span id="language-label" className="text-[13px]">
+            {t.language}
+          </span>
+          <DropdownMenuRadioGroup
+            aria-labelledby="language-label"
+            value={language}
+            onValueChange={(value) => {
+              setLanguage(value as Language);
+            }}
+            className="flex gap-px rounded-[4px] border p-px"
+          >
+            {LANGUAGES.map((value) => (
+              <DropdownMenuRadioItem
+                key={value}
+                value={value}
+                lang={value}
+                aria-label={LANGUAGE_NAMES[value]}
+                title={LANGUAGE_NAMES[value]}
+                onSelect={(event) => {
+                  event.preventDefault();
+                }}
+                className={cn(CHOICE, "w-8 text-[11px] font-medium uppercase pointer-coarse:w-11")}
+              >
+                {value}
               </DropdownMenuRadioItem>
             ))}
           </DropdownMenuRadioGroup>
@@ -109,7 +150,7 @@ export function AccountMenu({ email }: { email: string }) {
           }}
         >
           <LogOut />
-          Sign out
+          {t.signOut}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

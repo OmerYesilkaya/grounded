@@ -11,9 +11,13 @@ export const PROVIDER_NAMES: Record<ProviderId, string> = {
 export type ProviderErrorKind =
   "invalid-key" | "no-credit" | "rate-limited" | "unreachable" | "timeout" | "refused" | "unknown";
 
+/**
+ * A failed call, for the learner: what kind of failure, and the provider by the name they know it.
+ * The web words it in the app's language (design §9.3).
+ */
 export interface ProviderError {
   kind: ProviderErrorKind;
-  message: string;
+  provider: string;
 }
 
 /**
@@ -27,26 +31,14 @@ export interface ProviderFailure {
   timedOut?: boolean;
 }
 
-const messages: Record<ProviderErrorKind, (name: string) => string> = {
-  "invalid-key": (n) =>
-    `Your ${n} key was rejected. Check it in Settings, or create a new one on ${n}'s site.`,
-  "no-credit": (n) =>
-    `Your ${n} account is out of credit. Add credit or raise your spending limit on ${n}'s site.`,
-  "rate-limited": (n) => `${n} is limiting requests right now. Wait a minute, then try again.`,
-  unreachable: (n) => `${n} couldn't be reached. Try again in a moment.`,
-  timeout: (n) => `${n} is taking too long. Try again in a moment.`,
-  refused: (n) => `${n} declined to answer this request.`,
-  unknown: (n) => `Something went wrong talking to ${n}. Try again in a moment.`,
-};
-
 /**
- * Maps a failed provider call onto a plain message. Accepts our own failure shape, the AI SDK's
- * APICallError (statusCode, responseBody), or a "TimeoutError" (what an abort signal's timeout and
- * the SDK's own timeouts throw). Based on each provider's documented error format.
+ * Maps a failed provider call onto the kind of failure it is. Accepts our own failure shape, the AI
+ * SDK's APICallError (statusCode, responseBody), or a "TimeoutError" (what an abort signal's
+ * timeout and the SDK's own timeouts throw). Based on each provider's documented error format.
  */
 export function classifyProviderError(provider: ProviderId, error: unknown): ProviderError {
   const kind = classify(toFailure(error));
-  return { kind, message: messages[kind](PROVIDER_NAMES[provider]) };
+  return { kind, provider: PROVIDER_NAMES[provider] };
 }
 
 function toFailure(error: unknown): ProviderFailure {

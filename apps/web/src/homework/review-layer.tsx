@@ -1,5 +1,6 @@
 import type { ChecklistItem } from "@grounded/core/assignment";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
+import { useT } from "@/i18n";
 import { placeCards } from "@/lesson/aside-layout";
 import { Connector, MarginCard } from "@/lesson/aside-layer";
 import { ASIDE_UI, AsideSheet } from "@/lesson/aside-sheet";
@@ -54,6 +55,7 @@ export interface ReviewLayerProps {
 export function ReviewLayer(props: ReviewLayerProps) {
   const { comments, active, onActivate, wide, grid, answer, margin } = props;
   const [layout, setLayout] = useState<Layout | null>(null);
+  const t = useT().homework;
 
   useEffect(() => {
     const onPassage = (x: number, y: number) => {
@@ -125,7 +127,7 @@ export function ReviewLayer(props: ReviewLayerProps) {
     const open = comments.find((c) => c.id === active);
     return open ? (
       <AsideSheet
-        label="A comment on your answer"
+        label={t.aComment}
         quote={open.anchor.quote || props.fieldLabel(open)}
         onClose={() => {
           onActivate(null);
@@ -156,7 +158,7 @@ export function ReviewLayer(props: ReviewLayerProps) {
             id={comment.id}
             top={layout?.tops[comment.id]}
             active={comment.id === active}
-            label="A comment on your answer"
+            label={t.aComment}
             onActivate={() => {
               onActivate(comment.id);
             }}
@@ -239,6 +241,7 @@ export function ReviewCards(props: {
   onActivate: (commentId: string) => void;
   scope: string;
 }) {
+  const t = useT().homework;
   const here = props.comments.filter(
     (c) => fieldScope(c.anchor.taskId, c.anchor.field) === props.scope,
   );
@@ -252,7 +255,7 @@ export function ReviewCards(props: {
             key={comment.id}
             type="button"
             {...ASIDE_UI}
-            aria-label="Open this comment on your answer"
+            aria-label={t.openComment}
             onClick={() => {
               props.onActivate(comment.id);
             }}

@@ -58,6 +58,7 @@ export function reduceAsides(asides: Aside[], type: string, data: unknown): Asid
               role: message.role,
               text,
               blocks: message.blocks,
+              failure: message.failure ?? null,
             },
           ],
           draft: null,

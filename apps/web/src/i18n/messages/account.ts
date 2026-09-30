@@ -1,0 +1,144 @@
+import { defineMessages } from "../define";
+
+/** The account menu, signing in, the key, usage and the teaching notes. */
+export const account = defineMessages({
+  en: {
+    menu: {
+      howYouLearn: "How you learn",
+      apiKey: "API key",
+      usage: "Usage",
+      theme: "Theme",
+      themes: { dark: "Dark", light: "Light", system: "Follow system" },
+      language: "Language",
+      signOut: "Sign out",
+    },
+    signIn: {
+      email: "Email",
+      signIn: "Sign in",
+      signingIn: "Signing in…",
+      inviteOnly:
+        "Grounded is invite-only: enter the email you were invited with. No password needed.",
+      whatIsStored:
+        "What is stored: your answers, your progress, the questions you ask, the files you attach and your API key, encrypted. Nothing is shared; the tutor's calls go to the AI provider whose key you bring. Whoever runs Grounded can technically access the database, but does not read it.",
+    },
+    key: {
+      title: "Your AI key",
+      intro:
+        "Lessons run on your own provider account. The key is encrypted and never shown again.",
+      remove: "Remove",
+      provider: "Provider",
+      chooseProvider: "Choose a provider",
+      model: "Model",
+      chooseModel: "Choose a model",
+      apiKey: "API key",
+      checking: "Checking the key…",
+      replace: "Replace key",
+      save: "Save key",
+    },
+    usage: {
+      eyebrow: "Usage",
+      title: "What your key has spent",
+      intro: "Estimated from each model's list price. Your provider's bill is the exact figure.",
+      failed: "Usage couldn't be loaded.",
+      soFar: (month: string) => `${month}, so far`,
+      earlier: "Earlier months",
+      bySession: "By session",
+      noSessions: "No sessions yet.",
+      calls: (n: number) => (n === 1 ? "1 call" : `${String(n)} calls`),
+      /** "1.2M tokens in (840K from the cache) · 96K out · 58 calls". */
+      tokensLine: (p: { input: string; cached: string | null; output: string; calls: string }) =>
+        `${p.input} tokens in${p.cached ? ` (${p.cached} from the cache)` : ""} · ${p.output} out · ${p.calls}`,
+      tokens: (n: string) => `${n} tokens`,
+      unpriced: (calls: string) => `Not counted: ${calls} on a model without a listed price.`,
+    },
+    notes: {
+      eyebrow: "Teaching notes",
+      title: "How you learn",
+      intro:
+        "What the tutor has noticed helps you learn, across your tracks. It reads these before every lesson and check. Change anything that doesn't sound like you.",
+      none: "Nothing yet. After about six sessions the tutor starts noting what helps you, each note resting on at least three of them.",
+      add: "Add a note",
+      failed: "Your notes couldn't be loaded.",
+      edit: "Edit this note",
+      remove: "Remove this note",
+      youEdited: "You edited this",
+      youWrote: "You wrote this",
+      seenIn: (n: number) => (n === 1 ? "Seen in 1 session" : `Seen in ${String(n)} sessions`),
+      removeFailed: "It couldn't be removed.",
+      theNote: "The note",
+      aNewNote: "A new note",
+      placeholder: "For example: a picture first, then the words.",
+      saveFailed: "It couldn't be saved.",
+      where: (track: string, session: number) => `${track}, session ${String(session)}`,
+    },
+  },
+  tr: {
+    menu: {
+      howYouLearn: "Nasıl öğreniyorsun",
+      apiKey: "API anahtarı",
+      usage: "Kullanım",
+      theme: "Tema",
+      themes: { dark: "Koyu", light: "Açık", system: "Sistemi izle" },
+      language: "Dil",
+      signOut: "Çıkış yap",
+    },
+    signIn: {
+      email: "E-posta",
+      signIn: "Giriş yap",
+      signingIn: "Giriş yapılıyor…",
+      inviteOnly:
+        "Grounded yalnızca davetle açılıyor: davet edildiğin e-postayı yaz. Şifreye gerek yok.",
+      whatIsStored:
+        "Saklananlar: cevapların, ilerlemen, sorduğun sorular, eklediğin dosyalar ve şifrelenmiş olarak API anahtarın. Hiçbiri paylaşılmaz; öğretmenin çağrıları, anahtarını getirdiğin yapay zekâ sağlayıcısına gider. Grounded'ı işleten kişi veritabanına teknik olarak erişebilir, ama içini okumaz.",
+    },
+    key: {
+      title: "Yapay zekâ anahtarın",
+      intro:
+        "Dersler kendi sağlayıcı hesabında çalışır. Anahtar şifrelenir ve bir daha gösterilmez.",
+      remove: "Kaldır",
+      provider: "Sağlayıcı",
+      chooseProvider: "Bir sağlayıcı seç",
+      model: "Model",
+      chooseModel: "Bir model seç",
+      apiKey: "API anahtarı",
+      checking: "Anahtar kontrol ediliyor…",
+      replace: "Anahtarı değiştir",
+      save: "Anahtarı kaydet",
+    },
+    usage: {
+      eyebrow: "Kullanım",
+      title: "Anahtarının harcadığı",
+      intro: "Her modelin liste fiyatından tahmin edilir. Kesin rakam sağlayıcının faturasındadır.",
+      failed: "Kullanım yüklenemedi.",
+      soFar: (month: string) => `${month}, şu ana kadar`,
+      earlier: "Önceki aylar",
+      bySession: "Oturum oturum",
+      noSessions: "Henüz oturum yok.",
+      calls: (n: number) => `${String(n)} çağrı`,
+      tokensLine: (p: { input: string; cached: string | null; output: string; calls: string }) =>
+        `${p.input} token girdi${p.cached ? ` (${p.cached} önbellekten)` : ""} · ${p.output} çıktı · ${p.calls}`,
+      tokens: (n: string) => `${n} token`,
+      unpriced: (calls: string) => `Sayılmadı: liste fiyatı olmayan bir modelde ${calls}.`,
+    },
+    notes: {
+      eyebrow: "Öğretme notları",
+      title: "Nasıl öğreniyorsun",
+      intro:
+        "Öğretmenin, tüm konularında öğrenmene neyin yardım ettiğine dair fark ettikleri. Her dersten ve her sorudan önce bunları okur. Sana uymayan bir şey varsa değiştir.",
+      none: "Henüz bir şey yok. Yaklaşık altı oturumdan sonra öğretmen sana neyin yardım ettiğini not etmeye başlar; her not en az üç oturuma dayanır.",
+      add: "Not ekle",
+      failed: "Notların yüklenemedi.",
+      edit: "Bu notu düzenle",
+      remove: "Bu notu kaldır",
+      youEdited: "Bunu sen düzenledin",
+      youWrote: "Bunu sen yazdın",
+      seenIn: (n: number) => `${String(n)} oturumda görüldü`,
+      removeFailed: "Kaldırılamadı.",
+      theNote: "Not",
+      aNewNote: "Yeni bir not",
+      placeholder: "Örneğin: önce bir resim, sonra sözcükler.",
+      saveFailed: "Kaydedilemedi.",
+      where: (track: string, session: number) => `${track}, ${String(session)}. oturum`,
+    },
+  },
+});

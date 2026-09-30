@@ -90,7 +90,7 @@ export async function summarizeEarlier(options: {
   if (!last) return summary;
   try {
     const model = await options.model();
-    const { text } = await withActivity(db, sessionId, "Condensing our conversation so far", () =>
+    const { text } = await withActivity(db, sessionId, { code: "condensing" }, () =>
       generateText({
         model,
         system: options.system,

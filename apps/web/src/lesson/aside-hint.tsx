@@ -1,4 +1,5 @@
 import { MessageSquarePlus } from "lucide-react";
+import { useT } from "@/i18n";
 
 /**
  * Until the learner's first question, the empty margin shows how to ask (design §9.1): a faint card
@@ -6,6 +7,7 @@ import { MessageSquarePlus } from "lucide-react";
  * motion the tiny page holds the selection.
  */
 export function HintCard() {
+  const t = useT().lesson.asides;
   return (
     <div className="sticky top-24 mt-10 rounded-lg border border-dashed border-border-strong px-4 py-3.5 font-sans opacity-80">
       <div aria-hidden className="mb-3 flex flex-col gap-[7px]">
@@ -19,15 +21,12 @@ export function HintCard() {
           <span className="h-[5px] w-[18%] rounded-full bg-border-strong" />
           <span className="ml-auto flex items-center gap-1 rounded-[3px] border border-border-strong bg-card px-1.5 py-px text-[9.5px] font-medium text-primary motion-safe:animate-hint-ask">
             <MessageSquarePlus className="size-2.5" />
-            Ask
+            {t.ask}
           </span>
         </span>
         <span className="h-[5px] w-[64%] rounded-full bg-border-strong" />
       </div>
-      <p className="text-[12.5px] leading-relaxed text-subtle-foreground">
-        Stuck on a word or a step? Select any passage and ask about it. The answer appears here,
-        beside it.
-      </p>
+      <p className="text-[12.5px] leading-relaxed text-subtle-foreground">{t.hint}</p>
     </div>
   );
 }

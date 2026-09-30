@@ -5,6 +5,7 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { LaterMenu } from "@/homework/later-menu";
+import { useT } from "@/i18n";
 import { assignmentApi } from "@/lib/assignments";
 import { useNow } from "@/lib/snooze";
 import { isDue, useTracks, type AssignedItem } from "@/lib/tracks";
@@ -33,6 +34,7 @@ export function HomeworkReminder() {
   const now = useNow();
   const queryClient = useQueryClient();
   const [hidden, setHidden] = useState(dismissed);
+  const t = useT().homework;
   const later = useMutation({
     mutationFn: ({ id, snooze }: { id: string; snooze: Snooze }) => assignmentApi.later(id, snooze),
     onSuccess: async (_, { id }) => {
@@ -52,7 +54,7 @@ export function HomeworkReminder() {
   const [first] = shown;
   if (!first) return null;
   const { item, track } = first;
-  const what = item.kind === "exam" ? "Arc exam" : "Homework";
+  const what = item.kind === "exam" ? t.due.exam : t.due.homework;
 
   const dismiss = () => {
     const next = [...hidden, ...shown.map(({ item: i }) => reminderKey(i))];
@@ -66,23 +68,23 @@ export function HomeworkReminder() {
 
   return (
     <aside
-      aria-label={`${what} due`}
+      aria-label={what}
       className="fixed right-[max(1rem,env(safe-area-inset-right))] bottom-[max(1rem,env(safe-area-inset-bottom))] left-[max(1rem,env(safe-area-inset-left))] z-40 rounded-xl border bg-popover p-4 text-popover-foreground shadow-lg sm:left-auto sm:w-[360px]"
     >
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
-            {what} due
+            {what}
           </p>
           <p className="mt-1 font-serif text-[16px] leading-snug font-semibold">{item.title}</p>
           <p className="mt-0.5 text-[12.5px] text-subtle-foreground">
-            {track} · session {item.session}
-            {shown.length > 1 && ` · and ${String(shown.length - 1)} more due`}
+            {t.reminderWhere(track, item.session)}
+            {shown.length > 1 && t.moreDue(shown.length - 1)}
           </p>
         </div>
         <button
           type="button"
-          aria-label="Not now"
+          aria-label={t.notNow}
           onClick={dismiss}
           className="touch-target relative -mt-1 -mr-1 flex size-7 shrink-0 items-center justify-center rounded-md text-subtle-foreground outline-none hover:bg-accent hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
@@ -92,7 +94,7 @@ export function HomeworkReminder() {
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Button asChild size="sm">
           <Link to="/homework/$assignmentId" params={{ assignmentId: item.id }}>
-            Open it
+            {t.openIt}
           </Link>
         </Button>
         <LaterMenu

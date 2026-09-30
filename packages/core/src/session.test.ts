@@ -12,7 +12,7 @@ import {
 function run(state: SessionState, ...events: SessionEvent[]): SessionState {
   return events.reduce((current, event) => {
     const result = transition(current, event);
-    if (!result.ok) throw new Error(`rejected ${event.type}: ${result.reason}`);
+    if (!result.ok) throw new Error(`rejected ${event.type}: ${result.reason.code}`);
     return result.state;
   }, state);
 }
@@ -20,7 +20,7 @@ function run(state: SessionState, ...events: SessionEvent[]): SessionState {
 const rejected = (state: SessionState, event: SessionEvent) => {
   const result = transition(state, event);
   expect(result.ok).toBe(false);
-  return result.ok ? "" : result.reason;
+  return result.ok ? "" : result.reason.code;
 };
 
 const gate = (id: string) => ({ steps: [id], terms: [], gates: true });
@@ -52,21 +52,19 @@ describe("session phases", () => {
     expect(reviewing.phase).toBe("review");
     expect(run(reviewing, { type: "learner-message" }).phase).toBe("review");
     // The review comes first: the plan waits for the probe after it.
-    expect(rejected(reviewing, { type: "skip-to-plan" })).toBe(
-      "The review comes before the probe.",
-    );
-    expect(rejected(reviewing, { type: "probe-done" })).toBe("The review comes before the probe.");
+    expect(rejected(reviewing, { type: "skip-to-plan" })).toBe("review-before-probe");
+    expect(rejected(reviewing, { type: "probe-done" })).toBe("review-before-probe");
     const probing = run(reviewing, { type: "review-done" });
     expect(probing.phase).toBe("probe");
-    expect(rejected(probing, { type: "review-done" })).toBe("No review is under way.");
+    expect(rejected(probing, { type: "review-done" })).toBe("no-review");
   });
 
   it("writes no lesson before the plan is proposed and approved", () => {
     const planning = run(initialSession(), { type: "probe-done" });
-    expect(rejected(planning, { type: "plan-approved" })).toBe("There is no plan to approve yet.");
+    expect(rejected(planning, { type: "plan-approved" })).toBe("no-plan-to-approve");
     const proposed = run(planning, { type: "plan-proposed" });
     expect(rejected(proposed, { type: "lesson-ready", steps: LESSON_STEPS })).toBe(
-      "The plan hasn't been approved.",
+      "plan-not-approved",
     );
     const approved = run(proposed, { type: "plan-approved" });
     expect(approved.phase).toBe("lesson");
@@ -77,18 +75,16 @@ describe("session phases", () => {
     const proposed = run(initialSession(), { type: "probe-done" }, { type: "plan-proposed" });
     const revising = run(proposed, { type: "learner-message" });
     expect(revising.plan).toBe("revising");
-    expect(rejected(revising, { type: "plan-approved" })).toBe("There is no plan to approve yet.");
+    expect(rejected(revising, { type: "plan-approved" })).toBe("no-plan-to-approve");
   });
 
   it("keeps the chat closed to messages while the lesson is on", () => {
-    expect(rejected(inLesson(), { type: "learner-message" })).toBe(
-      "Questions during the lesson go in the margin.",
-    );
+    expect(rejected(inLesson(), { type: "learner-message" })).toBe("questions-in-margin");
   });
 
   it("assigns homework only once every check is resolved, then closes once it is reviewed or put off", () => {
     const lesson = inLesson();
-    expect(rejected(lesson, { type: "checks-complete" })).toBe("Some checks are still open.");
+    expect(rejected(lesson, { type: "checks-complete" })).toBe("checks-open");
     const done = run(
       lesson,
       { type: "check-verdict", stepId: "s1", verdict: "landed" },
@@ -97,34 +93,28 @@ describe("session phases", () => {
       { type: "checks-complete" },
     );
     expect(done.phase).toBe("homework");
-    expect(rejected(done, { type: "homework-handed-in" })).toBe(
-      "There is no homework to hand in yet.",
-    );
+    expect(rejected(done, { type: "homework-handed-in" })).toBe("no-homework-yet");
     const assigned = run(done, { type: "homework-assigned" });
     expect(assigned).toMatchObject({ phase: "homework", homework: "assigned" });
     // Handed in, the close waits for its review.
     const reviewing = run(assigned, { type: "homework-handed-in" });
     expect(reviewing).toMatchObject({ phase: "homework", homework: "reviewing" });
-    expect(rejected(reviewing, { type: "homework-later" })).toBe(
-      "There is no homework to hand in yet.",
-    );
+    expect(rejected(reviewing, { type: "homework-later" })).toBe("no-homework-yet");
     expect(run(reviewing, { type: "homework-reviewed" }).phase).toBe("close");
-    expect(rejected(assigned, { type: "homework-reviewed" })).toBe(
-      "There is no homework being reviewed.",
-    );
+    expect(rejected(assigned, { type: "homework-reviewed" })).toBe("no-homework-in-review");
     expect(run(assigned, { type: "homework-later" }, { type: "recap-done" }).phase).toBe("closed");
   });
 
   it("rejects everything once closed", () => {
     const closed: SessionState = { ...initialSession(), phase: "closed" };
-    expect(rejected(closed, { type: "learner-message" })).toBe("This session is closed.");
+    expect(rejected(closed, { type: "learner-message" })).toBe("session-closed");
   });
 });
 
 describe("checks and the gate", () => {
   it("takes checks in order: only the first open step can be answered", () => {
     expect(rejected(inLesson(), { type: "check-verdict", stepId: "s2", verdict: "landed" })).toBe(
-      "Step s2 isn't the step being checked.",
+      "step-not-checked",
     );
   });
 
@@ -148,7 +138,7 @@ describe("checks and the gate", () => {
     );
     expect(state.steps.s1).toEqual({ status: "open", misses: 2, offerGate: true });
     expect(rejected(state, { type: "check-verdict", stepId: "s1", verdict: "landed" })).toBe(
-      "Choose to pause or continue first.",
+      "pause-or-continue-first",
     );
   });
 
@@ -171,7 +161,7 @@ describe("checks and the gate", () => {
     expect(state.steps.s1).toMatchObject({ status: "unchecked" });
     expect(state.currentStep).toBe("s2");
     expect(rejected(state, { type: "check-verdict", stepId: "s1", verdict: "landed" })).toBe(
-      "Step s1 isn't the step being checked.",
+      "step-not-checked",
     );
     const next = run(state, { type: "check-verdict", stepId: "s2", verdict: "landed" });
     expect(next.currentStep).toBe("s4");
@@ -214,19 +204,15 @@ describe("checks and the gate", () => {
     );
     expect(paused.steps.s1).toMatchObject({ status: "paused", offerGate: false });
     expect(rejected(paused, { type: "check-verdict", stepId: "s1", verdict: "landed" })).toBe(
-      "This step is paused; resume it first.",
+      "step-paused",
     );
     const resumed = run(paused, { type: "resume" });
     expect(resumed.steps.s1).toEqual({ status: "open", misses: 0, offerGate: false });
   });
 
   it("only allows pause and continue when they were offered", () => {
-    expect(rejected(inLesson(), { type: "pause", stepId: "s1" })).toBe(
-      "Pausing wasn't offered for this step.",
-    );
-    expect(rejected(inLesson(), { type: "continue", stepId: "s1" })).toBe(
-      "Continuing wasn't offered for this step.",
-    );
+    expect(rejected(inLesson(), { type: "pause", stepId: "s1" })).toBe("pause-not-offered");
+    expect(rejected(inLesson(), { type: "continue", stepId: "s1" })).toBe("continue-not-offered");
   });
 });
 
@@ -263,15 +249,9 @@ describe("a failed lesson", () => {
   });
 
   it("is the only lesson that can be written again", () => {
-    expect(rejected(inLesson(), { type: "lesson-restarted" })).toBe(
-      "Only a lesson that failed can be written again.",
-    );
-    expect(rejected(inLesson(), { type: "lesson-resumed", from: "s1" })).toBe(
-      "Only a lesson that failed can be written again.",
-    );
-    expect(rejected(failed(), { type: "lesson-resumed", from: "s9" })).toBe(
-      "Step s9 isn't in this lesson.",
-    );
+    expect(rejected(inLesson(), { type: "lesson-restarted" })).toBe("only-failed-lesson");
+    expect(rejected(inLesson(), { type: "lesson-resumed", from: "s1" })).toBe("only-failed-lesson");
+    expect(rejected(failed(), { type: "lesson-resumed", from: "s9" })).toBe("step-not-in-lesson");
   });
 });
 
@@ -331,17 +311,15 @@ describe("the final", () => {
   it("takes answers in its audit and teach-back, then closes: no plan, lesson or homework", () => {
     const auditing = initialFinal(false);
     expect(run(auditing, { type: "learner-message" }).phase).toBe("audit");
-    expect(rejected(auditing, { type: "skip-to-plan" })).toBe("The final has no plan.");
-    expect(rejected(auditing, { type: "probe-done" })).toBe("The final has no plan.");
-    expect(rejected(auditing, { type: "teach-back-done" })).toBe("No teach-back is under way.");
-    expect(rejected(auditing, { type: "recap-done" })).toBe(
-      "The recap comes after the teach-back.",
-    );
+    expect(rejected(auditing, { type: "skip-to-plan" })).toBe("final-has-no-plan");
+    expect(rejected(auditing, { type: "probe-done" })).toBe("final-has-no-plan");
+    expect(rejected(auditing, { type: "teach-back-done" })).toBe("no-teach-back");
+    expect(rejected(auditing, { type: "recap-done" })).toBe("recap-after-teach-back");
     const teaching = run(auditing, { type: "audit-done" });
     expect(teaching.phase).toBe("teach-back");
     expect(run(teaching, { type: "learner-message" }).phase).toBe("teach-back");
-    expect(rejected(teaching, { type: "audit-done" })).toBe("No audit is under way.");
-    expect(rejected(teaching, { type: "checks-complete" })).toBe("There is no lesson to finish.");
+    expect(rejected(teaching, { type: "audit-done" })).toBe("no-audit");
+    expect(rejected(teaching, { type: "checks-complete" })).toBe("no-lesson-to-finish");
     const closed = run(teaching, { type: "teach-back-done" }, { type: "recap-done" });
     expect(closed).toMatchObject({ kind: "final", phase: "closed" });
   });
@@ -356,9 +334,7 @@ describe("the final", () => {
   });
 
   it("leaves a normal session's audit and teach-back events rejected", () => {
-    expect(rejected(initialSession(), { type: "audit-done" })).toBe("No audit is under way.");
-    expect(rejected(initialSession(), { type: "teach-back-done" })).toBe(
-      "No teach-back is under way.",
-    );
+    expect(rejected(initialSession(), { type: "audit-done" })).toBe("no-audit");
+    expect(rejected(initialSession(), { type: "teach-back-done" })).toBe("no-teach-back");
   });
 });

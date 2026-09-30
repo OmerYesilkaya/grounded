@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { Brand } from "./brand";
 import { DrawerButton, useHasDrawer } from "./track-drawer";
@@ -38,10 +39,11 @@ export function PageBar(props: {
  * nothing, outside the app's shell).
  */
 export function PhoneBar() {
+  const t = useT();
   if (!useHasDrawer()) return null;
   return (
     <PageBar className="md:hidden">
-      <Link to="/" aria-label="Grounded, home">
+      <Link to="/" aria-label={t.common.home}>
         <Brand className="text-base" />
       </Link>
     </PageBar>

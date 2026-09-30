@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { PageBar } from "@/components/page-bar";
+import { useT } from "@/i18n";
 import { api, ApiError } from "@/lib/api";
 
 interface ImportedLesson {
@@ -20,6 +21,7 @@ export function ImportedLessonPage({ trackId }: { trackId: string }) {
     queryFn: () => api<ImportedLesson>(`/api/tracks/${trackId}/imported-lesson`),
     staleTime: Infinity,
   });
+  const t = useT().track.imported;
 
   return (
     <main className="flex h-dvh flex-col">
@@ -30,12 +32,12 @@ export function ImportedLessonPage({ trackId }: { trackId: string }) {
             params={{ trackId }}
             className="touch-target relative px-1 text-sm whitespace-nowrap text-subtle-foreground hover:text-foreground"
           >
-            ← Track
+            {t.back}
           </Link>
         }
         end={
           <p className="truncate text-xs tracking-widest text-subtle-foreground uppercase">
-            Last lesson · from your earlier setup · read-only
+            {t.label}
           </p>
         }
       />
@@ -48,7 +50,7 @@ export function ImportedLessonPage({ trackId }: { trackId: string }) {
         />
       ) : lesson.error ? (
         <p className="px-6 pt-8 text-sm text-destructive">
-          {lesson.error instanceof ApiError ? lesson.error.message : "Couldn't load the lesson."}
+          {lesson.error instanceof ApiError ? lesson.error.message : t.failed}
         </p>
       ) : null}
     </main>

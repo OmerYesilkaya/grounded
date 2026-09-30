@@ -1,7 +1,8 @@
 import { parseBlocks, parseLesson, type LessonStep } from "@grounded/content";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "@/i18n";
 import { LessonView, type LessonViewProps, type StepProgress } from "./lesson-view";
 
 const LESSON = ["Adding one is three moves", "Two workers, one number", "Closing the gap"]
@@ -316,5 +317,31 @@ describe("LessonView: step timeline", () => {
 
     await user.click(within(nav).getByRole("button", { name: "Two workers, one number" }));
     expect(scrollIntoView).toHaveBeenCalled();
+  });
+});
+
+describe("LessonView: in Turkish", () => {
+  afterEach(() => {
+    act(() => {
+      setLanguage("en");
+    });
+    localStorage.clear();
+  });
+
+  it("says its own words in the app's language, and leaves the lesson's as written", () => {
+    act(() => {
+      setLanguage("tr");
+    });
+    renderLesson({
+      s1: { status: "settling", thread: [tutor("Close, but not the whole of it.", "missed")] },
+      s2: { status: "open", thread: [], offerGate: true },
+    });
+    expect(screen.getByText("Henüz oturuyor")).toBeInTheDocument();
+    expect(screen.getByText("Henüz tam değil")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Yine de devam et" })).toBeInTheDocument();
+    expect(
+      screen.getByText("3 adım daha · her biri, önceki kontrol sorusunu geçince açılır"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Adding one is three moves" })).toBeInTheDocument();
   });
 });

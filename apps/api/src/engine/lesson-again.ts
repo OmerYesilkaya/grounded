@@ -1,13 +1,14 @@
-import type { SessionState } from "@grounded/core";
+import { bare, type RefusalNotice, type SessionState } from "@grounded/core";
 import { and, checkMessages, eq, inArray, lessons, type Db } from "@grounded/db";
 import { publish } from "./events.js";
 import type { JobQueue } from "./queue.js";
 import { applyEvent, completeIfDone, loadSession } from "./session-store.js";
 import { unlessWorkedOn } from "./work-locks.js";
 
-export type LessonAgainResult = { ok: true; state: SessionState } | { ok: false; reason: string };
+export type LessonAgainResult =
+  { ok: true; state: SessionState } | { ok: false; reason: RefusalNotice };
 
-const ONLY_FAILED = "Only a lesson that failed can be written again.";
+const ONLY_FAILED = bare("only-failed-lesson");
 
 /**
  * Writes a failed lesson again (design §4.2): `rest` keeps its outline and the steps written before
@@ -32,7 +33,7 @@ export async function writeLessonAgain(
       ? writeRest(db, queue, sessionId, lesson)
       : startOver(db, queue, sessionId);
   });
-  return result ?? { ok: false, reason: "The tutor is still at work here. Try again in a moment." };
+  return result ?? { ok: false, reason: bare("tutor-busy") };
 }
 
 async function writeRest(
@@ -41,8 +42,7 @@ async function writeRest(
   sessionId: string,
   lesson: typeof lessons.$inferSelect | undefined,
 ): Promise<LessonAgainResult> {
-  if (!lesson?.outline)
-    return { ok: false, reason: "The lesson has no outline yet: start it over instead." };
+  if (!lesson?.outline) return { ok: false, reason: bare("no-outline") };
   const ids = lesson.outline.steps.map((_, i) => `s${String(i + 1)}`);
   const written = new Set(lesson.steps.map((s) => s.id));
   const missing = ids.findIndex((id) => !written.has(id));

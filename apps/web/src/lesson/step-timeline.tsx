@@ -1,5 +1,6 @@
 import type { LessonStep } from "@grounded/content";
 import { Inlines } from "@/content/inlines";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { StepProgress } from "./types";
 
@@ -11,10 +12,11 @@ export function StepTimeline(props: {
   onJump: (stepId: string) => void;
 }) {
   const { steps, lockedCount, currentStepId, progress, onJump } = props;
+  const t = useT().lesson.steps;
   const dot = "absolute top-[9px] -left-[19px] size-[9px] rounded-full border";
   return (
     <nav
-      aria-label="Lesson steps"
+      aria-label={t.timeline}
       className="relative pl-5 font-sans text-[13px] before:absolute before:top-2 before:bottom-2 before:left-[5px] before:w-px before:bg-border-strong"
     >
       <ol>
@@ -43,14 +45,14 @@ export function StepTimeline(props: {
               >
                 <Inlines inlines={step.heading} />
               </button>
-              {settling && <span className="ml-1 text-[11.5px] text-primary">· settling</span>}
+              {settling && <span className="ml-1 text-[11.5px] text-primary">{t.settling}</span>}
             </li>
           );
         })}
         {Array.from({ length: lockedCount }, (_, i) => (
           <li
             key={`locked-${String(i)}`}
-            aria-label="Locked step"
+            aria-label={t.locked}
             className="relative py-[5px] text-subtle-foreground"
           >
             <span className={cn(dot, "border-border-strong bg-background")} />

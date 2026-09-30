@@ -5,6 +5,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { ImagePlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { liveProps, LivePropsExtension, useLiveProps } from "./live-props";
 import { AnswerBlockMath, AnswerInlineMath } from "./math";
@@ -32,6 +33,7 @@ export function AnswerEditor(props: {
 }) {
   const [pending, setPending] = useState(0);
   const picker = useRef<HTMLInputElement>(null);
+  const t = useT().homework;
 
   // Made once: a new editor would start again from `initial`. Its extensions read the latest
   // props (live-props.ts).
@@ -76,6 +78,11 @@ export function AnswerEditor(props: {
     editor.setEditable(!props.readOnly);
   }, [editor, props.readOnly]);
 
+  // The name is set as the editor is made; kept in step when it changes (the app's language).
+  useEffect(() => {
+    editor.view.dom.setAttribute("aria-label", props.label);
+  }, [editor, props.label]);
+
   return (
     <div
       className={cn(
@@ -89,9 +96,7 @@ export function AnswerEditor(props: {
       {!props.readOnly && (
         <div className="flex items-center gap-3 px-3.5 pb-2 text-[11.5px] text-subtle-foreground">
           <span className="min-w-0 flex-1 truncate">
-            {pending > 0
-              ? "Adding the picture…"
-              : "**bold** · `code` · ``` code block · $x^2$ maths · paste a photo"}
+            {pending > 0 ? t.addingPicture : t.editorHint}
           </span>
           {props.upload && (
             <>
@@ -101,7 +106,7 @@ export function AnswerEditor(props: {
                 className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50"
               >
                 <ImagePlus className="size-3.5" aria-hidden />
-                Add a picture
+                {t.addPicture}
               </button>
               <input
                 ref={picker}

@@ -172,11 +172,7 @@ export async function composeReply(
       if (attempt > 0) log.info({ ...logFields, attempt }, "reply came back empty; asking again");
       // Thinking lasts until the text starts: from then on the learner watches it being written.
       const thinking = shown
-        ? await startActivity(
-            db,
-            sessionId,
-            attempt === 0 ? "Thinking…" : "Thinking again (the reply came back empty)",
-          )
+        ? await startActivity(db, sessionId, { code: "thinking", again: attempt > 0 })
         : unseen;
       try {
         const reply = streamText({
@@ -199,8 +195,7 @@ export async function composeReply(
       }
     }
   });
-  if (isBlank(text))
-    throw new ProviderCallError("unknown", "The tutor's reply came back empty. Try again.");
+  if (isBlank(text)) throw new ProviderCallError("unknown", { code: "empty-reply" });
 
   const first = chatIssues(text, surface, options.terms, options.introduced);
   let { blocks } = first;
@@ -225,7 +220,7 @@ export async function composeReply(
       "message broke rules; rewriting it",
     );
     const rewrite = shown
-      ? await withActivity(db, sessionId, "Rewriting the message (it broke a chat rule)", () =>
+      ? await withActivity(db, sessionId, { code: "rewriting-message" }, () =>
           rewritten(options, text, first.errors),
         )
       : await rewritten(options, text, first.errors);

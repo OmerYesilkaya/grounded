@@ -1,4 +1,5 @@
 import { queryOptions } from "@tanstack/react-query";
+import type { Formats } from "@/i18n";
 import { api } from "./api";
 
 /** What a set of model calls used (api: routes/usage.ts). */
@@ -32,24 +33,28 @@ export const usageQuery = queryOptions({
     ),
 });
 
-/** "$3.42", "<$0.01", or "—" when nothing had a price. */
-export function formatCost(usd: number | null): string {
+const USD = { style: "currency", currency: "USD" } as const;
+
+/** "$3.42", "<$0.01", or "—" when nothing had a price; in the app's language ("$3,42"). */
+export function formatCost(usd: number | null, format: Formats): string {
   if (usd === null) return "—";
-  if (usd > 0 && usd < 0.01) return "<$0.01";
-  return new Intl.NumberFormat("en", { style: "currency", currency: "USD" }).format(usd);
+  if (usd > 0 && usd < 0.01) return `<${format.number(0.01, USD)}`;
+  return format.number(usd, USD);
 }
 
-const compact = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
-
-/** "1.2M", "840K", "96". */
-export function formatTokens(tokens: number): string {
-  return compact.format(tokens);
+/** "1.2M", "840K", "96"; in Turkish "1,2 Mn", "840 B". */
+export function formatTokens(tokens: number, format: Formats): string {
+  return format.number(tokens, { notation: "compact", maximumFractionDigits: 1 });
 }
 
-/** "September 2026" for "2026-09". */
-export function monthName(month: string, options: { year?: boolean } = {}): string {
+/** "September 2026" for "2026-09"; "Eylül 2026" in Turkish. */
+export function monthName(
+  month: string,
+  format: Formats,
+  options: { year?: boolean } = {},
+): string {
   const [year, index] = month.split("-").map(Number);
-  return new Date(Date.UTC(year ?? 1970, (index ?? 1) - 1, 1)).toLocaleDateString("en", {
+  return format.date(Date.UTC(year ?? 1970, (index ?? 1) - 1, 1), {
     month: "long",
     ...(options.year === false ? {} : { year: "numeric" }),
     timeZone: "UTC",

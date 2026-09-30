@@ -8,6 +8,10 @@ import {
   snoozeUntil,
   SNOOZES,
   type TaskAnswer,
+  bare,
+  isNotice,
+  refusal,
+  type RefusalNotice,
 } from "@grounded/core";
 import {
   and,
@@ -42,6 +46,7 @@ import { loadSession } from "../engine/session-store.js";
 import { imageType } from "../files/attachments.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
 import { addLogContext } from "../log.js";
+import { notFound, refuse } from "../refusals.js";
 
 interface Env {
   Variables: { user: { id: string; email: string } };
@@ -87,7 +92,7 @@ export function registerAssignmentRoutes(
       .select({ submittedAt: assignments.submittedAt, subsumedBy: assignments.subsumedBy })
       .from(assignments)
       .where(eq(assignments.id, assignmentId));
-    return (row && closedReason(row)) ?? "This homework is closed.";
+    return (row && closedReason(row)) ?? bare("homework-closed");
   };
 
   const answersOf = async (assignmentId: string) => {
@@ -105,7 +110,7 @@ export function registerAssignmentRoutes(
   const changeAnswer = (
     assignment: AssignmentRow,
     taskId: string,
-    change: (answer: TaskAnswer) => TaskAnswer | string,
+    change: (answer: TaskAnswer) => TaskAnswer | RefusalNotice,
   ) =>
     db.transaction(async (tx) => {
       await tx.insert(submissions).values({ assignmentId: assignment.id }).onConflictDoNothing();
@@ -123,7 +128,7 @@ export function registerAssignmentRoutes(
       if (closed) return closed;
       const answers = row?.answers ?? {};
       const changed = change(answers[taskId] ?? { fields: {}, lockedAt: null });
-      if (typeof changed === "string") return changed;
+      if (isNotice(changed)) return changed;
       await tx
         .update(submissions)
         .set({ answers: { ...answers, [taskId]: changed } })
@@ -133,7 +138,7 @@ export function registerAssignmentRoutes(
 
   app.get("/api/assignments/:id", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     // The cursor of its session's log, read first: the page follows that log from here (its
     // review arrives there), and anything published meanwhile is replayed, not skipped.
     const [last] = await db
@@ -201,71 +206,70 @@ export function registerAssignmentRoutes(
   // One task's answer as the learner has written it so far: saved as they write.
   app.put("/api/assignments/:id/answers", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const parsed = answerInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Write an answer first." }, 400);
+    if (!parsed.success) return c.json(refuse("write-answer"), 400);
     const task = assignment.tasks.find((t) => t.id === parsed.data.taskId);
-    if (!task) return c.json({ error: "That task isn't in this assignment." }, 404);
+    if (!task) return c.json(refuse("task-not-in-assignment"), 404);
     const saved = await changeAnswer(assignment, task.id, (answer) => {
       const fields = parsed.data.fields;
       if (task.form === "predict") {
         // A locked prediction stands as it was locked; what comes after it waits for the lock.
         if (answer.lockedAt && (fields.prediction ?? "") !== (answer.fields.prediction ?? ""))
-          return "Your prediction is locked.";
+          return bare("prediction-locked");
         if (!answer.lockedAt && AFTER_THE_LOCK.some((key) => fields[key]?.trim()))
-          return "Lock your prediction before you check it.";
+          return { code: "lock-prediction-first", part: null };
       }
       const next = { ...answer, fields };
       return answerProblem(task, next, { complete: false }) ?? next;
     });
-    if (typeof saved === "string") return c.json({ error: saved }, 409);
+    if (isNotice(saved)) return c.json(refusal(saved), 409);
     return c.json(saved);
   });
 
   // Predict → verify: the prediction locks, with the time, before the learner checks it.
   app.post("/api/assignments/:id/tasks/:taskId/lock", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const task = assignment.tasks.find((t) => t.id === c.req.param("taskId"));
-    if (task?.form !== "predict") return c.json({ error: "There is no prediction to lock." }, 404);
+    if (task?.form !== "predict") return c.json(refuse("no-prediction-to-lock"), 404);
     const locked = await changeAnswer(assignment, task.id, (answer) => {
       if (answer.lockedAt) return answer;
-      if (!answer.fields.prediction?.trim()) return "Write your prediction first.";
+      if (!answer.fields.prediction?.trim()) return bare("write-prediction-first");
       return { ...answer, lockedAt: new Date().toISOString() };
     });
-    if (typeof locked === "string") return c.json({ error: locked }, 409);
+    if (isNotice(locked)) return c.json(refusal(locked), 409);
     return c.json(locked);
   });
 
+  const PICTURE_TOO_LARGE = refusal({
+    code: "picture-too-large",
+    megabytes: ATTACHMENT_LIMITS.imageBytes / (1024 * 1024),
+  });
   const pictureLimit = bodyLimit({
     maxSize: ATTACHMENT_LIMITS.imageBytes + 64 * 1024,
-    onError: (c) => c.json({ error: "A picture can be at most 5 MB." }, 413),
+    onError: (c) => c.json(PICTURE_TOO_LARGE, 413),
   });
 
   // A picture for an answer (a photo of a notebook page): stored, then linked from the markdown.
   app.post("/api/assignments/:id/files", pictureLimit, async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const closed = closedReason(assignment);
-    if (closed) return c.json({ error: closed }, 409);
+    if (closed) return c.json(refusal(closed), 409);
     const form = await c.req.parseBody().catch(() => null);
     const file = form?.file;
-    if (!(file instanceof File)) return c.json({ error: "Choose a picture." }, 400);
+    if (!(file instanceof File)) return c.json(refuse("choose-picture"), 400);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mediaType = imageType(bytes);
-    if (!mediaType)
-      return c.json({ error: "Only pictures (PNG, JPEG, WebP or GIF) can go in an answer." }, 400);
-    if (bytes.length > ATTACHMENT_LIMITS.imageBytes)
-      return c.json({ error: "A picture can be at most 5 MB." }, 413);
+    if (!mediaType) return c.json(refuse("pictures-only"), 400);
+    if (bytes.length > ATTACHMENT_LIMITS.imageBytes) return c.json(PICTURE_TOO_LARGE, 413);
     const [count] = await db
       .select({ n: sql<number>`count(*)::int` })
       .from(answerFiles)
       .where(eq(answerFiles.assignmentId, assignment.id));
     if ((count?.n ?? 0) >= ANSWER_LIMITS.pictures)
-      return c.json(
-        { error: `At most ${String(ANSWER_LIMITS.pictures)} pictures can go in one assignment.` },
-        409,
-      );
+      return c.json(refusal({ code: "pictures-too-many", max: ANSWER_LIMITS.pictures }), 409);
     const id = uuidv7();
     const storageKey = `tracks/${assignment.trackId}/answers/${id}`;
     // The bytes first, so a row never names bytes that aren't there.
@@ -284,18 +288,17 @@ export function registerAssignmentRoutes(
   app.get("/api/assignments/:id/files/:fileId", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
     const fileId = c.req.param("fileId");
-    if (!assignment || !z.uuid().safeParse(fileId).success)
-      return c.json({ error: "Not found." }, 404);
+    if (!assignment || !z.uuid().safeParse(fileId).success) return c.json(notFound, 404);
     const [file] = await db
       .select()
       .from(answerFiles)
       .where(and(eq(answerFiles.id, fileId), eq(answerFiles.assignmentId, assignment.id)));
-    if (!file) return c.json({ error: "Not found." }, 404);
+    if (!file) return c.json(notFound, 404);
     let bytes: Uint8Array;
     try {
       bytes = await files.get(file.storageKey);
     } catch (error) {
-      if (error instanceof FileNotFound) return c.json({ error: "Not found." }, 404);
+      if (error instanceof FileNotFound) return c.json(notFound, 404);
       throw error;
     }
     return c.body(bytes.slice(), 200, {
@@ -310,13 +313,13 @@ export function registerAssignmentRoutes(
   // Handing it in: whole, never half-done (method.md, "The arc exam").
   app.post("/api/assignments/:id/submit", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const closed = closedReason(assignment);
-    if (closed) return c.json({ error: closed }, 409);
+    if (closed) return c.json(refusal(closed), 409);
     const answers = await answersOf(assignment.id);
     for (const task of assignment.tasks) {
       const problem = answerProblem(task, answers[task.id], { complete: true });
-      if (problem) return c.json({ error: problem }, 409);
+      if (problem) return c.json(refusal(problem), 409);
     }
     const [submitted] = await db
       .update(assignments)
@@ -329,7 +332,7 @@ export function registerAssignmentRoutes(
         ),
       )
       .returning();
-    if (!submitted) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
+    if (!submitted) return c.json(refusal(await closedMeanwhile(assignment.id)), 409);
     await publishAssignment(db, submitted);
     // Its session, if it waits for it, now waits for the review, which starts at once (design §7.4).
     await closeAfterHomework(db, deps.queue, submitted, "homework-handed-in");
@@ -344,15 +347,15 @@ export function registerAssignmentRoutes(
    */
   app.post("/api/assignments/:id/later", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const closed = closedReason(assignment);
-    if (closed) return c.json({ error: closed }, 409);
+    if (closed) return c.json(refusal(closed), 409);
     const parsed = laterInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Choose when: tonight or tomorrow." }, 400);
+    if (!parsed.success) return c.json(refuse("choose-when"), 400);
     const until = snoozeUntil(parsed.data.snooze, new Date(), parsed.data.timeZone);
-    if (!until) return c.json({ error: "Tonight is over; choose tomorrow." }, 409);
+    if (!until) return c.json(refuse("tonight-over"), 409);
     const snoozed = await snoozeAssignment(db, assignment, until);
-    if (!snoozed) return c.json({ error: await closedMeanwhile(assignment.id) }, 409);
+    if (!snoozed) return c.json(refusal(await closedMeanwhile(assignment.id)), 409);
     await closeAfterHomework(db, deps.queue, snoozed, "homework-later");
     return c.json({ snoozedUntil: until.toISOString() });
   });
@@ -360,25 +363,24 @@ export function registerAssignmentRoutes(
   // A review that failed, started again (design §7.4).
   app.post("/api/assignments/:id/review", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
-    if (!assignment.submittedAt) return c.json({ error: "Hand it in first." }, 409);
+    if (!assignment) return c.json(notFound, 404);
+    if (!assignment.submittedAt) return c.json(refuse("hand-in-first"), 409);
     if (!(await startReview(db, deps.queue, assignment)))
-      return c.json({ error: "It is being reviewed already." }, 409);
+      return c.json(refuse("being-reviewed"), 409);
     return c.json({ reviewing: true }, 202);
   });
 
   // A reply in a comment's card: the tutor answers it there. One at a time, while the leak is open.
   app.post("/api/assignments/:id/review/comments/:commentId/replies", async (c) => {
     const assignment = await ownAssignment(c.get("user").id, c.req.param("id"));
-    if (!assignment) return c.json({ error: "Not found." }, 404);
+    if (!assignment) return c.json(notFound, 404);
     const review = await loadReview(db, assignment.id);
     const comment = review?.comments.find((m) => m.id === c.req.param("commentId"));
-    if (review?.status !== "done" || !comment) return c.json({ error: "Not found." }, 404);
+    if (review?.status !== "done" || !comment) return c.json(notFound, 404);
     const parsed = replyInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: "Write your reply first." }, 400);
-    if (comment.resolvedAt) return c.json({ error: "You've found this one already." }, 409);
-    if (waitingReply(comment.messages))
-      return c.json({ error: "Your last reply is being answered." }, 409);
+    if (!parsed.success) return c.json(refuse("write-reply"), 400);
+    if (comment.resolvedAt) return c.json(refuse("found-already"), 409);
+    if (waitingReply(comment.messages)) return c.json(refuse("reply-being-answered"), 409);
     const message = await recordReviewMessage(db, assignment, comment.id, {
       role: "learner",
       text: parsed.data.text,

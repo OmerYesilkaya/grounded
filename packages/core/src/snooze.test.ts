@@ -49,7 +49,7 @@ describe("dueTag", () => {
     expect(dueTag(new Date("2026-09-29T17:00:00Z"), now, ISTANBUL)).toBe("tonight");
     expect(dueTag(new Date("2026-09-29T12:00:00Z"), now, ISTANBUL)).toBe("today");
     expect(dueTag(new Date("2026-09-30T06:00:00Z"), now, ISTANBUL)).toBe("tomorrow");
-    expect(dueTag(new Date("2026-10-03T06:00:00Z"), now, ISTANBUL, "en-GB")).toBe("3 Oct");
+    expect(dueTag(new Date("2026-10-03T06:00:00Z"), now, ISTANBUL)).toBe("later");
   });
 
   it("says due once its time has come", () => {

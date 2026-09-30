@@ -1,29 +1,5 @@
-import type { SessionItem, TrackItem, TrackSummary } from "./tracks";
-
-/** Where an open session stands, when its lesson's terms can't say what it is about yet. */
-const UNDER_WAY: Record<SessionItem["phase"], string> = {
-  review: "Looking back at last time",
-  probe: "Finding where you start",
-  plan: "Choosing what comes next",
-  lesson: "The lesson is being written",
-  homework: "Homework",
-  audit: "The final",
-  "teach-back": "The final",
-  close: "Wrapping up",
-  closed: "Finished",
-};
-
-const PHASE: Record<SessionItem["phase"], string> = {
-  review: "looking back",
-  probe: "getting started",
-  plan: "planning",
-  lesson: "lesson",
-  homework: "homework",
-  audit: "fresh audit",
-  "teach-back": "teach-back",
-  close: "wrapping up",
-  closed: "done",
-};
+import type { Messages } from "@/i18n";
+import type { TrackItem, TrackSummary } from "./tracks";
 
 /**
  * What an item's row says (design §9.2): what it is about, over what it is. A session shows its
@@ -33,35 +9,36 @@ const PHASE: Record<SessionItem["phase"], string> = {
  * "Arc exam · session 4" (and "· handed in"). The final, which has no lesson, is "The final" over
  * "Session 7 · final", or what it is at while under way.
  */
-export function describeItem(item: TrackItem): { title: string; meta: string } {
+export function describeItem(item: TrackItem, t: Messages): { title: string; meta: string } {
+  const words = t.sidebar.item;
   if (item.kind === "exam")
     return {
       title: item.title,
-      meta: `Arc exam · session ${String(item.session)}${item.done ? " · handed in" : ""}`,
+      meta: `${words.exam(item.session)}${item.done ? words.handedIn : ""}`,
     };
   if (item.kind === "homework")
     return {
       title: item.title,
-      meta: `Homework · session ${String(item.session)}${
+      meta: `${words.homework(item.session)}${
         item.foldedInto !== null
-          ? ` · folded into session ${String(item.foldedInto)}`
+          ? words.foldedInto(item.foldedInto)
           : item.done
-            ? " · handed in"
+            ? words.handedIn
             : ""
       }`,
     };
-  const number = `Session ${String(item.number)}`;
+  const number = t.common.session(item.number);
   if (item.final)
     return {
-      title: "The final",
-      meta: item.done ? `${number} · final` : `${number} · ${PHASE[item.phase]}`,
+      title: words.theFinal,
+      meta: item.done ? `${number} · ${words.final}` : `${number} · ${words.phase[item.phase]}`,
     };
   if (item.lessonTitle === null && item.terms.length === 0)
-    return { title: UNDER_WAY[item.phase], meta: number };
+    return { title: words.underWay[item.phase], meta: number };
   const terms = item.terms.join(", ");
   return {
     title: item.lessonTitle ?? terms.charAt(0).toLocaleUpperCase() + terms.slice(1),
-    meta: item.done ? number : `${number} · ${PHASE[item.phase]}`,
+    meta: item.done ? number : `${number} · ${words.phase[item.phase]}`,
   };
 }
 
@@ -104,7 +81,7 @@ export interface Found {
  * name holds them all is found whole; otherwise it is found for the items that hold them (the
  * track's name counting towards each item, so "sql joins" finds the joins lesson of the SQL track).
  */
-export function searchTracks(tracks: readonly TrackSummary[], query: string): Found[] {
+export function searchTracks(tracks: readonly TrackSummary[], query: string, t: Messages): Found[] {
   const words = folded(query).split(/\s+/).filter(Boolean);
   if (words.length === 0) return tracks.map((track) => ({ track, items: null }));
   const holdsAll = (text: string) => {
@@ -114,7 +91,7 @@ export function searchTracks(tracks: readonly TrackSummary[], query: string): Fo
   return tracks.flatMap((track): Found[] => {
     if (holdsAll(track.title)) return [{ track, items: null }];
     const items = track.items.filter((item) => {
-      const { title, meta } = describeItem(item);
+      const { title, meta } = describeItem(item, t);
       // A lesson is found by the terms it teaches too, which its title doesn't show; an exam by
       // the arcs it covers.
       const terms =

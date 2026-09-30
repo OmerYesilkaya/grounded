@@ -1,11 +1,16 @@
+import type { RefusalNotice } from "@grounded/core/notices";
 import { FileText, Image, X } from "lucide-react";
+import { useFormat, useT, type Formats, type Messages } from "@/i18n";
+import { wordNotice } from "@/i18n/notice";
 import { cn } from "@/lib/utils";
 
-/** "340 KB", "2.1 MB". */
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${String(bytes)} B`;
-  if (bytes < 1024 * 1024) return `${String(Math.round(bytes / 1024))} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+/** "340 KB", "2.1 MB" ("2,1 MB" in Turkish). */
+export function formatSize(bytes: number, t: Messages["session"], format: Formats): string {
+  if (bytes < 1024) return t.attachment.bytes(format.number(bytes));
+  if (bytes < 1024 * 1024) return t.attachment.kilobytes(format.number(Math.round(bytes / 1024)));
+  return t.attachment.megabytes(
+    format.number(bytes / (1024 * 1024), { minimumFractionDigits: 1, maximumFractionDigits: 1 }),
+  );
 }
 
 export interface AttachmentChipProps {
@@ -15,24 +20,27 @@ export interface AttachmentChipProps {
   /** A thumbnail for an image. */
   preview?: string | null;
   /** Why the file can't be attached; the chip shows it in place of the size. */
-  problem?: string | null;
+  problem?: RefusalNotice | null;
   onRemove?: () => void;
   /** Opens or downloads the file. */
   href?: string;
 }
 
 /**
- * A problem without the file's name, which the chip shows just above it: "budget.xlsx: only
- * images…" reads "Only images…", "scan.png is larger than 5 MB." reads "Larger than 5 MB.".
+ * A problem without the file's name, which the chip shows just above it: "Only images…",
+ * "Larger than 5 MB."; anything else as the API words it.
  */
-export function reasonOnly(problem: string, name: string): string {
-  for (const prefix of [`${name}: `, `${name} is `, `${name} `]) {
-    if (problem.startsWith(prefix)) {
-      const rest = problem.slice(prefix.length);
-      return rest.charAt(0).toUpperCase() + rest.slice(1);
-    }
+export function reasonOnly(problem: RefusalNotice, t: Messages, format: Formats): string {
+  switch (problem.code) {
+    case "attachment-kind":
+      return t.session.attachment.kind;
+    case "attachment-empty":
+      return t.session.attachment.empty;
+    case "attachment-too-large":
+      return t.session.attachment.tooLarge(format.number(problem.megabytes));
+    default:
+      return wordNotice(problem, t);
   }
-  return problem;
 }
 
 /** A file attached to a message or a track: its kind, name and size, and a way to remove it. */
@@ -46,6 +54,9 @@ export function AttachmentChip({
   href,
 }: AttachmentChipProps) {
   const Icon = image ? Image : FileText;
+  const all = useT();
+  const t = all.session;
+  const format = useFormat();
   const label = (
     <>
       {preview ? (
@@ -63,14 +74,14 @@ export function AttachmentChip({
             problem ? "text-destructive" : "text-subtle-foreground",
           )}
         >
-          {problem ? reasonOnly(problem, name) : formatSize(size)}
+          {problem ? reasonOnly(problem, all, format) : formatSize(size, t, format)}
         </span>
       </span>
     </>
   );
   return (
     <li
-      title={problem ?? name}
+      title={problem ? wordNotice(problem, all) : name}
       className={cn(
         "flex max-w-full min-w-0 items-center gap-2 rounded-lg border bg-background py-1 pr-1 pl-1",
         problem && "border-destructive/60",
@@ -87,7 +98,7 @@ export function AttachmentChip({
       {onRemove && (
         <button
           type="button"
-          aria-label={`Remove ${name}`}
+          aria-label={t.attachment.remove(name)}
           onClick={onRemove}
           className="ml-1 flex size-6 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
         >

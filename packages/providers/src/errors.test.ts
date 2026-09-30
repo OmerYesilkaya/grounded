@@ -103,27 +103,15 @@ describe("classifyProviderError", () => {
     expect(classifyProviderError(provider, failure).kind).toBe(kind);
   });
 
-  it("says what to do, naming the provider", () => {
-    expect(classifyProviderError("anthropic", http(401, {})).message).toBe(
-      "Your Anthropic key was rejected. Check it in Settings, or create a new one on Anthropic's site.",
-    );
-    expect(
-      classifyProviderError("openai", http(429, { error: { code: "insufficient_quota" } })).message,
-    ).toBe(
-      "Your OpenAI account is out of credit. Add credit or raise your spending limit on OpenAI's site.",
-    );
-    expect(classifyProviderError("google", http(429, {})).message).toBe(
-      "Google is limiting requests right now. Wait a minute, then try again.",
-    );
-    expect(classifyProviderError("deepseek", http(402, {})).message).toBe(
-      "Your DeepSeek account is out of credit. Add credit or raise your spending limit on DeepSeek's site.",
-    );
-    expect(classifyProviderError("openai", { cause: new Error("ECONNRESET") }).message).toBe(
-      "OpenAI couldn't be reached. Try again in a moment.",
-    );
-    expect(classifyProviderError("openai", { timedOut: true }).message).toBe(
-      "OpenAI is taking too long. Try again in a moment.",
-    );
+  it("names the provider as the learner knows it; the web words the rest", () => {
+    expect(classifyProviderError("anthropic", http(401, {}))).toEqual({
+      kind: "invalid-key",
+      provider: "Anthropic",
+    });
+    expect(classifyProviderError("deepseek", http(402, {}))).toEqual({
+      kind: "no-credit",
+      provider: "DeepSeek",
+    });
   });
 
   it("reads the AI SDK's call errors", () => {

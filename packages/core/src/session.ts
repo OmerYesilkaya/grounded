@@ -1,3 +1,5 @@
+import { bare, type BareRefusalCode, type RefusalNotice } from "./notices.js";
+
 /**
  * A session's phases (design §7.1): review → probe → plan → lesson → homework → close. The final
  * (§7.4) has its own two between the review and the close: the fresh audit, then the teach-back.
@@ -93,7 +95,8 @@ export type SessionEvent =
   | { type: "homework-later" }
   | { type: "recap-done" };
 
-export type TransitionResult = { ok: true; state: SessionState } | { ok: false; reason: string };
+export type TransitionResult =
+  { ok: true; state: SessionState } | { ok: false; reason: RefusalNotice };
 
 /** The jobs a session can wait on that the learner can't set going again by writing. */
 export type AwaitedJob =
@@ -171,47 +174,41 @@ export function transition(state: SessionState, event: SessionEvent): Transition
     ok: true,
     state: { ...state, ...next },
   });
-  const no = (reason: string): TransitionResult => ({ ok: false, reason });
-  if (state.phase === "closed") return no("This session is closed.");
+  const no = (code: BareRefusalCode): TransitionResult => ({ ok: false, reason: bare(code) });
+  if (state.phase === "closed") return no("session-closed");
 
   switch (event.type) {
     case "learner-message":
       if (TALKING.includes(state.phase)) return ok({});
       if (state.phase === "plan") return ok({ plan: state.plan === "none" ? "none" : "revising" });
-      if (state.phase === "lesson") return no("Questions during the lesson go in the margin.");
-      return no("The session isn't taking messages now.");
+      if (state.phase === "lesson") return no("questions-in-margin");
+      return no("not-taking-messages");
 
     case "review-done":
-      if (state.phase !== "review") return no("No review is under way.");
+      if (state.phase !== "review") return no("no-review");
       return ok({ phase: state.kind === "final" ? "audit" : "probe" });
 
     case "audit-done":
-      return state.phase === "audit" ? ok({ phase: "teach-back" }) : no("No audit is under way.");
+      return state.phase === "audit" ? ok({ phase: "teach-back" }) : no("no-audit");
 
     case "teach-back-done":
-      return state.phase === "teach-back"
-        ? ok({ phase: "close" })
-        : no("No teach-back is under way.");
+      return state.phase === "teach-back" ? ok({ phase: "close" }) : no("no-teach-back");
 
     case "probe-done":
     case "skip-to-plan":
-      if (state.kind === "final") return no("The final has no plan.");
-      if (state.phase === "review") return no("The review comes before the probe.");
-      return state.phase === "probe" ? ok({ phase: "plan" }) : no("The probe is already over.");
+      if (state.kind === "final") return no("final-has-no-plan");
+      if (state.phase === "review") return no("review-before-probe");
+      return state.phase === "probe" ? ok({ phase: "plan" }) : no("probe-over");
 
     case "plan-proposed":
-      return state.phase === "plan"
-        ? ok({ plan: "proposed" })
-        : no("Plans are proposed during planning.");
+      return state.phase === "plan" ? ok({ plan: "proposed" }) : no("not-planning");
 
     case "plan-approved":
-      if (state.phase !== "plan" || state.plan !== "proposed")
-        return no("There is no plan to approve yet.");
+      if (state.phase !== "plan" || state.plan !== "proposed") return no("no-plan-to-approve");
       return ok({ phase: "lesson", plan: "approved", lesson: { status: "generating", steps: [] } });
 
     case "lesson-ready": {
-      if (state.plan !== "approved" || state.phase !== "lesson")
-        return no("The plan hasn't been approved.");
+      if (state.plan !== "approved" || state.phase !== "lesson") return no("plan-not-approved");
       const steps = Object.fromEntries(event.steps.map((s) => [s.id, unread(s)]));
       return ok({
         lesson: { status: "ready", steps: event.steps },
@@ -223,16 +220,16 @@ export function transition(state: SessionState, event: SessionEvent): Transition
     case "lesson-failed":
       return state.phase === "lesson"
         ? ok({ lesson: { ...state.lesson, status: "failed" } })
-        : no("No lesson is being written.");
+        : no("no-lesson-being-written");
 
     case "lesson-resumed": {
       if (state.phase !== "lesson" || state.lesson.status !== "failed")
-        return no("Only a lesson that failed can be written again.");
+        return no("only-failed-lesson");
       const at =
         event.from === null
           ? state.lesson.steps.length
           : state.lesson.steps.findIndex((s) => s.id === event.from);
-      if (at === -1) return no(`Step ${String(event.from)} isn't in this lesson.`);
+      if (at === -1) return no("step-not-in-lesson");
       // The steps written again start over; the ones before them keep where the learner got to.
       const steps = { ...state.steps };
       for (const s of state.lesson.steps.slice(at)) steps[s.id] = unread(s);
@@ -246,17 +243,15 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
     case "lesson-restarted":
       if (state.phase !== "lesson" || state.lesson.status !== "failed")
-        return no("Only a lesson that failed can be written again.");
+        return no("only-failed-lesson");
       return ok({ lesson: { status: "generating", steps: [] }, steps: {}, currentStep: null });
 
     case "check-verdict": {
       const step = state.steps[event.stepId];
-      if (state.phase !== "lesson" || !step)
-        return no(`Step ${event.stepId} isn't in this lesson.`);
-      if (step.status === "paused") return no("This step is paused; resume it first.");
-      if (event.stepId !== state.currentStep)
-        return no(`Step ${event.stepId} isn't the step being checked.`);
-      if (step.offerGate) return no("Choose to pause or continue first.");
+      if (state.phase !== "lesson" || !step) return no("step-not-in-lesson");
+      if (step.status === "paused") return no("step-paused");
+      if (event.stepId !== state.currentStep) return no("step-not-checked");
+      if (step.offerGate) return no("pause-or-continue-first");
       if (event.verdict === "landed")
         return advance(state, event.stepId, { ...step, status: "passed" });
       const misses = step.misses + 1;
@@ -272,7 +267,7 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
     case "pause": {
       const step = state.steps[event.stepId];
-      if (!step?.offerGate) return no("Pausing wasn't offered for this step.");
+      if (!step?.offerGate) return no("pause-not-offered");
       return ok({
         steps: { ...state.steps, [event.stepId]: { ...step, status: "paused", offerGate: false } },
       });
@@ -280,14 +275,14 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
     case "continue": {
       const step = state.steps[event.stepId];
-      if (!step?.offerGate) return no("Continuing wasn't offered for this step.");
+      if (!step?.offerGate) return no("continue-not-offered");
       return advance(state, event.stepId, { ...step, status: "settling", offerGate: false });
     }
 
     case "resume": {
       const id = state.currentStep;
       const step = id ? state.steps[id] : undefined;
-      if (!id || step?.status !== "paused") return no("Nothing is paused.");
+      if (!id || step?.status !== "paused") return no("nothing-paused");
       return ok({
         steps: { ...state.steps, [id]: { status: "open", misses: 0, offerGate: false } },
       });
@@ -295,38 +290,33 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
     case "checks-complete":
       if (state.phase !== "lesson" || state.lesson.status !== "ready")
-        return no("There is no lesson to finish.");
-      if (!state.lesson.steps.every((s) => resolved(state.steps[s.id])))
-        return no("Some checks are still open.");
+        return no("no-lesson-to-finish");
+      if (!state.lesson.steps.every((s) => resolved(state.steps[s.id]))) return no("checks-open");
       return ok({ phase: "homework", homework: "writing" });
 
     case "homework-assigned":
       return state.phase === "homework"
         ? ok({ homework: "assigned" })
-        : no("Homework comes after the checks.");
+        : no("homework-after-checks");
 
     case "homework-handed-in":
       return state.phase === "homework" && state.homework === "assigned"
         ? ok({ homework: "reviewing" })
-        : no("There is no homework to hand in yet.");
+        : no("no-homework-yet");
 
     case "homework-reviewed":
       return state.phase === "homework" && state.homework === "reviewing"
         ? ok({ phase: "close" })
-        : no("There is no homework being reviewed.");
+        : no("no-homework-in-review");
 
     case "homework-later":
       return state.phase === "homework" && state.homework === "assigned"
         ? ok({ phase: "close" })
-        : no("There is no homework to hand in yet.");
+        : no("no-homework-yet");
 
     case "recap-done":
       if (state.phase === "close") return ok({ phase: "closed" });
-      return no(
-        state.kind === "final"
-          ? "The recap comes after the teach-back."
-          : "The recap comes after the homework.",
-      );
+      return no(state.kind === "final" ? "recap-after-teach-back" : "recap-after-homework");
   }
 }
 

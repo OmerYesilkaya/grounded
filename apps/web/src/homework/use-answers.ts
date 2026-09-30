@@ -1,5 +1,6 @@
 import type { Answers, TaskAnswer } from "@grounded/core/assignment";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { currentMessages } from "@/i18n";
 import { assignmentApi, type Assignment } from "@/lib/assignments";
 
 /** How long after the last keystroke an answer is saved. */
@@ -48,7 +49,9 @@ export function useAnswers(assignment: Assignment) {
         // Kept to be saved again with the next change or the next try.
         for (const taskId of tasks) unsaved.current.add(taskId);
         setStatus("failed");
-        setError(failed instanceof Error ? failed.message : "Your answer wasn't saved.");
+        setError(
+          failed instanceof Error ? failed.message : currentMessages().homework.answerNotSaved,
+        );
         throw failed;
       }
     });
@@ -76,7 +79,9 @@ export function useAnswers(assignment: Assignment) {
       put(taskId, await assignmentApi.lock(assignment.id, taskId));
       setError(null);
     } catch (failed) {
-      setError(failed instanceof Error ? failed.message : "Your prediction wasn't locked.");
+      setError(
+        failed instanceof Error ? failed.message : currentMessages().homework.predictionNotLocked,
+      );
     }
   };
 

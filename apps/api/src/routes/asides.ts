@@ -14,6 +14,7 @@ import { publish } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyActions } from "../engine/track-state.js";
 import { addLogContext } from "../log.js";
+import { notFound, refuse } from "../refusals.js";
 
 interface Env {
   Variables: { user: { id: string; email: string } };
@@ -22,7 +23,7 @@ interface Env {
 const question = z.string().trim().min(1).max(ASIDE_LIMITS.question);
 const askInput = z.object({ anchor: asideAnchorSchema, text: question });
 const followUpInput = z.object({ text: question });
-const QUESTION_REQUIRED = "Write your question first.";
+const QUESTION_REQUIRED = refuse("write-question");
 
 /**
  * Asides (design §7.5): ask about a passage of the lesson, follow up in the card, and save a
@@ -37,12 +38,12 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
    */
   const ownSession = async (userId: string, sessionId: string) => {
     if (!z.uuid().safeParse(sessionId).success)
-      return { error: "Not found.", status: 404 as const };
+      return { ...refuse("not-found"), status: 404 as const };
     const [session] = await db
       .select()
       .from(learningSessions)
       .where(and(eq(learningSessions.id, sessionId), eq(learningSessions.userId, userId)));
-    if (!session) return { error: "Not found.", status: 404 as const };
+    if (!session) return { ...refuse("not-found"), status: 404 as const };
     addLogContext({ sessionId: session.id, trackId: session.trackId });
     return { session };
   };
@@ -59,7 +60,7 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const { session } = found;
     const parsed = askInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: QUESTION_REQUIRED }, 400);
+    if (!parsed.success) return c.json(QUESTION_REQUIRED, 400);
     const { anchor, text } = parsed.data;
     const stepId = stepOfBlock(anchor.blockId);
     const [lesson] = await db
@@ -67,7 +68,7 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
       .from(lessons)
       .where(eq(lessons.sessionId, session.id));
     if (!lesson?.steps.some((s) => s.id === stepId) || !openSteps(session.state).has(stepId))
-      return c.json({ error: "That passage isn't in the lesson you can read." }, 409);
+      return c.json(refuse("passage-not-readable"), 409);
 
     const { aside } = await createAside(db, session.id, { stepId, anchor, question: text });
     addLogContext({ asideId: aside.id });
@@ -79,10 +80,10 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
     const found = await ownSession(c.get("user").id, c.req.param("id"));
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const aside = await ownAside(found.session.id, c.req.param("asideId"));
-    if (!aside) return c.json({ error: "Not found." }, 404);
+    if (!aside) return c.json(notFound, 404);
     const parsed = followUpInput.safeParse(await c.req.json().catch(() => null));
-    if (!parsed.success) return c.json({ error: QUESTION_REQUIRED }, 400);
-    if (waitingFor(aside)) return c.json({ error: "Your last question is being answered." }, 409);
+    if (!parsed.success) return c.json(QUESTION_REQUIRED, 400);
+    if (waitingFor(aside)) return c.json(refuse("question-being-answered"), 409);
 
     const message = await recordAsideMessage(db, found.session.id, aside.id, {
       role: "learner",
@@ -99,8 +100,8 @@ export function registerAsideRoutes(app: Hono<Env>, deps: { db: Db; queue: JobQu
     if ("error" in found) return c.json({ error: found.error }, found.status);
     const { session } = found;
     const aside = await ownAside(session.id, c.req.param("asideId"));
-    if (!aside) return c.json({ error: "Not found." }, 404);
-    if (!aside.tangent) return c.json({ error: "There is nothing to save here." }, 409);
+    if (!aside) return c.json(notFound, 404);
+    if (!aside.tangent) return c.json(refuse("nothing-to-save"), 409);
     if (aside.savedAt) return c.json({ saved: true });
 
     // Only the first save writes the note, however many arrive at once.

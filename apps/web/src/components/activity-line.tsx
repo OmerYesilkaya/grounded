@@ -1,9 +1,11 @@
 import { ChevronRight } from "lucide-react";
 import { useState } from "react";
+import { useT } from "@/i18n";
 import type { Activity } from "@/lib/session";
 import { StreamedText, useRevealedText } from "./streamed-text";
 import { WorkingMark } from "./working-mark";
 import { cn } from "@/lib/utils";
+import { wordNotice } from "@/i18n/notice";
 
 /**
  * What the tutor is doing right now, in one quiet line (the working mark, then the most recent
@@ -20,9 +22,11 @@ export function ActivityLine({
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
+  const all = useT();
+  const t = all.session;
   const current = activities.at(-1);
   if (!current && !fallback) return null;
-  const label = current ? current.label : fallback;
+  const label = current ? wordNotice(current.label, all) : fallback;
 
   return (
     <div
@@ -44,7 +48,7 @@ export function ActivityLine({
             className="ml-1 inline-flex items-center gap-0.5 text-xs hover:text-muted-foreground"
           >
             <ChevronRight className={cn("size-3 transition-transform", open && "rotate-90")} />
-            {open ? "Hide thinking" : "Show thinking"}
+            {open ? t.hideThinking : t.showThinking}
           </button>
         )}
       </div>

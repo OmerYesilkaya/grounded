@@ -1,10 +1,11 @@
 import {
-  ACCEPTED_DESCRIPTION,
   ATTACHMENT_LIMITS,
   attachmentKind,
   attachmentProblem,
   attachmentsProblem,
+  isNotice,
   type AttachmentKind,
+  type RefusalNotice,
 } from "@grounded/core";
 import mammoth from "mammoth";
 import { PDFDocument } from "pdf-lib";
@@ -29,7 +30,7 @@ export interface Attachment {
 }
 
 export type AttachmentsResult =
-  { ok: true; attachments: Attachment[] } | { ok: false; error: string };
+  { ok: true; attachments: Attachment[] } | { ok: false; error: RefusalNotice };
 
 /**
  * Checks the files (design §4.5): the shared limits on names and sizes, then what is inside each
@@ -44,14 +45,14 @@ export async function readAttachments(files: readonly UploadedFile[]): Promise<A
     const problem = attachmentProblem(name, file.bytes.length);
     if (problem) return { ok: false, error: problem };
     const read = await readOne(name, file.bytes);
-    if (typeof read === "string") return { ok: false, error: read };
+    if (isNotice(read)) return { ok: false, error: read };
     attachments.push(read);
   }
   const pages = attachments.reduce((sum, a) => sum + (a.pages ?? 0), 0);
   if (pages > ATTACHMENT_LIMITS.pdfPages)
     return {
       ok: false,
-      error: `The PDFs come to ${String(pages)} pages; at most ${String(ATTACHMENT_LIMITS.pdfPages)} can be attached.`,
+      error: { code: "attachments-pdf-pages", pages, max: ATTACHMENT_LIMITS.pdfPages },
     };
   return { ok: true, attachments };
 }
@@ -65,11 +66,11 @@ export function cleanName(name: string): string {
   return base.slice(0, 200 - extension.length) + extension;
 }
 
-async function readOne(name: string, bytes: Uint8Array): Promise<Attachment | string> {
+async function readOne(name: string, bytes: Uint8Array): Promise<Attachment | RefusalNotice> {
   const accepted = attachmentKind(name);
-  if (!accepted) return `${name}: only ${ACCEPTED_DESCRIPTION} can be attached.`;
+  if (!accepted) return { code: "attachment-kind", name };
   const base = { name, kind: accepted.kind, bytes, pages: null, text: null };
-  const notWhatItSays = `${name} doesn't look like the file its name says it is.`;
+  const notWhatItSays: RefusalNotice = { code: "attachment-not-what-it-says", name };
   switch (accepted.kind) {
     case "image": {
       const mediaType = imageType(bytes);
@@ -82,11 +83,10 @@ async function readOne(name: string, bytes: Uint8Array): Promise<Attachment | st
           ignoreEncryption: true,
           updateMetadata: false,
         });
-        if (document.isEncrypted)
-          return `${name} is protected with a password; attach a copy without one.`;
+        if (document.isEncrypted) return { code: "attachment-password", name };
         return { ...base, mediaType: accepted.mediaType, pages: document.getPageCount() };
       } catch {
-        return `${name} couldn't be read as a PDF.`;
+        return { code: "attachment-unreadable", name, as: "pdf" };
       }
     }
     case "text": {
@@ -94,7 +94,7 @@ async function readOne(name: string, bytes: Uint8Array): Promise<Attachment | st
       try {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); // a leading BOM is dropped
       } catch {
-        return `${name} isn't plain text (UTF-8).`;
+        return { code: "attachment-not-utf8", name };
       }
       return withText(base, accepted.mediaType, text);
     }
@@ -104,7 +104,7 @@ async function readOne(name: string, bytes: Uint8Array): Promise<Attachment | st
         const { value } = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
         return withText(base, accepted.mediaType, value);
       } catch {
-        return `${name} couldn't be read as a Word document.`;
+        return { code: "attachment-unreadable", name, as: "docx" };
       }
     }
   }
@@ -114,14 +114,19 @@ function withText(
   base: Omit<Attachment, "mediaType" | "text">,
   mediaType: string,
   raw: string,
-): Attachment | string {
+): Attachment | RefusalNotice {
   const text = raw
     .replace(/\r\n?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (!text) return `${base.name} has no text in it.`;
+  if (!text) return { code: "attachment-no-text", name: base.name };
   if (text.length > ATTACHMENT_LIMITS.textCharacters)
-    return `${base.name} has ${text.length.toLocaleString("en")} characters of text; at most ${ATTACHMENT_LIMITS.textCharacters.toLocaleString("en")} can be attached.`;
+    return {
+      code: "attachment-too-long",
+      name: base.name,
+      characters: text.length,
+      max: ATTACHMENT_LIMITS.textCharacters,
+    };
   return { ...base, mediaType, text };
 }
 

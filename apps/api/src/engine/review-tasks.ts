@@ -4,6 +4,7 @@ import {
   trackActionsSchema,
   type AssignmentReview,
   type Method,
+  type ActivityNotice,
 } from "@grounded/core";
 import {
   and,
@@ -22,7 +23,7 @@ import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { assignmentOf, closeAfterReview, type AssignmentRow } from "./assignments.js";
 import { traced, verdictIssues } from "./call-trace.js";
 import { withActivity } from "./events.js";
-import { NoCredentialError, ProviderCallError, type ModelAccess } from "./model-call.js";
+import { type ModelAccess, causeOf } from "./model-call.js";
 import { reportHandledFailure, type JobQueue } from "./queue.js";
 import { afterTakenUpReview } from "./opening-review.js";
 import { createReviewer } from "./review.js";
@@ -48,9 +49,6 @@ interface ReviewJob {
   assignmentId?: string;
 }
 
-/** What the learner reads when a review failed for a reason on our side. */
-const REVIEW_FAILED = "The review didn't go through because of a problem on our side.";
-
 /**
  * The review's jobs (design §7.4): the review of a handed-in assignment, by the strong model, and
  * the answer to a reply in a comment's card. A session that waits for its homework's review goes on
@@ -74,8 +72,7 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
     };
     const { system, opening, answers, terms } = await reviewPrompt({ ...deps, assignment });
     const model = await models.model({ ...ids, purpose: "review", role: "strong" });
-    const label =
-      assignment.kind === "exam" ? "Reviewing your arc exam" : "Reviewing your homework";
+    const label: ActivityNotice = { code: "reviewing", exam: assignment.kind === "exam" };
     const asking: ModelMessage[] = [opening, { role: "user", content: REVIEW_REQUEST }];
     // Traced, so each review's verdict is stored on its call (call-trace.ts).
     const ask = (feedback: ModelMessage[]) =>
@@ -190,11 +187,11 @@ export function createReviewTasks(deps: ReviewTaskDependencies): TaskList {
       try {
         await runReview(assignment, row.id);
       } catch (error) {
-        const known = error instanceof ProviderCallError || error instanceof NoCredentialError;
+        const known = causeOf(error) !== null;
         // A review kept before the failure (in recording its term changes) stays kept.
         await db
           .update(reviews)
-          .set({ status: "failed", failure: known ? error.message : REVIEW_FAILED })
+          .set({ status: "failed", failure: causeOf(error) ?? { code: "our-side" } })
           .where(and(eq(reviews.id, row.id), eq(reviews.status, "reviewing")));
         await publishReview(db, assignment);
         // The session doesn't wait for a review that failed: it can be started again from the page.

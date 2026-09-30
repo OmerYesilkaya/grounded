@@ -5,6 +5,8 @@ import {
   type AsideRecord,
   type AsideThread,
   type SessionState,
+  type Cause,
+  type FailureNotice,
 } from "@grounded/core";
 import { parseBlocks, type Block } from "@grounded/content";
 import {
@@ -42,9 +44,14 @@ import { publish } from "./events.js";
 /** The source of an aside's evidence in term_events. */
 export const ASIDE_SOURCE = "aside";
 
-/** The tutor's reply when a question couldn't be answered, so the learner can ask again. */
-export const asideFailedText = (reason = "") =>
-  `That didn't go through.${reason} Ask again when you're ready.`;
+/**
+ * The app's reply when a question couldn't be answered, so the learner can ask again: a notice the
+ * web words (design §9.3), and the same in English for the tutor's later calls.
+ */
+export const asideFailed = (cause: Cause | null) => ({
+  text: "That didn't go through. Ask again when you're ready.",
+  failure: { code: "thread-failed", thread: "aside", cause } satisfies FailureNotice,
+});
 
 export type AsideRow = typeof asides.$inferSelect;
 export type AsideMessageRow = typeof asideMessages.$inferSelect;
@@ -122,13 +129,19 @@ export async function recordAsideMessage(
   db: Db,
   sessionId: string,
   asideId: string,
-  message: { role: "learner" | "tutor"; text: string; blocks?: Block[] },
+  message: { role: "learner" | "tutor"; text: string; blocks?: Block[]; failure?: FailureNotice },
 ): Promise<AsideMessageRow> {
   const blocks =
     message.role === "tutor" ? (message.blocks ?? parseBlocks(message.text).blocks) : null;
   const [row] = await db
     .insert(asideMessages)
-    .values({ asideId, role: message.role, text: message.text, blocks })
+    .values({
+      asideId,
+      role: message.role,
+      text: message.text,
+      blocks,
+      failure: message.failure ?? null,
+    })
     .returning();
   if (!row) throw new Error("aside message insert returned nothing");
   await publish(db, sessionId, "aside-message", publicMessage(row));
@@ -143,6 +156,7 @@ function publicMessage(m: AsideMessageRow) {
     role: m.role,
     text: m.role === "learner" ? m.text : null,
     blocks: m.blocks,
+    failure: m.failure,
   };
 }
 

@@ -144,6 +144,7 @@ describe("asking about a passage", () => {
             role: "learner",
             text: "Copied out to where?",
             blocks: null,
+            failure: null,
           },
           {
             id: expect.any(String) as string,
@@ -151,6 +152,7 @@ describe("asking about a passage", () => {
             role: "tutor",
             text: null,
             blocks: [expect.objectContaining({ type: "paragraph" })],
+            failure: null,
           },
         ],
       },

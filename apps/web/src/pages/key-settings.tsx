@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useT } from "@/i18n";
 import {
   api,
   PROVIDER_LABELS,
@@ -23,6 +24,7 @@ import { CentredPage } from "./auth-layout";
 export function KeySettingsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const t = useT().account.key;
   const models = useQuery({
     queryKey: ["models"],
     queryFn: () => api<ModelOptions>("/api/models"),
@@ -62,10 +64,8 @@ export function KeySettingsPage() {
 
   return (
     <CentredPage>
-      <h1 className="font-serif text-xl font-semibold">Your AI key</h1>
-      <p className="mt-2 text-sm text-muted-foreground">
-        Lessons run on your own provider account. The key is encrypted and never shown again.
-      </p>
+      <h1 className="font-serif text-xl font-semibold">{t.title}</h1>
+      <p className="mt-2 text-sm text-muted-foreground">{t.intro}</p>
 
       {credential.data && (
         <div className="mt-5 flex items-center justify-between rounded-lg border bg-card px-3 py-2.5 text-sm">
@@ -81,7 +81,7 @@ export function KeySettingsPage() {
               remove.mutate();
             }}
           >
-            Remove
+            {t.remove}
           </Button>
         </div>
       )}
@@ -94,7 +94,7 @@ export function KeySettingsPage() {
         }}
       >
         <div className="space-y-2">
-          <Label>Provider</Label>
+          <Label>{t.provider}</Label>
           <Select
             value={provider}
             onValueChange={(value) => {
@@ -103,7 +103,7 @@ export function KeySettingsPage() {
             }}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Choose a provider" />
+              <SelectValue placeholder={t.chooseProvider} />
             </SelectTrigger>
             <SelectContent>
               {providers.map((p) => (
@@ -115,7 +115,7 @@ export function KeySettingsPage() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label>Model</Label>
+          <Label>{t.model}</Label>
           <Select
             value={model}
             // Radix's hidden native select reports "" when the options swap; keep the chosen model.
@@ -125,7 +125,7 @@ export function KeySettingsPage() {
             disabled={!provider}
           >
             <SelectTrigger className="w-full">
-              <SelectValue placeholder="Choose a model" />
+              <SelectValue placeholder={t.chooseModel} />
             </SelectTrigger>
             <SelectContent>
               {modelChoices.map((m) => (
@@ -137,7 +137,7 @@ export function KeySettingsPage() {
           </Select>
         </div>
         <div className="space-y-2">
-          <Label htmlFor="api-key">API key</Label>
+          <Label htmlFor="api-key">{t.apiKey}</Label>
           <Input
             id="api-key"
             type="password"
@@ -153,7 +153,7 @@ export function KeySettingsPage() {
           className="w-full"
           disabled={!provider || !model || !apiKey.trim() || save.isPending}
         >
-          {save.isPending ? "Checking the key…" : credential.data ? "Replace key" : "Save key"}
+          {save.isPending ? t.checking : credential.data ? t.replace : t.save}
         </Button>
         {save.error && <p className="text-sm text-destructive">{save.error.message}</p>}
       </form>

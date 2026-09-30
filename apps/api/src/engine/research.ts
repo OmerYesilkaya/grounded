@@ -2,6 +2,7 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { asc, eq, researchNotes, type Db } from "@grounded/db";
 import { stepCountIs, streamText, type ModelMessage, type SystemModelMessage, type Tool } from "ai";
 import { startActivity, withActivity, type Activity } from "./events.js";
+import { type ActivityNotice } from "@grounded/core";
 
 /** Search rounds a research call may take. */
 const RESEARCH_STEPS = 6;
@@ -33,7 +34,7 @@ export async function research(options: {
   search: Tool;
   request: string;
   /** The activity the whole call shows under: "Researching the subject". */
-  label: string;
+  label: ActivityNotice;
 }): Promise<Research> {
   const { db, sessionId } = options;
   return withActivity(db, sessionId, options.label, async (researching) => {
@@ -97,8 +98,10 @@ export async function sessionResearch(db: Db, sessionId: string): Promise<string
     .join("\n\n");
 }
 
-const searchLabel = (query: string | undefined) =>
-  query ? `Searching the web for “${query}”` : "Searching the web";
+const searchLabel = (query: string | undefined): ActivityNotice => ({
+  code: "searching-web",
+  query: query ?? null,
+});
 
 /** A search's query, where the provider reports it: in the call's input or the result's action. */
 function searchQuery(value: unknown): string | undefined {

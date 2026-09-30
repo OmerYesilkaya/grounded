@@ -2,10 +2,12 @@ import type { Block } from "@grounded/content";
 import type { ChecklistItem } from "@grounded/core/assignment";
 import { Check, Droplet } from "lucide-react";
 import { LearnerText } from "@/content/learner-text";
+import { useT, type Messages } from "@/i18n";
 import { Answer, QuestionBox } from "@/lesson/aside-card";
 import type { ReviewMessage } from "@/lib/assignments";
 import { cn } from "@/lib/utils";
 import { waitingReply, type LiveComment } from "./use-review";
+import { saidBlocks } from "@/i18n/notice";
 
 interface Exchange {
   reply: ReviewMessage;
@@ -13,13 +15,21 @@ interface Exchange {
 }
 
 /** The thread after the comment as replies, each with its answer (streaming, for the last one). */
-function exchangesOf(thread: readonly ReviewMessage[], draft: string | null): Exchange[] {
+function exchangesOf(
+  thread: readonly ReviewMessage[],
+  draft: string | null,
+  t: Messages,
+): Exchange[] {
   const exchanges: Exchange[] = [];
   for (const message of thread) {
     const last = exchanges.at(-1);
     if (message.role === "learner") exchanges.push({ reply: message, answer: null });
     else if (last && !last.answer)
-      last.answer = { text: message.text, blocks: message.blocks, streaming: false };
+      last.answer = {
+        text: message.text,
+        blocks: message.failure ? saidBlocks(message.failure, t) : message.blocks,
+        streaming: false,
+      };
   }
   const last = exchanges.at(-1);
   if (last && !last.answer) last.answer = { text: draft ?? "", blocks: null, streaming: true };
@@ -40,6 +50,8 @@ export function ReviewThread(props: {
   onClose?: () => void;
 }) {
   const { comment, expanded } = props;
+  const all = useT();
+  const t = all.homework;
   const [first, ...thread] = comment.messages;
   const waiting = waitingReply(comment);
   const resolved = comment.resolvedAt !== null;
@@ -54,14 +66,14 @@ export function ReviewThread(props: {
           <Droplet className="mt-px size-3.5 shrink-0 text-primary" aria-hidden />
         )}
         <span className={cn(!expanded && "line-clamp-1")}>
-          {resolved && "Found · "}
-          {props.items.length > 0 ? props.items.map((i) => i.text).join(" · ") : "Look again"}
+          {resolved && t.found}
+          {props.items.length > 0 ? props.items.map((i) => i.text).join(" · ") : t.lookAgain}
         </span>
       </p>
       {/* A comment is a few sentences: all of it shows, open or not. */}
       {first && <Answer text={first.text} blocks={first.blocks} streaming={false} />}
       {expanded &&
-        exchangesOf(thread, comment.draft).map(({ reply, answer }) => (
+        exchangesOf(thread, comment.draft, all).map(({ reply, answer }) => (
           <div key={reply.id} className="mt-3 border-t pt-3">
             <p className="mb-1.5 text-[13px] leading-snug font-medium whitespace-pre-wrap text-foreground">
               <LearnerText text={reply.text} />
@@ -71,21 +83,19 @@ export function ReviewThread(props: {
           </div>
         ))}
       {!expanded && replies > 0 && (
-        <p className="mt-2 text-[11.5px] text-subtle-foreground">
-          {replies} {replies === 1 ? "reply" : "replies"}
-        </p>
+        <p className="mt-2 text-[11.5px] text-subtle-foreground">{t.replies(replies)}</p>
       )}
       {expanded && resolved && (
         <p className="mt-3 flex items-center gap-1.5 rounded-md bg-success/10 px-2.5 py-1.5 text-[12.5px] text-success">
           <Check className="size-3.5" strokeWidth={3} aria-hidden />
-          You found the flaw.
+          {t.youFoundIt}
         </p>
       )}
       {expanded && !resolved && (
         <QuestionBox
-          label="Your reply"
-          placeholder={waiting ? "Answering…" : "Look again, then reply…"}
-          submitLabel="Reply"
+          label={t.yourReply}
+          placeholder={waiting ? t.answering : t.lookAgainThenReply}
+          submitLabel={t.reply}
           waiting={waiting !== null}
           onSubmit={props.onReply}
           onCancel={props.onClose}

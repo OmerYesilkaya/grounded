@@ -157,7 +157,7 @@ describe("the review of handed-in homework", () => {
     // No model for it: the review fails, and says so.
     expect((await post(cookie, `/api/assignments/${id}/submit`)).status).toBe(200);
     await reviewed(cookie, id, "failed");
-    expect((await reviewOf(cookie, id))?.failure).toEqual(expect.any(String));
+    expect((await reviewOf(cookie, id))?.failure).toEqual({ code: "our-side" });
 
     // Again: its first answer quotes words the answer doesn't have, and is asked for once more.
     const astray = { ...REVIEW, comments: [{ ...REVIEW.comments[0], quote: "three moves" }] };

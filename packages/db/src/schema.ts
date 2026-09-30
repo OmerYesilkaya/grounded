@@ -21,8 +21,10 @@ import type {
   AssignmentTask,
   AttachmentKind,
   CallVerdict,
+  Cause,
   ChecklistItem,
   ChecklistMark,
+  FailureNotice,
   ProbeVerdict,
   ReviewAnchor,
   SessionState,
@@ -376,7 +378,8 @@ export const learningSessions = pgTable(
      */
     probeVerdict: jsonb("probe_verdict").$type<ProbeVerdict>(),
     probeVerdictStatus: text("probe_verdict_status").$type<"writing" | "written" | "failed">(),
-    probeVerdictFailure: text("probe_verdict_failure"),
+    /** Why it failed: a notice the web words (design §9.3); words, for one stored before them. */
+    probeVerdictFailure: jsonb("probe_verdict_failure").$type<Cause | string>(),
     probeVerdictAt: timestamp("probe_verdict_at", { withTimezone: true }),
     /**
      * What the opening review found, for the probe's and the plan's prompts (design §7.1): whether
@@ -468,6 +471,11 @@ export const checkMessages = pgTable("check_messages", {
   text: text("text"),
   blocks: jsonb("blocks").$type<Block[]>(),
   verdict: text("verdict").$type<"landed" | "missed">(),
+  /**
+   * The app's own message in place of the tutor's reply, when it couldn't be given: a notice the
+   * web words (design §9.3). `text` says it in English for the tutor's later calls.
+   */
+  failure: jsonb("failure").$type<FailureNotice>(),
   createdAt: createdAt(),
 });
 
@@ -537,6 +545,8 @@ export const asideMessages = pgTable(
     text: text("text").notNull(),
     /** The tutor's answer as validated blocks; null for the learner's messages. */
     blocks: jsonb("blocks").$type<Block[]>(),
+    /** The app's message in place of an answer that couldn't be given, as in check_messages. */
+    failure: jsonb("failure").$type<FailureNotice>(),
     createdAt: createdAt(),
   },
   (table) => [index("aside_messages_aside").on(table.asideId, table.createdAt)],
@@ -641,8 +651,11 @@ export const reviews = pgTable("reviews", {
   status: text("status").$type<"reviewing" | "done" | "failed">().notNull().default("reviewing"),
   /** Each item of "what a good answer demonstrates", marked held, leaked or missing. */
   checklist: jsonb("checklist").$type<ChecklistMark[]>().notNull().default([]),
-  /** Why a failed review failed, for the learner (their key, their provider); null otherwise. */
-  failure: text("failure"),
+  /**
+   * Why a failed review failed, for the learner (their key, their provider): a notice the web words
+   * (design §9.3), or words for one stored before them; null otherwise.
+   */
+  failure: jsonb("failure").$type<Cause | string>(),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
   /**
    * The later session whose opening review takes it up (design §7.1), claimed as that session
@@ -695,6 +708,8 @@ export const reviewMessages = pgTable(
     text: text("text").notNull(),
     /** The tutor's words as validated blocks; null for the learner's. */
     blocks: jsonb("blocks").$type<Block[]>(),
+    /** The app's message in place of an answer that couldn't be given, as in check_messages. */
+    failure: jsonb("failure").$type<FailureNotice>(),
     createdAt: createdAt(),
   },
   (table) => [index("review_messages_comment").on(table.commentId, table.createdAt)],

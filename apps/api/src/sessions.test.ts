@@ -74,7 +74,7 @@ describe("starting a session", () => {
     const again = await t.request(`/api/tracks/${trackId}/sessions`, { method: "POST", cookie });
     expect(again.status).toBe(409);
     expect(await again.json()).toEqual({
-      error: "This track already has an open session.",
+      error: { code: "session-open" },
       sessionId,
     });
   });
@@ -245,8 +245,8 @@ describe("probe and plan", () => {
     await until(cookie, sessionId, storedMessages(3));
 
     expect((await activities(sessionId)).map((a) => a.label).slice(1)).toEqual([
-      "Noting what your answers showed",
-      "Thinking…",
+      { code: "noting-answers" },
+      { code: "thinking", again: false },
     ]);
     expect(tutorCalls().map((u) => u.purpose)).toEqual(["probe", "probe-decision", "probe"]);
     const [, decision, question] = tutorCalls().map((u) => u.model);
@@ -508,7 +508,7 @@ describe("probe and plan", () => {
       cookie,
     });
     expect(early.status).toBe(409);
-    expect(await early.json()).toEqual({ error: "There is no plan to approve yet." });
+    expect(await early.json()).toEqual({ error: { code: "no-plan-to-approve" } });
   });
 
   it("rewrites a probe message that breaks the chat's rules before storing it", async () => {
@@ -642,9 +642,7 @@ describe("empty replies", () => {
     const started = log.filter((e) => e.type === "message-start").at(-1)?.data as { id: string };
     expect(log.map((e) => e.type)).toContain("message-retracted");
     expect(log.find((e) => e.type === "message-retracted")?.data).toEqual({ id: started.id });
-    expect(log.find((e) => e.type === "error")?.data).toEqual({
-      message: "The tutor's reply came back empty. Try again.",
-    });
+    expect(log.find((e) => e.type === "error")?.data).toEqual({ error: { code: "empty-reply" } });
     expect(await storedTutorTexts(sessionId)).toEqual([FIRST_QUESTION]);
   });
 });
@@ -657,11 +655,11 @@ describe("activity", () => {
   it("says what the tutor is doing through the probe and the plan, and ends every step", async () => {
     const { cookie, sessionId } = await planned();
     expect(await labels(sessionId)).toEqual([
-      "Thinking…",
-      "Noting what your answers showed",
-      "Working out where your knowledge ends",
-      "Thinking…",
-      "Recording the plan's terms",
+      { code: "thinking", again: false },
+      { code: "noting-answers" },
+      { code: "finding-where-knowledge-ends" },
+      { code: "thinking", again: false },
+      { code: "recording-plan" },
     ]);
     expect(await allDone(sessionId)).toBe(true);
     expect((await snapshot(cookie, sessionId)).activities).toEqual([]);
@@ -675,11 +673,11 @@ describe("activity", () => {
     await until(cookie, sessionId, (s) => s.state.plan === "proposed");
 
     expect((await labels(sessionId)).slice(1)).toEqual([
-      "Thinking…",
-      "Recording the plan's terms",
-      "Revising the plan (the first draft didn't fit)",
-      "Thinking…",
-      "Recording the plan's terms",
+      { code: "thinking", again: false },
+      { code: "recording-plan" },
+      { code: "revising-plan" },
+      { code: "thinking", again: false },
+      { code: "recording-plan" },
     ]);
     expect(await allDone(sessionId)).toBe(true);
   });
@@ -696,9 +694,9 @@ describe("activity", () => {
     await until(cookie, sessionId, (s) => s.state.plan === "proposed");
 
     expect((await labels(sessionId)).slice(1, 4)).toEqual([
-      "Researching the subject",
-      "Searching the web for “lost update”",
-      "Searching the web for “read-modify-write”",
+      { code: "researching" },
+      { code: "searching-web", query: "lost update" },
+      { code: "searching-web", query: "read-modify-write" },
     ]);
     expect(await allDone(sessionId)).toBe(true);
   });
@@ -715,8 +713,8 @@ describe("activity", () => {
 
     const log = await activities(sessionId);
     expect(log.map((a) => a.label).slice(1, 3)).toEqual([
-      "Thinking…",
-      "Thinking again (the reply came back empty)",
+      { code: "thinking", again: false },
+      { code: "thinking", again: true },
     ]);
     const reasoning = await t.db
       .select()
@@ -729,13 +727,22 @@ describe("activity", () => {
 
   it("lists what is still running in the snapshot, for a page opened mid-job", async () => {
     const { cookie, sessionId } = await startedSession();
-    const outlining = await startActivity(t.db, sessionId, "Outlining the lesson");
-    const writing = await startActivity(t.db, sessionId, "Writing step 1 of 3");
+    const outlining = await startActivity(t.db, sessionId, { code: "outlining" });
+    const writing = await startActivity(t.db, sessionId, {
+      code: "writing-step",
+      step: 1,
+      of: 3,
+      again: false,
+    });
     await writing.update({ detail: "Adding one is three moves" });
     await outlining.done();
 
     expect((await snapshot(cookie, sessionId)).activities).toMatchObject([
-      { label: "Writing step 1 of 3", detail: "Adding one is three moves", state: "running" },
+      {
+        label: { code: "writing-step", step: 1, of: 3, again: false },
+        detail: "Adding one is three moves",
+        state: "running",
+      },
     ]);
     await writing.done();
     expect((await snapshot(cookie, sessionId)).activities).toEqual([]);

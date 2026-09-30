@@ -5,8 +5,10 @@ import { LearnerText } from "@/content/learner-text";
 import { WorkingMark } from "@/components/working-mark";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { StepProgress } from "./types";
+import { saidBlocks } from "@/i18n/notice";
 
 export interface CheckCardProps {
   check: CheckBlock;
@@ -30,6 +32,8 @@ export function CheckCard({
   onContinue,
 }: CheckCardProps) {
   const [draft, setDraft] = useState("");
+  const all = useT();
+  const t = all.lesson.check;
   const done = progress.status === "passed" || progress.status === "settling";
   const answering = progress.status === "open" && !progress.offerGate;
 
@@ -41,12 +45,12 @@ export function CheckCard({
   return (
     <div
       role="group"
-      aria-label="Check"
+      aria-label={t.label}
       className="my-7 overflow-hidden rounded-xl border border-border-strong bg-card font-sans [--mark-surface:var(--card)]"
     >
       <div className="px-4.5 pt-4 pb-3">
         <span className="mb-1.5 block text-[11.5px] tracking-widest text-primary uppercase">
-          {done ? "Check · done" : "Check"}
+          {done ? t.done : t.label}
         </span>
         <div className="font-serif text-lg leading-normal [&_p]:mb-0">
           <Blocks blocks={check.children} />
@@ -59,7 +63,7 @@ export function CheckCard({
             message.from === "learner" ? (
               <div key={i} className="text-[14.5px]">
                 <div className="text-[11.5px] tracking-wide text-subtle-foreground uppercase">
-                  You
+                  {t.you}
                 </div>
                 <div className="whitespace-pre-wrap text-muted-foreground">
                   <LearnerText text={message.text} />
@@ -68,7 +72,7 @@ export function CheckCard({
             ) : (
               <div key={i}>
                 <div className="text-[11.5px] tracking-wide text-subtle-foreground uppercase">
-                  Tutor
+                  {t.tutor}
                 </div>
                 {message.verdict && (
                   <div
@@ -77,11 +81,13 @@ export function CheckCard({
                       message.verdict === "landed" ? "text-success" : "text-destructive",
                     )}
                   >
-                    {message.verdict === "landed" ? "That's it" : "Not quite there yet"}
+                    {message.verdict === "landed" ? t.landed : t.missed}
                   </div>
                 )}
                 <div className="font-serif text-[16.5px] [&_p]:mb-2 [&_p:last-child]:mb-0">
-                  <Blocks blocks={message.blocks} />
+                  <Blocks
+                    blocks={message.failure ? saidBlocks(message.failure, all) : message.blocks}
+                  />
                 </div>
               </div>
             ),
@@ -89,7 +95,7 @@ export function CheckCard({
           {progress.grading && (
             <div className="flex items-center gap-2 text-[13px] text-subtle-foreground">
               <WorkingMark />
-              <span className="text-shimmer mb-px">Checking your answer…</span>
+              <span className="text-shimmer mb-px">{t.checking}</span>
             </div>
           )}
         </div>
@@ -98,34 +104,30 @@ export function CheckCard({
       {progress.status === "open" && progress.offerGate && (
         // Below the small breakpoint the choices stack, full width and a finger tall (design §9.4).
         <div className="flex flex-wrap gap-2 border-t px-4.5 py-3 max-sm:flex-col">
-          <p className="w-full text-[12.5px] text-subtle-foreground">
-            This idea is still settling, and the next step rests on it.
-          </p>
+          <p className="w-full text-[12.5px] text-subtle-foreground">{t.settling}</p>
           <Button variant="outline" size="sm" onClick={onPause} className={STACKED}>
-            Pause here — try a fresh question next time
+            {t.pause}
           </Button>
           <Button variant="outline" size="sm" onClick={onContinue} className={STACKED}>
-            Continue anyway
+            {t.continue}
           </Button>
         </div>
       )}
 
       {progress.status === "paused" && (
-        <p className="border-t px-4.5 py-3 text-[13.5px] text-muted-foreground">
-          Paused here. Next time starts with a fresh question on this idea.
-        </p>
+        <p className="border-t px-4.5 py-3 text-[13.5px] text-muted-foreground">{t.paused}</p>
       )}
 
       {answering && (
         <div className="px-3 pb-3">
           <Composer
-            label="Your answer"
-            submitLabel="Answer"
+            label={t.yourAnswer}
+            submitLabel={t.answer}
             value={draft}
             onChange={setDraft}
             onSubmit={submit}
             disabled={progress.grading === true}
-            placeholder={progress.thread.length ? "Answer the new question…" : "One or two lines…"}
+            placeholder={progress.thread.length ? t.answerNew : t.firstAnswer}
             stackActions
             rich
             autoFocus
@@ -140,7 +142,7 @@ export function CheckCard({
                 onClick={onDontKnow}
                 className={cn(STACKED, "text-muted-foreground max-sm:border max-sm:border-input")}
               >
-                I don&apos;t know
+                {t.dontKnow}
               </Button>
             }
           />

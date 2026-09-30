@@ -1,5 +1,6 @@
 import { MessageSquarePlus, X } from "lucide-react";
 import { useEffect, useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useT } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useVisibleViewport } from "@/lib/visible-viewport";
 import { QuotedPassage } from "./aside-card";
@@ -23,6 +24,7 @@ export function AsideSheet(props: {
   children: ReactNode;
 }) {
   const viewport = useVisibleViewport();
+  const t = useT().lesson.asides;
   const drag = useDragDown(props.onClose);
   return (
     <div
@@ -50,7 +52,7 @@ export function AsideSheet(props: {
           <QuotedPassage quote={props.quote} className="flex-1" />
           <button
             type="button"
-            aria-label="Close"
+            aria-label={t.close}
             onClick={props.onClose}
             className="touch-target relative -mt-1 -mr-1 rounded-full p-1.5 text-muted-foreground hover:bg-muted"
           >
@@ -72,6 +74,7 @@ export function AsideSheet(props: {
  */
 export function AskButton(props: { range: Range; onAsk: () => void }) {
   const low = useNearFoot(props.range);
+  const t = useT().lesson.asides;
   return (
     <button
       type="button"
@@ -89,7 +92,7 @@ export function AskButton(props: { range: Range; onAsk: () => void }) {
       )}
     >
       <MessageSquarePlus className="size-4" aria-hidden />
-      Ask about this passage
+      {t.askAboutPassage}
     </button>
   );
 }

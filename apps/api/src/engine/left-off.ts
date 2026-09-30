@@ -2,6 +2,7 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { eq, tracks, type Db } from "@grounded/db";
 import { generateText, type ModelMessage, type SystemModelMessage } from "ai";
 import { withActivity } from "./events.js";
+import { type ActivityNotice } from "@grounded/core";
 
 /*
  * "Where you left off" (design §4.4): a compact summary of the plan's notes and the last session,
@@ -32,7 +33,7 @@ export async function writeLeftOff(options: {
   model: LanguageModelV4;
   system: SystemModelMessage[];
   messages: ModelMessage[];
-  label: string;
+  label: ActivityNotice;
 }): Promise<void> {
   const { db, sessionId, trackId } = options;
   const { text } = await withActivity(db, sessionId, options.label, () =>

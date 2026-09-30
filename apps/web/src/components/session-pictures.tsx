@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useT } from "@/i18n";
 import { picturesQuery } from "@/lib/term-map";
 import type { SessionModel } from "@/lib/session";
 import { TermMapPicture } from "./term-map";
@@ -13,14 +14,15 @@ const momentOf = (model: SessionModel) =>
  */
 export function PlanPicture({ model, messageId }: { model: SessionModel; messageId: string }) {
   const pictures = useQuery(picturesQuery(model.id, momentOf(model)));
+  const t = useT().track.map;
   const plan = pictures.data?.plan;
   if (plan?.messageId !== messageId || plan.map.nodes.length === 0) return null;
   return (
     <figure className="mt-5 border-t pt-5">
       <figcaption className="mb-4 text-[11px] tracking-widest text-subtle-foreground uppercase">
-        What rests on what
+        {t.planCaption}
       </figcaption>
-      <TermMapPicture map={plan.map} label="The ideas this plan builds, above what they rest on" />
+      <TermMapPicture map={plan.map} label={t.planPicture} />
     </figure>
   );
 }
@@ -31,17 +33,16 @@ export function PlanPicture({ model, messageId }: { model: SessionModel; message
  */
 export function BuiltPicture({ model }: { model: SessionModel }) {
   const pictures = useQuery(picturesQuery(model.id, momentOf(model)));
+  const t = useT().track.map;
   const built = pictures.data?.built;
   if (!built || built.nodes.length === 0) return null;
   return (
     <figure className="mt-14 rounded-lg border bg-card px-5 pt-5 pb-4">
       <figcaption className="mb-1 font-serif text-xl font-semibold tracking-tight">
-        What you just built
+        {t.built}
       </figcaption>
-      <p className="mb-6 font-sans text-sm text-muted-foreground">
-        Each idea from this lesson, above what it rests on.
-      </p>
-      <TermMapPicture map={built} label="The ideas this lesson built, above what they rest on" />
+      <p className="mb-6 font-sans text-sm text-muted-foreground">{t.builtNote}</p>
+      <TermMapPicture map={built} label={t.builtPicture} />
     </figure>
   );
 }

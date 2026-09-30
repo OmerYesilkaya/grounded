@@ -204,16 +204,18 @@ describe("see where you stand", () => {
 
   it("says why when it can't be written, and the learner can ask again", async () => {
     const { cookie, sessionId } = await planned();
-    const outOfCredit = new ProviderCallError("no-credit", "Your OpenAI account is out of credit.");
+    const outOfCredit = new ProviderCallError("no-credit", {
+      code: "provider-failed",
+      kind: "no-credit",
+      provider: "OpenAI",
+    });
     models.script(
       "probe-verdict",
       new MockLanguageModelV4({ doGenerate: () => Promise.reject(outOfCredit) }),
     );
     await ask(cookie, sessionId);
     await t.waitFor(async () => (await verdictOf(cookie, sessionId))?.status === "failed");
-    expect((await verdictOf(cookie, sessionId))?.failure).toBe(
-      "Your OpenAI account is out of credit.",
-    );
+    expect((await verdictOf(cookie, sessionId))?.failure).toEqual(outOfCredit.notice);
 
     models.script("probe-verdict", { text: JSON.stringify(VERDICT) });
     expect((await ask(cookie, sessionId)).status).toBe(202);
@@ -235,7 +237,7 @@ describe("see where you stand", () => {
     await recoverAbandonedWork(t.db, { quietForMs: 30_000 });
     expect(await verdictOf(cookie, sessionId)).toMatchObject({
       status: "failed",
-      failure: "Writing it was interrupted by a problem on our side.",
+      failure: { code: "interrupted" },
     });
   });
 

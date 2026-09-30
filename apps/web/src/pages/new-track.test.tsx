@@ -1,7 +1,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setLanguage } from "@/i18n";
 import { api } from "@/lib/api";
 import { NewTrackPage } from "./new-track";
 
@@ -39,6 +40,8 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.clearAllMocks();
+  setLanguage("en");
+  localStorage.clear();
 });
 
 describe("the new-track page", () => {
@@ -115,5 +118,19 @@ describe("the new-track page", () => {
       clipboardData: { files: [file("copied.png")], getData: () => "some words" },
     });
     expect(attached()).toHaveLength(2);
+  });
+
+  it("speaks Turkish when the app does, sizes included", async () => {
+    act(() => {
+      setLanguage("tr");
+    });
+    const user = userEvent.setup();
+    const { picker } = renderPage();
+    expect(screen.getByRole("heading", { name: "Yeni bir konu" })).toBeInTheDocument();
+    await user.upload(picker, [file("cv.pdf", 2.5 * MB)]);
+    expect(
+      within(screen.getByRole("list", { name: "Eklenen dosyalar" })).getByText("2,5 MB"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Konuyu oluştur" })).toBeInTheDocument();
   });
 });
