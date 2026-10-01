@@ -131,12 +131,13 @@ export function createFlows(t: Harness, models: Models) {
     return { cookie, trackId, sessionId: id };
   };
 
-  const planned = async () => {
+  /** A session whose plan is proposed; `actions` is the plan's record. */
+  const planned = async (actions: object[] = PLAN_ACTIONS) => {
     const session = await startedSession();
     finishProbe(models, PROBE_SUMMARY, [
       { type: "add-fix-item", text: "Thinks adding one is a single step" },
     ]);
-    models.script("plan", planAttempt(PLAN_TEXT));
+    models.script("plan", planAttempt(PLAN_TEXT, actions));
     await t.request(`/api/sessions/${session.sessionId}/messages`, {
       method: "POST",
       cookie: session.cookie,

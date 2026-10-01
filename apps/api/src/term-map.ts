@@ -122,11 +122,29 @@ export function termMap(track: TrackTerms, focus: readonly string[]): TermMap {
   return { nodes, edges };
 }
 
-/** The terms a plan's record planned, in its order: what the plan's picture is drawn around. */
-export function plannedIn(actions: readonly TrackAction[]): string[] {
+/**
+ * The terms a plan's record planned, in its order: what the plan's picture is drawn around. A term
+ * it placed in an arc after the current one (the first in plan order with a planned term) is the
+ * route beyond this session, as a track's first plan lays it out, and is left out: the picture is
+ * the ground this session covers. `arcs` and `track` are as the record left them. Pure.
+ */
+export function plannedIn(
+  actions: readonly TrackAction[],
+  arcs: readonly { terms: readonly string[] }[],
+  track: TrackTerms,
+): string[] {
+  const status = new Map(track.terms.map((t) => [key(t.term), t.status]));
+  const current = arcs.findIndex((arc) => arc.terms.some((t) => status.get(key(t)) === "planned"));
+  const later = new Set(
+    current < 0 ? [] : arcs.slice(current + 1).flatMap((a) => a.terms.map(key)),
+  );
+  const placed = new Set(actions.flatMap((a) => (a.type === "add-to-arc" ? a.terms.map(key) : [])));
   const names = new Map<string, string>();
-  for (const action of actions)
-    if (action.type === "add-planned-term" && !names.has(key(action.term)))
-      names.set(key(action.term), action.term.trim());
+  for (const action of actions) {
+    if (action.type !== "add-planned-term") continue;
+    const name = key(action.term);
+    if (names.has(name) || (placed.has(name) && later.has(name))) continue;
+    names.set(name, action.term.trim());
+  }
   return [...names.values()];
 }

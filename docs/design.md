@@ -718,7 +718,12 @@ verdict and an edit asked for again (`trackActionSchema`) get the term, fix-list
 isn't offered `set-plan` at all: it adds its planned terms and places this session's new ones with
 `add-to-arc`, each in the existing arc it belongs to by that arc's exact title, and a new arc only
 for terms none fits; the rest of the plan stays as it was. A track's first session has no arcs, so
-its plan names the first ones. Reordering, merging or retiring arcs is the close's job, which sees
+its plan lays out the whole route (decided 2026-10-01): every arc the goal needs, in order, with the
+terms each will plan, and this session's ground in the first (method.md, "Plan"). The probe before
+it covers the goal's whole ground for the same reason, each main area of a broad goal located with a
+question or two. Before this, a first plan named only the arcs its own session covered, so a track
+was only ever as large as its first lesson ("become a backend engineer" planned one arc of three
+terms about a form request). Reordering, merging or retiring arcs is the close's job, which sees
 the whole plan and notes. (Before this, the plan's `set-plan` replaced the arcs, so from the second
 session on an approved plan dropped every arc it didn't restate: the imported "How software works"
 lost arcs A–D to one arc, "SQL as asking questions".)
@@ -1521,7 +1526,9 @@ Three structurally different variants were explored
   track's whole map is too many ideas to read in one picture, so none shows more than its focus
   and one level under it:
   - **The plan** draws the ideas its record planned (`session_messages.plan_terms`, written when the
-    record applies), inside the latest plan's card under "What rests on what", once recorded. The
+    record applies), inside the latest plan's card under "What rests on what", once recorded. Those
+    it placed in an arc after the current one (a first plan's route beyond this session) are left
+    out: the picture is the ground this session covers (`plannedIn`). The
     plan message names them already; the picture adds what rests on what.
   - **The lesson's end**, after the last check (the session in homework or later), draws "What you
     just built": the ideas the outline introduces. Never before: the lesson has no opener (§3.2).

@@ -34,6 +34,18 @@ describe("the pictures of what rests on what (#47)", () => {
     expect(built).toBeNull();
   });
 
+  it("draws only this session's ground when a first plan lays out the whole route", async () => {
+    const { cookie, sessionId } = await planned([
+      { type: "add-planned-term", term: "working copy", restsOn: [] },
+      { type: "add-planned-term", term: "lost update", restsOn: ["working copy"] },
+      { type: "add-planned-term", term: "lock", restsOn: ["lost update"] },
+      { type: "add-to-arc", arc: "Concurrency", terms: ["working copy", "lost update"] },
+      { type: "add-to-arc", arc: "Making it safe", terms: ["lock"] },
+    ]);
+    const { plan } = await pictures(cookie, sessionId);
+    expect(plan?.map.nodes.map((n) => n.term)).toEqual(["working copy", "lost update"]);
+  });
+
   it("draws what the lesson built only once its checks are done", async () => {
     const { cookie, sessionId } = await planned();
     const outline = {

@@ -434,8 +434,7 @@ With level and goal in hand, reason out the best way to teach _this thing_ to _t
   Build from there — not below it, not above it. Where the probe found only where a strand stops, not
   what the learner holds beneath it, start at the lowest level the goal needs, not at the bottom of the
   subject.
-- **The first session reaches the goal.** It ends on something the learner came for, or visibly one step
-  from it. If the groundwork alone fills the session, cut it to what that first piece needs; the rest
+- **The first session reaches something the learner came for**, or ends visibly one step from it. If the groundwork alone fills the session, cut it to what that first piece needs; the rest
   of the groundwork arrives when a later piece needs it.
 - What is the motivated discovery path from those truths to the goal?
 - **Order the terminology**: which terms the path needs, in what order, each introduced at the moment its
@@ -444,7 +443,11 @@ With level and goal in hand, reason out the best way to teach _this thing_ to _t
   out the options, weigh one concern against another, ask how far a source can be trusted) is taught as
   a move in the lesson's reasoning, built from what they hold. It gets a term only where the field
   has a name for it that the learner lacks.
-- Group the path into arcs where the subject is larger than one session.
+- **A track's first plan lays out the whole route.** Where the goal is larger than one session, group
+  the path to all of it into arcs, in order: each a stretch of ground a few sessions cover, with the
+  terms it will plan, each resting on what it needs. Record every arc; this session teaches the first
+  arc's first piece, and each later session's plan takes the next ground and adds what it finds. A
+  route that stops at the first session's ground tells the learner the subject is that small.
 - Warm start: the lesson can put a step to the learner as a question it then answers, where they could
   plausibly have reasoned there; expository where they couldn't. Cold start: expository throughout.
 
@@ -453,7 +456,8 @@ learner_, or a disguised theorem? If it derives from something, push it down and
 foundation corrupts everything built on it.
 
 **Then present the plan in chat, before any teaching:** the approach in prose — what we'll cover, in what
-order, and why, given where their knowledge ends and what they're reaching for. The app draws the picture
+order, and why, given where their knowledge ends and what they're reaching for. A track's first plan
+names the route first, its arcs in a line each, then what this session covers of it. The app draws the picture
 of what rests on what from the planned terms you recorded, so the prose does not describe a structure.
 The plan is a sketch of the route, never a preview of the content: no explanations, no worked steps, no
 "and the reason is…".
