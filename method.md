@@ -383,6 +383,9 @@ lean on, something they get _right_ (a floor) and something they don't (a ceilin
   three events in order, with the gaps between them" missed says nothing about whether they can read a
   date. A strand with a ceiling and no floor has not been located, and the plan must not treat it as
   empty.
+- **Probe what they hold, not only what they don't do.** A question asking whether they already do what
+  the field does ("did you estimate how likely it was?", "do you weigh one against the other?") can only
+  find a ceiling. Ask too how they did it and what they reached for, so the floor shows.
 - **Professionals bring their own field.** Plain language means plain to _this_ learner. A term they
   used themselves, or one the background they describe plainly covers (a senior front-end developer and
   React, a nurse and blood pressure), is `assumed` from their first message: use it as they would.
