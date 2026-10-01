@@ -1045,8 +1045,15 @@ HTML/SVG). To be measured, then adjusted.
   §11). Lessons written before this (every step checked) were migrated as one check per step, gating
   where the next step rested on it.
 - Each check is one or two lines. The strong model grades it inline.
-- **Landed** → the steps after it unlock, and the page scrolls to the first once the verdict has been
-  read.
+- **Landed** → the verdict stays alone on the page while it is read: a hold sized from its words
+  (600 ms plus 40 ms a character, about 300 words a minute, never under 1.5 s or over 5 s;
+  `verdictHold`, `apps/web/src/lesson/steps.ts`). Then the steps it unlocks arrive under it, rising
+  into place as they fade in, and the page glides so the verdict sits at the top of the window with
+  the new step under it, so what was just read stays in view. A step continued past (below) arrives
+  at once, with a glide to its heading; a step after one without a check arrives as it is written,
+  with no glide. (Until 2026-10-01 the steps appeared with the verdict and the page glided to the
+  new heading 1.4 s later, which took the verdict off screen; and the new step's answer box took
+  focus at once, which scrolled the page to it instantly, so the glide was never seen: §9.4.)
 - **Miss or "I don't know"** → a repair thread opens under the check (the one place explanation
   happens outside the lesson), then a **fresh** question on the same idea — never the same one again.
   The repair and the fresh question are **one tutor turn**, under "Not quite there yet" (decided

@@ -102,6 +102,17 @@
   }
 }
 
+/* A step a check has just opened (lesson/steps.ts) rises into place as it fades in. */
+@theme {
+  --animate-arrive: arrive 600ms ease-out;
+  @keyframes arrive {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+  }
+}
+
 /* The hint in the empty margin (aside-hint.tsx): a passage is selected, then asked about. */
 @theme {
   --animate-hint-select: hint-select 5s ease-in-out infinite;

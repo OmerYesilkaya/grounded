@@ -70,7 +70,8 @@ export function CheckCard({
                 </div>
               </div>
             ) : (
-              <div key={i}>
+              // A landed verdict is where the page's glide to the step it opens stops (steps.ts).
+              <div key={i} data-verdict={message.verdict} className="scroll-mt-20">
                 <div className="text-[11.5px] tracking-wide text-subtle-foreground uppercase">
                   {t.tutor}
                 </div>

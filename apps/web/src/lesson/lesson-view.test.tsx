@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLanguage } from "@/i18n";
 import { LessonView, type LessonViewProps, type StepProgress } from "./lesson-view";
+import { verdictHold } from "./steps";
 
 const LESSON = ["Adding one is three moves", "Two workers, one number", "Closing the gap"]
   .map(
@@ -43,10 +44,19 @@ function renderLesson(
 }
 
 const scrollIntoView = vi.fn();
+const scrollTo = vi.fn();
 beforeEach(() => {
   scrollIntoView.mockClear();
+  scrollTo.mockClear();
   Element.prototype.scrollIntoView = scrollIntoView;
+  window.scrollTo = scrollTo;
 });
+
+/** Lays `element` out `top` pixels down the window (jsdom lays nothing out). */
+function layOut(element: Element | null, top: number) {
+  if (!element) throw new Error("expected an element to lay out");
+  element.getBoundingClientRect = () => new DOMRect(0, top, 600, 100);
+}
 
 describe("LessonView: revealing steps", () => {
   it("shows steps up to the first open check, and how many are still to come", () => {
@@ -105,6 +115,58 @@ describe("LessonView: revealing steps", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("holds a landed verdict alone on the page while it is read, then the next step arrives and the page glides to the verdict", () => {
+    vi.useFakeTimers();
+    try {
+      const props: LessonViewProps = {
+        steps: steps(),
+        totalSteps: 5,
+        progress: { s1: { status: "open", thread: [], grading: true } },
+        onAnswer: vi.fn(),
+        onDontKnow: vi.fn(),
+        onPause: vi.fn(),
+        onContinue: vi.fn(),
+      };
+      const { rerender } = render(<LessonView {...props} />);
+      const words = "Yes — each works from a copy that is already out of date.";
+      rerender(
+        <LessonView
+          {...props}
+          progress={{ s1: { status: "passed", thread: [tutor(words, "landed")] } }}
+        />,
+      );
+      expect(screen.getByText("That's it")).toBeInTheDocument();
+      expect(screen.queryByText("Two workers, one number")).toBeNull();
+      expect(
+        screen.getByText("4 more steps · each opens when the check before it lands"),
+      ).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(verdictHold(words) - 1);
+      });
+      expect(screen.queryByText("Two workers, one number")).toBeNull();
+      expect(scrollTo).not.toHaveBeenCalled();
+
+      layOut(document.querySelector('[data-verdict="landed"]'), 700);
+      act(() => {
+        vi.advanceTimersByTime(1);
+      });
+      const heading = screen.getByRole("heading", { level: 2, name: "Two workers, one number" });
+      expect(heading.closest("section")).toHaveClass("motion-safe:animate-arrive");
+      // The glide stops with the verdict at the top of the window.
+      expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 700, behavior: "smooth" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows the steps the page opens with at once, without a glide", () => {
+    renderLesson({ s1: { status: "passed", thread: [tutor("Yes.", "landed")] } });
+    const heading = screen.getByRole("heading", { level: 2, name: "Two workers, one number" });
+    expect(heading.closest("section")).not.toHaveClass("motion-safe:animate-arrive");
+    expect(scrollTo).not.toHaveBeenCalled();
   });
 
   it("continues past a step left settling, and marks it", () => {
@@ -300,6 +362,8 @@ describe("LessonView: focusing a check", () => {
     const [, second] = screen.getAllByRole("group", { name: "Check" });
     if (!second) throw new Error("expected a second check");
     expect(within(second).getByRole("textbox", { name: "Your answer" })).toHaveFocus();
+    // Continued past: the step arrives at once, and the page glides to its heading.
+    expect(scrollTo).toHaveBeenCalledExactlyOnceWith({ top: 0, behavior: "smooth" });
   });
 });
 

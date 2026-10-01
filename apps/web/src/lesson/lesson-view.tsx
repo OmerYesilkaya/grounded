@@ -1,12 +1,13 @@
 import type { LessonStep } from "@grounded/content";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { Inlines } from "@/content/inlines";
 import { useT } from "@/i18n";
 import { useMediaQuery } from "@/lib/media-query";
+import { cn } from "@/lib/utils";
 import { AsideLayer } from "./aside-layer";
 import { CheckCard } from "./check-card";
-import { jumpToStep, stepAnchor, unlockedSteps, useCurrentStep } from "./steps";
+import { jumpToStep, stepAnchor, useCurrentStep, useRevealedSteps } from "./steps";
 import { StepTimeline } from "./step-timeline";
 import type { LessonAsides, StepProgress } from "./types";
 
@@ -47,10 +48,9 @@ const OPEN: StepProgress = { status: "open", thread: [] };
 export function LessonView(props: LessonViewProps) {
   const { steps, totalSteps, progress, asides } = props;
   const t = useT().lesson;
-  const shown = unlockedSteps(steps, progress);
+  const { shown, arrived } = useRevealedSteps(steps, progress);
   const lockedCount = Math.max(0, totalSteps - shown.length);
   const currentStepId = useCurrentStep(shown);
-  useScrollToNewStep(shown);
   const grid = useRef<HTMLDivElement>(null);
   const article = useRef<HTMLElement>(null);
   const margin = useRef<HTMLElement>(null);
@@ -87,7 +87,11 @@ export function LessonView(props: LessonViewProps) {
               // Passages are found by their step and block (passages.ts); the heading is the step's
               // first block.
               data-step={step.id}
-              className="scroll-mt-20 [&+&]:mt-8 [&+&]:border-t [&+&]:pt-10"
+              className={cn(
+                "scroll-mt-20 [&+&]:mt-8 [&+&]:border-t [&+&]:pt-10",
+                // A step a check has just opened rises into place as it fades in.
+                arrived.has(step.id) && "motion-safe:animate-arrive",
+              )}
             >
               <h2
                 data-block={`${step.id}.b1`}
@@ -149,24 +153,4 @@ export function LessonView(props: LessonViewProps) {
       )}
     </div>
   );
-}
-
-/**
- * When a check lands and steps open, glide to the first of them once the verdict has been read. The
- * glide goes to the latest step opened by a check; a step that follows one without a check arrives
- * as it is written, under what the learner is reading, and gets no glide.
- */
-function useScrollToNewStep(shown: readonly LessonStep[]): void {
-  const target = shown.findLast((_, i) => Boolean(shown[i - 1]?.check))?.id ?? null;
-  const seen = useRef(target);
-  useEffect(() => {
-    if (!target || target === seen.current) return;
-    seen.current = target;
-    const timer = window.setTimeout(() => {
-      jumpToStep(target);
-    }, 1400);
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [target]);
 }
