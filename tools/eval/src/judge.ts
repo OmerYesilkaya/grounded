@@ -14,7 +14,7 @@ export const CRITERIA = {
     "The probe teaches nothing: no explanation, correction, confirmation or hint in the tutor's probe messages (neutral acknowledgement only).",
   "probe-one-question": "Each probe message asks one question.",
   "probe-locates-level":
-    "For each strand the lesson leans on, the probe found something the learner holds before treating the strand as empty: a miss on a hard question was followed by an easier one beneath it, unless everything missed.",
+    "For each strand the goal needs (on a track's first session, each main area of a broad goal), the probe found something the learner holds before treating the strand as empty: a miss on a hard question was followed by an easier one beneath it, unless everything missed.",
   "probe-asks-goal":
     "The probe asked about the learner's goal at least once (what reaching it would let them do, which part matters most, which account they want), beyond the goal typed at the start.",
   "summary-matches-learner":

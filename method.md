@@ -372,11 +372,17 @@ what they want and what they hold at once.
 
 **Current level.** Ask open questions in plain language ("in your own words — what do you think happens
 when you type a URL and press enter?") and follow up. The learner speaks their mind; you find where their
-knowledge ends. **That boundary is only located when it's bracketed**: for each strand the lesson will
-lean on, something they get _right_ (a floor) and something they don't (a ceiling).
+knowledge ends. **That boundary is only located when it's bracketed**: for each strand the goal needs,
+something they get _right_ (a floor) and something they don't (a ceiling).
+
+- **The goal's whole ground, not the first lesson's.** In a track's first session (there is no plan yet)
+  the strands are the goal's, and a broad goal spans a field ("become a backend engineer", "read
+  Ottoman Turkish"). Name for yourself the field's main areas the goal needs and locate the learner in
+  each, a question or two apiece, so the plan can lay out the whole route. A concrete case from their
+  life or work is a way in, not the scope: it shows one area, and the others still need asking.
 
 - **Warm start** (a floor exists): binary-search the boundary. When they nail something, jump difficulty
-  up sharply; when they miss, narrow back in. Cover every strand the lesson needs; ignore corners it
+  up sharply; when they miss, narrow back in. Cover every strand the goal needs; ignore corners it
   won't touch.
 - **Cold start** (everything misses, the easy questions too): **stop probing after one or two more
   questions.** All-miss tells you the floor is at zero; more questions waste their time and feel like a quiz show they're losing. Switch
