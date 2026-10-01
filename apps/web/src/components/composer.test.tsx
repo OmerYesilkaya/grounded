@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -204,6 +204,49 @@ describe("Composer", () => {
       );
       expect(screen.getByRole("textbox", { name: "Message" })).not.toHaveFocus();
       document.getSelection()?.removeAllRanges();
+    });
+
+    it("waits for a box that is off screen to come into view before taking focus", () => {
+      type Callback = (entries: { isIntersecting: boolean }[]) => void;
+      const observers: { callback: Callback; observed: Element[]; disconnected: boolean }[] = [];
+      vi.stubGlobal(
+        "IntersectionObserver",
+        class {
+          observed: Element[] = [];
+          disconnected = false;
+          constructor(public callback: Callback) {
+            observers.push(this);
+          }
+          observe(element: Element) {
+            this.observed.push(element);
+          }
+          disconnect() {
+            this.disconnected = true;
+          }
+        },
+      );
+      try {
+        const { unmount } = render(<Composer {...props} />);
+        const box = screen.getByRole("textbox", { name: "Message" });
+        const [observer] = observers;
+        if (!observer) throw new Error("the box is not watched");
+        expect(observer.observed).toEqual([box]);
+
+        act(() => {
+          observer.callback([{ isIntersecting: false }]);
+        });
+        expect(box).not.toHaveFocus();
+
+        act(() => {
+          observer.callback([{ isIntersecting: true }]);
+        });
+        expect(box).toHaveFocus();
+        expect(observer.disconnected).toBe(true);
+
+        unmount();
+      } finally {
+        vi.unstubAllGlobals();
+      }
     });
 
     it("leaves the keyboard down on a touch screen, until the box is tapped", () => {

@@ -55,9 +55,10 @@ export interface ComposerProps {
   attachments?: ReactNode;
   /**
    * Take focus when the composer opens, whenever it is enabled again, and whenever `focusKey`
-   * changes, unless the learner is busy in another field or selecting text. On a touch screen,
-   * where focus brings up the keyboard over what is being read, only with "always": for a box the
-   * learner has just tapped to open.
+   * changes, unless the learner is busy in another field or selecting text. A box that is off
+   * screen at that moment waits until it is scrolled into view, so it never pulls the page down to
+   * itself. On a touch screen, where focus brings up the keyboard over what is being read, only
+   * with "always": for a box the learner has just tapped to open.
    */
   autoFocus?: boolean | "always";
   /** A new value (e.g. a fresh question arriving) is another moment to take focus. */
@@ -113,11 +114,16 @@ export function Composer({
 
   useEffect(() => {
     const box = rich ? lineRef.current : textareaRef.current;
-    if (!autoFocus || disabled || !box || busyElsewhere(box)) return;
+    if (!autoFocus || disabled || !box) return;
     // On a touch screen the learner taps the box when they are ready to write.
     if (autoFocus !== "always" && isTouchScreen()) return;
-    // The page scrolls on its own terms (the lesson glides to a new step); focus must not jump it.
-    box.focus({ preventScroll: true });
+    // The page scrolls on its own terms (the lesson glides to a step a check has opened), and focus
+    // would jump it: `preventScroll` holds the browser back, but the answer editor scrolls to its
+    // caret as soon as it is focused. So a box off screen takes focus only once the learner has
+    // scrolled down to it, where there is nothing left to scroll to.
+    return whenOnScreen(box, () => {
+      if (!busyElsewhere(box)) box.focus({ preventScroll: true });
+    });
   }, [autoFocus, disabled, focusKey, rich]);
 
   /** Sends `text`: what the box holds, which the rich editor gives as it is this moment. */
@@ -270,6 +276,26 @@ export function Composer({
 }
 
 /** The learner is typing in another field, or selecting text (to ask about it, say). */
+/**
+ * Calls `then` once `element` is (or comes) on screen, and returns what stops waiting. Where the
+ * browser can't tell (tests), it is on screen now.
+ */
+function whenOnScreen(element: HTMLElement, then: () => void): () => void {
+  if (typeof IntersectionObserver === "undefined") {
+    then();
+    return () => undefined;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    if (!entries.some((entry) => entry.isIntersecting)) return;
+    observer.disconnect();
+    then();
+  });
+  observer.observe(element);
+  return () => {
+    observer.disconnect();
+  };
+}
+
 function busyElsewhere(box: HTMLElement): boolean {
   const active = document.activeElement;
   if (

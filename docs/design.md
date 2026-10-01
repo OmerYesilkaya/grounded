@@ -1711,6 +1711,11 @@ every other page usable (tried at 360–430px wide, in both themes).
   Text fields are 16px there, so the phone doesn't zoom into them. A box never takes focus on its
   own on a touch screen (a new check, the chat), since that brings up the keyboard over what is
   being read; the learner taps it. Shortcut hints (`/`, ⌘ Enter) are hidden.
+- **A box takes focus only once it is on screen** (`Composer`, on every screen): a box that would
+  take focus while off screen (the check of a step that has just opened, below the fold) waits
+  until the learner scrolls down to it. Focusing it sooner pulled the page down to it: the answer
+  editor scrolls to its caret as soon as it is focused, whatever `preventScroll` says (found
+  2026-10-01).
 - **The viewport** (`index.html`): `viewport-fit=cover`, with the bars, sheets, toasts, the chat's
   box and the drawer's foot kept clear of the notch and home bar by `env(safe-area-inset-*)`; and
   `theme-color` in each theme's background, kept in step by `lib/theme.ts`.
