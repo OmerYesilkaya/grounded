@@ -15,11 +15,14 @@ export async function getSession(): Promise<SignedInUser | null> {
   }
 }
 
-/** Signs an invited email in; throws an ApiError saying why otherwise (403: not invited). */
-export function signIn(email: string): Promise<SignedInUser> {
+/**
+ * Signs an invited email in with its invite code; throws an ApiError saying why otherwise (403:
+ * the pair matches no invitation).
+ */
+export function signIn(email: string, code: string): Promise<SignedInUser> {
   return api<SignedInUser>("/api/auth/sign-in", {
     method: "POST",
-    body: JSON.stringify({ email }),
+    body: JSON.stringify({ email, code }),
   });
 }
 

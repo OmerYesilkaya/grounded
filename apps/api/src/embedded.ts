@@ -5,6 +5,7 @@ import { createDb, runMigrations, type Db } from "@grounded/db";
 import type { KeyCheck, ProviderId } from "@grounded/providers";
 import type { TaskList } from "graphile-worker";
 import postgres from "postgres";
+import { invite } from "./allowlist.js";
 import { createApp } from "./app.js";
 import { createEventHub } from "./engine/events.js";
 import type { ModelAccess } from "./engine/model-call.js";
@@ -86,7 +87,7 @@ export interface Embedded {
   /** Learners' files, in memory. */
   files: ReturnType<typeof createMemoryFileStore>;
   request: (path: string, init?: RequestInit & { cookie?: string }) => Response | Promise<Response>;
-  /** Signs an allowlisted email in as the sign-in page does; returns the session cookie. */
+  /** Invites the email (minting its code) and signs it in as the sign-in page does; the cookie. */
   signIn: (email: string) => Promise<string>;
   /** Polls until the condition holds (for work done by the worker). */
   waitFor: (condition: () => Promise<boolean>, timeoutMs?: number) => Promise<void>;
@@ -128,9 +129,10 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
   };
 
   const signIn = async (email: string): Promise<string> => {
+    const code = await invite(db, email);
     const response = await request("/api/auth/sign-in", {
       method: "POST",
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email, code }),
     });
     if (!response.ok) throw new Error(`${email} could not sign in: ${await response.text()}`);
     return response.headers

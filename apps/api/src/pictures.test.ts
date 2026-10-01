@@ -1,6 +1,5 @@
 import { eq, learningSessions, lessons } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import type { SessionPictures } from "./routes/progress.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -78,7 +77,6 @@ describe("the pictures of what rests on what (#47)", () => {
 
   it("is the session's owner's only", async () => {
     const { sessionId } = await planned();
-    await invite(t.db, "eve@example.com");
     const other = await t.signIn("eve@example.com");
     const response = await t.request(`/api/sessions/${sessionId}/pictures`, { cookie: other });
     expect(response.status).toBe(404);

@@ -1,6 +1,5 @@
 import { eq, importedLessons, tracks, users } from "@grounded/db";
 import { describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { createTestHarness } from "./test/harness.js";
 
 const t = createTestHarness();
@@ -8,7 +7,6 @@ const t = createTestHarness();
 const HTML = "<!doctype html><title>SQL</title><script>alert(1)</script><p>Joins.</p>";
 
 async function signedIn(email: string) {
-  await invite(t.db, email);
   const cookie = await t.signIn(email);
   const [user] = await t.db.select().from(users).where(eq(users.email, email));
   if (!user) throw new Error("no user");

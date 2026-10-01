@@ -9,7 +9,6 @@ import {
 } from "@grounded/db";
 import { initialSession, type SessionState } from "@grounded/core";
 import { afterAll, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { appendEvent, eventsAfter, publish } from "./engine/events.js";
 import { applyEvent } from "./engine/session-store.js";
 import { TEST_DATABASE_URL } from "./test/database.js";
@@ -30,7 +29,6 @@ const t = createTestHarness({
 });
 
 async function signedInSession(email = "ada@example.com", state = initialSession()) {
-  await invite(t.db, email);
   const cookie = await t.signIn(email);
   const [user] = await t.db.select().from(users).where(eq(users.email, email));
   if (!user) throw new Error("no user");
@@ -129,7 +127,6 @@ describe("session stream", () => {
 
   it("refuses someone else's session", async () => {
     const { sessionId } = await signedInSession("ada@example.com");
-    await invite(t.db, "eve@example.com");
     const eve = await t.signIn("eve@example.com");
     expect((await t.request(`/api/sessions/${sessionId}/stream`, { cookie: eve })).status).toBe(
       404,

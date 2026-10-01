@@ -10,7 +10,6 @@ import {
   tracks,
 } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import {
   profileDue,
   profileEvidence,
@@ -250,7 +249,6 @@ describe("the learner's teaching notes (#44)", () => {
       "Diagrams help.",
     ]);
 
-    await invite(t.db, "eve@example.com");
     const eve = await t.signIn("eve@example.com");
     const theirs = await t.request(`/api/profile/notes/${id}`, {
       method: "PATCH",

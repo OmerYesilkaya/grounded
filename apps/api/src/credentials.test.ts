@@ -1,13 +1,11 @@
 import { credentials } from "@grounded/db";
 import { describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { createTestHarness } from "./test/harness.js";
 
 const t = createTestHarness();
 const KEY = "sk-test-0123456789abcdef3456";
 
 async function signedIn() {
-  await invite(t.db, "ada@example.com");
   return t.signIn("ada@example.com");
 }
 

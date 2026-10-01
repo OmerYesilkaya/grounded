@@ -61,9 +61,16 @@ export const users = pgTable("users", {
  * Who may sign in: an email here signs in by entering it. Managed with `pnpm invite` /
  * `pnpm revoke` (or a row added by hand). Emails are stored lowercased.
  */
+/**
+ * Who may sign in, and with what (design §4.3). The invite code is kept only as a hash, so no one
+ * reads a code back from here: `pnpm cli invite` mints a new one. A row without a hash is from
+ * before codes: it keeps a signed-in person in, and lets nobody sign in until a code is issued.
+ */
 export const allowlist = pgTable("allowlist", {
   email: text("email").primaryKey(),
   invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
+  codeHash: text("code_hash"),
+  codeIssuedAt: timestamp("code_issued_at", { withTimezone: true }),
 });
 
 // ---------------------------------------------------------------------------------------------

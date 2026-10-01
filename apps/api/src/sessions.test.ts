@@ -1,4 +1,3 @@
-import { invite } from "./allowlist.js";
 import type { LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import {
   asc,
@@ -568,7 +567,6 @@ describe("probe and plan", () => {
 
 describe("creating a track", () => {
   it("doesn't ask for a language: the tutor infers it", async () => {
-    await invite(t.db, "bo@example.com");
     const cookie = await t.signIn("bo@example.com");
     const created = await t.request("/api/tracks", {
       method: "POST",

@@ -2,7 +2,6 @@ import { initialSession } from "@grounded/core";
 import { eq, learningSessions, tracks, users } from "@grounded/db";
 import type { JobHelpers, Task } from "graphile-worker";
 import { describe, expect, it, vi } from "vitest";
-import { invite } from "../allowlist.js";
 import { createTestHarness } from "../test/harness.js";
 import { endingWhenGone } from "./gone.js";
 
@@ -10,7 +9,6 @@ const t = createTestHarness();
 const helpers = {} as JobHelpers;
 
 const aSession = async () => {
-  await invite(t.db, "ada@example.com");
   await t.signIn("ada@example.com");
   const [user] = await t.db.select().from(users);
   const [track] = await t.db

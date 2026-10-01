@@ -57,8 +57,8 @@ export type RefusalNotice =
   | { code: "server-error" }
   // Signing in and the key (design §4.3)
   | { code: "sign-in-first" }
-  | { code: "enter-email" }
-  | { code: "not-invited" }
+  | { code: "enter-email-and-code" }
+  | { code: "email-or-code-wrong" }
   | { code: "credential-incomplete" }
   | { code: "model-unavailable" }
   // Tracks and what they bring (design §4.5)

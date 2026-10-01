@@ -16,7 +16,7 @@ config value.
 
 **v1**
 
-- Sign-in (an invited email, nothing else), key entry, provider/model choice.
+- Sign-in (an invited email and its invite code), key entry, provider/model choice.
 - Tracks (created and deleted by the learner); the full session loop (probe → plan → lesson →
   inline checks → homework → close).
 - Lessons rendered by our own block renderer (no HTML), with asides as margin cards.
@@ -124,7 +124,7 @@ apps/
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
                 worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
-                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli revoke`) and
+                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli revoke`, `pnpm cli list`) and
                 the track import (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
@@ -283,17 +283,28 @@ about, test and debug.
 
 ### 4.3 Auth and keys
 
-- **Sign-in is the invited email, nothing else** (decided 2026-09-30, replacing Better Auth's magic
-  link, Resend and invite links). Omer puts an email on the `allowlist` (`pnpm cli invite`, or a row
-  by hand); entering it on the sign-in page signs the person in, creating their user row the first
-  time, and they stay signed in. The browser holds a cookie (`grounded_session`) with the user's id,
-  signed with `AUTH_SECRET` (HMAC, Hono's signed cookies), HttpOnly, SameSite=Lax, Secure where the
-  app is served over HTTPS, for 400 days (the browsers' cap), renewed by every page load's `/api/me`.
-  Every request looks the cookie's user up joined with the allowlist, so `pnpm cli revoke` shuts
-  someone out at once; no session table. Sign-out clears the cookie. The account guards nothing
-  worth more than that list: the learner brings their own API key, and an uninvited email is told
-  so plainly (`apps/api/src/auth.ts`). Something stronger (a real identity provider, open sign-up)
-  is a later decision, behind configuration.
+- **Sign-in is the invited email and its invite code** (decided 2026-10-02; from 2026-09-30 to then
+  the email alone, which had replaced Better Auth's magic link, Resend and invite links). The email
+  alone let anyone who knew an invited address into that account, and so spend its API key and
+  read its tracks: the account guards the key, which is live money, so it needs something the
+  learner has. A magic link needs a mail provider and a sending domain, which Omer declined; the
+  code needs nothing sent. `pnpm cli invite <email>` puts the email on the `allowlist`, mints a
+  random code (four groups of four from an alphabet without look-alikes, about 79 bits), prints it
+  once and stores only its SHA-256 hash (`allowlist.code_hash`), so no one reads a code back from
+  the database; Omer passes it to the person the way they help with keys, in person. Entering email
+  and code on the sign-in page signs the person in, creating their user row the first time, and
+  they stay signed in; the code is permanent, typed once per device. Inviting again replaces the
+  code (a lost one is replaced, never recovered); the old one stops at once, sessions stay. The
+  browser holds a cookie (`grounded_session`) with the user's id, signed with `AUTH_SECRET` (HMAC,
+  Hono's signed cookies), HttpOnly, SameSite=Lax, Secure where the app is served over HTTPS, for
+  400 days (the browsers' cap), renewed by every page load's `/api/me`. Every request looks the
+  cookie's user up joined with the allowlist, so `pnpm cli revoke` shuts someone out at once; no
+  session table. Sign-out clears the cookie. A refused sign-in says only that the email and code
+  match no invitation, never which was wrong, so the allowlist can't be probed email by email; at
+  79 bits no throttle is needed against guessing (`apps/api/src/auth.ts`, `invite-code.ts`,
+  `allowlist.ts`). Allowlist rows from before codes have no hash: they keep a signed-in person in
+  and let nobody sign in until `pnpm cli invite` issues their code. Something stronger (a real
+  identity provider, open sign-up) is a later decision, behind configuration.
 - **Keys:** envelope encryption — a per-row data key encrypts the API key; a master key (host secret
   now, a KMS later) encrypts the data keys. Decrypted only in the worker at call time; never sent to
   the browser after entry, never logged. Learners can replace or delete their key.
@@ -589,7 +600,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | Table                                | Holds                                                                                                                                                                    |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `users`                              | a learner: email, created on their first sign-in (§4.3)                                                                                                                  |
-| `allowlist`                          | who may sign in                                                                                                                                                          |
+| `allowlist`                          | who may sign in, and the hash of their invite code                                                                                                                       |
 | `credentials`                        | provider, encrypted key, credential source                                                                                                                               |
 | `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                                   |
 | `track_files`                        | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                                             |
@@ -1756,8 +1767,10 @@ every other page usable (tried at 360–430px wide, in both themes).
 
 ## 10. Operating without an admin page
 
-- Allowlist: `pnpm cli invite a@b.com`, `pnpm cli revoke a@b.com` (or the `allowlist` table by hand).
-  An invited person signs in by entering the email (§4.3); nothing is sent to them.
+- Allowlist: `pnpm cli invite a@b.com` prints the person's invite code once (running it again
+  replaces the code), `pnpm cli revoke a@b.com`, `pnpm cli list` (who is invited, when their code
+  was issued; never the code). An invited person signs in by entering the email and the code
+  (§4.3); nothing is sent to them, Omer hands the code over in person.
 - Model list: `packages/providers/src/models.ts` in the repo, reviewed with its eval results.
 - Importing a track from the earlier setup (Omer's `Learning` folders, a one-time move):
   `pnpm import-track <track folder> --email <learner> [--title <title>] [--write]`. A dry run by default:

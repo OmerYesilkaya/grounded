@@ -14,10 +14,11 @@ export const account = defineMessages({
     },
     signIn: {
       email: "Email",
+      code: "Invite code",
       signIn: "Sign in",
       signingIn: "Signing in…",
       inviteOnly:
-        "Grounded is invite-only: enter the email you were invited with. No password needed.",
+        "Grounded is invite-only: enter the email you were invited with and the invite code you were given. No password needed.",
       whatIsStored:
         "What is stored: your answers, your progress, the questions you ask, the files you attach and your API key, encrypted. Nothing is shared; the tutor's calls go to the AI provider whose key you bring. Whoever runs Grounded can technically access the database, but does not read it.",
     },
@@ -84,10 +85,11 @@ export const account = defineMessages({
     },
     signIn: {
       email: "E-posta",
+      code: "Davet kodu",
       signIn: "Giriş yap",
       signingIn: "Giriş yapılıyor…",
       inviteOnly:
-        "Grounded yalnızca davetle açılıyor: davet edildiğin e-postayı yaz. Şifreye gerek yok.",
+        "Grounded yalnızca davetle açılıyor: davet edildiğin e-postayı ve sana verilen davet kodunu yaz. Şifreye gerek yok.",
       whatIsStored:
         "Saklananlar: cevapların, ilerlemen, sorduğun sorular, eklediğin dosyalar ve şifrelenmiş olarak API anahtarın. Hiçbiri paylaşılmaz; öğretmenin çağrıları, anahtarını getirdiğin yapay zekâ sağlayıcısına gider. Grounded'ı işleten kişi veritabanına teknik olarak erişebilir, ama içini okumaz.",
     },

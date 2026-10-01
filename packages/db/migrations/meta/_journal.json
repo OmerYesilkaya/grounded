@@ -232,6 +232,13 @@
       "when": 1790799064181,
       "tag": "0032_notices",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1790893207767,
+      "tag": "0033_invite_codes",
+      "breakpoints": true
     }
   ]
 }

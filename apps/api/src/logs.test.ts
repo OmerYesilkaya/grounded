@@ -2,7 +2,6 @@ import { APICallError } from "@ai-sdk/provider";
 import { credentials, eq, modelCalls, usageEvents, users } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { invite } from "./allowlist.js";
 import { createModelCaller, type ModelAccess } from "./engine/model-call.js";
 import { captureLogs, type LogFields } from "./log.js";
 import {
@@ -79,7 +78,6 @@ const LESSON = [
 
 /** A signed-in learner with a key and a track; returns what the log must never show. */
 async function keyedLearner() {
-  await invite(t.db, "ada@example.com");
   const cookie = await t.signIn("ada@example.com");
   const saved = await t.request("/api/credentials", {
     method: "PUT",
@@ -241,7 +239,6 @@ describe("logs", () => {
 describe("request lines", () => {
   it("give the method, route, status and time, with the reason for a refusal", async () => {
     const captured = logs();
-    await invite(t.db, "ada@example.com");
     const cookie = await t.signIn("ada@example.com");
     const response = await t.request("/api/sessions/not-a-session", { cookie });
     expect(response.status).toBe(404);
@@ -263,7 +260,6 @@ describe("request lines", () => {
 
   it("never give the query string: a token or a learner's words would travel in it", async () => {
     const captured = logs();
-    await invite(t.db, "ada@example.com");
     const cookie = await t.signIn("ada@example.com");
     await t.request("/api/credentials?token=n0t-f0r-the-l0g", { cookie });
 

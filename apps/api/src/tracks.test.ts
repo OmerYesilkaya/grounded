@@ -13,7 +13,6 @@ import {
 } from "@grounded/db";
 import { MockLanguageModelV4 } from "ai/test";
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { readAttachments } from "./files/attachments.js";
 import { createMemoryFileStore } from "./files/store.js";
 import { createTrack } from "./files/track-files.js";
@@ -49,7 +48,6 @@ interface TrackRow {
 }
 
 const signedIn = async () => {
-  await invite(t.db, "ada@example.com");
   return t.signIn("ada@example.com");
 };
 
@@ -167,7 +165,6 @@ describe("creating a track with files", () => {
     expect(download.headers.get("x-content-type-options")).toBe("nosniff");
     expect(new Uint8Array(await download.arrayBuffer())).toEqual(cv);
 
-    await invite(t.db, "eve@example.com");
     const eve = await t.signIn("eve@example.com");
     const theirs = await t.request(`/api/tracks/${id}/files/${file?.id ?? ""}`, { cookie: eve });
     expect(theirs.status).toBe(404);
@@ -620,7 +617,6 @@ describe("deleting a track", () => {
   it("is only for the track's learner", async () => {
     const cookie = await signedIn();
     const trackId = await withFiles(cookie);
-    await invite(t.db, "eve@example.com");
     const eve = await t.signIn("eve@example.com");
     expect((await remove(eve, trackId)).status).toBe(404);
     expect((await remove(eve, "not-an-id")).status).toBe(404);

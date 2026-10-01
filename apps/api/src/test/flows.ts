@@ -1,6 +1,5 @@
 import { asc, eq, sessionEvents } from "@grounded/db";
 import { expect } from "vitest";
-import { invite } from "../allowlist.js";
 import type { ActivityEvent } from "../engine/events.js";
 import type { createTestHarness } from "./harness.js";
 import type { scriptedModels } from "./scripted-models.js";
@@ -110,7 +109,6 @@ export function createFlows(t: Harness, models: Models) {
     t.waitFor(async () => ok(await snapshot(cookie, sessionId)));
 
   const learner = async () => {
-    await invite(t.db, "ada@example.com");
     const cookie = await t.signIn("ada@example.com");
     const response = await t.request("/api/tracks", {
       method: "POST",

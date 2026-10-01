@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { applyActions } from "./engine/track-state.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -65,7 +64,6 @@ describe("a track's page (#45)", () => {
     expect(progress.coming).toBe(2);
     expect(progress.arcs[0]).toMatchObject({ current: true, counts: { coming: 2 } });
 
-    await invite(t.db, "eve@example.com");
     const other = await t.signIn("eve@example.com");
     expect((await t.request(`/api/tracks/${trackId}/progress`, { cookie: other })).status).toBe(
       404,

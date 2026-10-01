@@ -1,7 +1,6 @@
 import { initialSession } from "@grounded/core";
 import { learningSessions, tracks, usageEvents, users, eq } from "@grounded/db";
 import { describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import type { UsageReport } from "./routes/usage.js";
 import { createTestHarness } from "./test/harness.js";
 
@@ -28,7 +27,6 @@ const call = (
 
 describe("usage", () => {
   it("adds up each month and each session, costed at the model list's prices", async () => {
-    await invite(t.db, "ada@example.com");
     const cookie = await t.signIn("ada@example.com");
     const [user] = await t.db.select().from(users).where(eq(users.email, "ada@example.com"));
     const userId = user?.id ?? "";
@@ -104,7 +102,6 @@ describe("usage", () => {
   });
 
   it("shows a learner only their own calls", async () => {
-    await invite(t.db, "eve@example.com");
     const cookie = await t.signIn("eve@example.com");
     const [other] = await t.db.insert(users).values({ email: "ada@example.com" }).returning();
     await t.db.insert(usageEvents).values(call(other?.id ?? "", "2026-09-02T11:00:00Z"));

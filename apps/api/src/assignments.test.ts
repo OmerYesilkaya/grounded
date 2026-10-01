@@ -1,7 +1,6 @@
 import { assignments, eq, learningSessions, type Db } from "@grounded/db";
 import { initialSession, type AssignmentTask } from "@grounded/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { invite } from "./allowlist.js";
 import { createAssignment } from "./engine/assignments.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
@@ -164,7 +163,6 @@ describe("homework", () => {
 
   it("is only its learner's", async () => {
     const { id } = await assigned();
-    await invite(t.db, "bea@example.com");
     const other = await t.signIn("bea@example.com");
     expect((await t.request(`/api/assignments/${id}`, { cookie: other })).status).toBe(404);
     expect((await answer(other, id, { prediction: "mine" })).status).toBe(404);
