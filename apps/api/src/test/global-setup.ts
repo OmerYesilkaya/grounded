@@ -7,16 +7,17 @@ const SERVER_URL =
 
 declare module "vitest" {
   export interface ProvidedContext {
-    databaseUrl: string;
+    /** The run's migrated database, which no test touches: each worker's is a copy of it (database.ts). */
+    templateDatabaseUrl: string;
   }
 }
 
 /**
- * A fresh, migrated database per run, dropped when the run ends. Each run gets its own, so two runs
- * at once (another worktree, an agent's run beside yours) don't drop each other's database.
+ * A fresh, migrated database per run, dropped with its copies when the run ends. Each run gets its
+ * own, so two runs at once (another worktree, an agent's run beside yours) don't drop each other's.
  */
 export default async function setup(project: TestProject) {
-  const database = await createFreshDatabase(SERVER_URL, String(process.pid));
-  project.provide("databaseUrl", database.url);
-  return database.drop;
+  const template = await createFreshDatabase(SERVER_URL, String(process.pid));
+  project.provide("templateDatabaseUrl", template.url);
+  return template.drop;
 }

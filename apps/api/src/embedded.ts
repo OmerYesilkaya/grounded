@@ -29,10 +29,15 @@ export { createDemoModels } from "./dev/demo-models.js";
 export { createModelCaller, type ModelAccess } from "./engine/model-call.js";
 export { createWebAccess } from "./media/web.js";
 
-/** A new, migrated database on the server `serverUrl` points at, named after it plus `suffix`. */
+/**
+ * A new, migrated database on the server `serverUrl` points at, named after it plus `suffix`. With
+ * `template` (the URL of one this made), a copy of that one instead, which takes a moment where
+ * migrating takes a second: the test run clones its template once per worker.
+ */
 export async function createFreshDatabase(
   serverUrl: string,
   suffix: string,
+  options: { template?: string } = {},
 ): Promise<{ url: string; drop: () => Promise<void>; keep: () => Promise<void> }> {
   const url = new URL(serverUrl);
   url.pathname = `/${url.pathname.slice(1)}_${suffix}`;
@@ -46,14 +51,23 @@ export async function createFreshDatabase(
     onnotice: () => undefined,
   });
   await admin.unsafe(`drop database if exists "${name}" with (force)`);
-  await admin.unsafe(`create database "${name}"`);
-  // Postgres's notices (a truncate's "truncate cascades to …") would print to stdout.
-  await admin.unsafe(`alter database "${name}" set client_min_messages = warning`);
-  await runMigrations(url.toString());
+  if (options.template) {
+    const template = new URL(options.template).pathname.slice(1);
+    await admin.unsafe(`create database "${name}" template "${template}"`);
+  } else {
+    await admin.unsafe(`create database "${name}"`);
+    // Postgres's notices (a truncate's "truncate cascades to …") would print to stdout.
+    await admin.unsafe(`alter database "${name}" set client_min_messages = warning`);
+    await runMigrations(url.toString());
+  }
   return {
     url: url.toString(),
+    /** Drops the database, and any copy made from it that is still there. */
     drop: async () => {
-      await admin.unsafe(`drop database if exists "${name}" with (force)`);
+      const copies = await admin<{ datname: string }[]>`
+        select datname from pg_database where datname like ${`${name}\\_%`}`;
+      for (const copy of [{ datname: name }, ...copies])
+        await admin.unsafe(`drop database if exists "${copy.datname}" with (force)`);
       await admin.end();
     },
     /** Leaves the database in place, to be looked at. */
