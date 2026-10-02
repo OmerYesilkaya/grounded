@@ -70,7 +70,8 @@ export async function runEval(options: RunOptions): Promise<RunResult> {
     databaseUrl: database.url,
     models:
       candidate.kind === "demo"
-        ? createDemoModels()
+        ? // Unpaced: nobody watches an eval's text arrive, and the paced demo takes ten times as long.
+          createDemoModels({ chunkDelayMs: 0 })
         : ({ db, vault }) => createModelCaller({ db, vault, createLanguageModel }),
     ...(options.method ? { method: options.method.method } : {}),
     // Real models find and verify lesson media on the real web, as in production.

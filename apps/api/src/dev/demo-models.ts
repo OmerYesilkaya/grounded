@@ -12,27 +12,40 @@ const usage = {
   outputTokens: { total: 0, text: 0, reasoning: 0 },
 };
 
-function model(text: string, generate: string[] = []) {
-  const parts: LanguageModelV4StreamPart[] = [{ type: "text-start", id: "t" }];
-  for (const word of text.split(/(?<=\s)/))
-    parts.push({ type: "text-delta", id: "t", delta: word });
-  parts.push({ type: "text-end", id: "t" });
-  parts.push({
-    type: "finish",
-    finishReason: { unified: "stop", raw: "stop" },
-    usage,
-  });
-  const result = (t: string): LanguageModelV4GenerateResult => ({
-    content: [{ type: "text", text: t }],
-    finishReason: { unified: "stop", raw: "stop" },
-    usage,
-    warnings: [],
-  });
-  return new MockLanguageModelV4({
-    doStream: { stream: simulateReadableStream({ chunks: parts, chunkDelayInMs: 18 }) },
-    doGenerate: generate.length ? generate.map(result) : [result(text)],
-  });
+/** A word every this many ms when streaming: about a real model's pace, so the UI shows it arriving. */
+const DEVELOPMENT_PACE_MS = 18;
+
+export interface DemoModelOptions {
+  /**
+   * Ms between streamed words (default: the development pace). The eval harness passes 0: nobody
+   * watches its sessions arrive, and a paced one takes ten times as long.
+   */
+  chunkDelayMs?: number;
 }
+
+const modelMaker =
+  (chunkDelayInMs: number) =>
+  (text: string, generate: string[] = []) => {
+    const parts: LanguageModelV4StreamPart[] = [{ type: "text-start", id: "t" }];
+    for (const word of text.split(/(?<=\s)/))
+      parts.push({ type: "text-delta", id: "t", delta: word });
+    parts.push({ type: "text-end", id: "t" });
+    parts.push({
+      type: "finish",
+      finishReason: { unified: "stop", raw: "stop" },
+      usage,
+    });
+    const result = (t: string): LanguageModelV4GenerateResult => ({
+      content: [{ type: "text", text: t }],
+      finishReason: { unified: "stop", raw: "stop" },
+      usage,
+      warnings: [],
+    });
+    return new MockLanguageModelV4({
+      doStream: { stream: simulateReadableStream({ chunks: parts, chunkDelayInMs }) },
+      doGenerate: generate.length ? generate.map(result) : [result(text)],
+    });
+  };
 
 const step = (heading: string, body: string, check: string) =>
   `## ${heading}\n\n${body}\n\n:::check\n${check}\n:::`;
@@ -77,7 +90,8 @@ const OUTLINE = {
   ],
 };
 
-export function createDemoModels(): ModelAccess {
+export function createDemoModels(options: DemoModelOptions = {}): ModelAccess {
+  const model = modelMaker(options.chunkDelayMs ?? DEVELOPMENT_PACE_MS);
   const counts = new Map<string, number>();
   const next = (purpose: string) => {
     const n = (counts.get(purpose) ?? 0) + 1;
