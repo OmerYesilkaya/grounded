@@ -1813,6 +1813,15 @@ every other page usable (tried at 360–430px wide, in both themes).
   yet), the planned terms' ledger context, plan, session log and handoff appended verbatim. Only the latest lesson comes along, stored as its original HTML in `imported_lessons` and
   shown on the track page in an `<iframe sandbox>` with no scripts or same-origin access; older lessons
   are not imported. Refuses a learner without a key or a duplicate title.
+- Looking at the later stages in development (`pnpm stages`, `apps/api/src/dev/stages.ts`): a
+  database of its own next to the development one (its name plus `_stages`, made afresh each run)
+  with one track per stage: homework open, homework reviewed, arc exam open (four parts, one of each
+  kind), arc exam reviewed with the final offered, the final in its teach-back, the final finished.
+  Each is made as a learner makes it, through the real routes and jobs, with canned model replies
+  about one made-up subject taught in two sessions that close one arc, so a page shows what the app
+  would store; its test (`stages.test.ts`) keeps it working as the app changes. The learner gets a
+  password and a placeholder key sealed with the development vault, so the app opens; going on from
+  a stage needs the worker with `DEMO_MODELS=true` (or a real key, saved in settings).
 - Everything else through the database directly, with care.
 
 ## 11. Eval harness (`tools/eval`)

@@ -17,6 +17,11 @@ pnpm db:up          # local Postgres
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
+To look at homework, arc exams and the final without working through sessions to reach them,
+`pnpm stages` makes a database of its own (`grounded_stages`) with a track stopped at each stage, for
+one learner (`--email`, `--password`; `--only exam-open,…` for some), and prints how to point
+`pnpm dev:api` at it. Run it again to start over (`docs/design.md` §10).
+
 ## Deploy (Railway)
 
 One Docker image runs the API (which also serves the web app) and the worker; see `docs/design.md`

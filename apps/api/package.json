@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "cli": "tsx --env-file-if-exists=../../.env src/cli.ts",
     "import-track": "tsx --env-file-if-exists=../../.env src/import/cli.ts",
+    "stages": "LOG_LEVEL=${LOG_LEVEL:-warn} tsx --env-file-if-exists=../../.env src/dev/stages-cli.ts",
     "worker": "tsx src/dev/worker-dev.ts",
     "start:worker": "node --import tsx src/worker.ts"
   },

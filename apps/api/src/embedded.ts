@@ -79,6 +79,11 @@ export interface EmbeddedOptions {
   workerConcurrency?: number;
   /** Where lesson media is found and verified (default: an offline web, so nothing verifies). */
   media?: VerifierOptions;
+  /**
+   * Seals stored keys (default: a vault of its own, so nothing else can open them). The stages seed
+   * passes the development server's, so the keys it stores open there.
+   */
+  vault?: KeyVault;
 }
 
 export interface Embedded {
@@ -105,7 +110,8 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
   const { db, client, close } = createDb(databaseUrl);
   const events = createEventHub(client);
   const queue = createJobQueue(databaseUrl);
-  const vault = createKeyVault({ masterKeys: { e1: randomBytes(32) }, activeKid: "e1" });
+  const vault =
+    options.vault ?? createKeyVault({ masterKeys: { e1: randomBytes(32) }, activeKid: "e1" });
   const files = createMemoryFileStore();
   let runner: Worker | undefined;
 

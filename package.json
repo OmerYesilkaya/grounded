@@ -20,6 +20,7 @@
     "invite": "pnpm --filter @grounded/api cli invite",
     "revoke": "pnpm --filter @grounded/api cli revoke",
     "import-track": "pnpm --filter @grounded/api import-track",
+    "stages": "pnpm --filter @grounded/api stages",
     "dev:api": "pnpm --filter @grounded/api dev",
     "dev:web": "pnpm --filter @grounded/web dev",
     "dev:worker": "pnpm --filter @grounded/api worker",
