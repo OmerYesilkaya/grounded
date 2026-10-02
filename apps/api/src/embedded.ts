@@ -12,6 +12,7 @@ import type { ModelAccess } from "./engine/model-call.js";
 import { createJobQueue, startWorker, type JobQueue, type Worker } from "./engine/queue.js";
 import { createTasks } from "./engine/tasks.js";
 import { createMemoryFileStore } from "./files/store.js";
+import { createPasswordHasher } from "./password.js";
 import type { VerifierOptions } from "./media/verify.js";
 import { offlineWeb } from "./media/web.js";
 
@@ -110,7 +111,12 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
 
   const app = createApp({
     db,
-    auth: { secret: "embedded-secret-that-is-long-enough-to-sign-with", secure: false },
+    auth: {
+      secret: "embedded-secret-that-is-long-enough-to-sign-with",
+      secure: false,
+      // Cheap: a test run signs in hundreds of times, and none of it depends on the hash's slowness.
+      passwords: createPasswordHasher({ cost: 2 ** 10 }),
+    },
     vault,
     events,
     queue,

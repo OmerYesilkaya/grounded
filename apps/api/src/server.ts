@@ -8,6 +8,7 @@ import { createJobQueue } from "./engine/queue.js";
 import { readEnv } from "./env.js";
 import { fileStoreFor } from "./files/from-env.js";
 import { log, setLogService } from "./log.js";
+import { createPasswordHasher } from "./password.js";
 import { serveWeb } from "./web.js";
 
 setLogService("api");
@@ -19,7 +20,11 @@ const queue = createJobQueue(env.DATABASE_URL);
 const app = createApp({
   db,
   // The cookie goes only over HTTPS where the app is served over it.
-  auth: { secret: env.AUTH_SECRET, secure: env.APP_URL.startsWith("https:") },
+  auth: {
+    secret: env.AUTH_SECRET,
+    secure: env.APP_URL.startsWith("https:"),
+    passwords: createPasswordHasher(),
+  },
   events,
   queue,
   files: fileStoreFor(env),

@@ -5,13 +5,7 @@ import { deleteCookie, getSignedCookie, setSignedCookie } from "hono/cookie";
 import { z } from "zod";
 import { normalizeEmail } from "./allowlist.js";
 import { inviteCodeMatches } from "./invite-code.js";
-import {
-  DECOY_HASH,
-  hashPassword,
-  PASSWORD_MAX_LENGTH,
-  PASSWORD_MIN_LENGTH,
-  verifyPassword,
-} from "./password.js";
+import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, type PasswordHasher } from "./password.js";
 import { refuse } from "./refusals.js";
 
 /*
@@ -31,6 +25,7 @@ export interface AuthOptions {
   secret: string;
   /** Send the cookie only over HTTPS (production; the app is served over https there). */
   secure: boolean;
+  passwords: PasswordHasher;
 }
 
 export interface SignedInUser {
@@ -83,7 +78,12 @@ export type SignInOutcome =
  * signing up). Refusals don't say which of the two was wrong, and take as long either way, so the
  * allowlist can't be probed email by email.
  */
-export async function signIn(db: Db, rawEmail: string, secret: string): Promise<SignInOutcome> {
+export async function signIn(
+  options: AuthOptions,
+  rawEmail: string,
+  secret: string,
+): Promise<SignInOutcome> {
+  const { db, passwords } = options;
   const email = normalizeEmail(rawEmail);
   const [row] = await db
     .select({
@@ -103,7 +103,7 @@ export async function signIn(db: Db, rawEmail: string, secret: string): Promise<
   const passwordHash = user?.passwordHash;
   if (user && passwordHash) {
     if (user.lockedUntil && user.lockedUntil > new Date()) return { kind: "locked" };
-    if (await verifyPassword(secret, passwordHash)) {
+    if (await passwords.verify(secret, passwordHash)) {
       await db
         .update(users)
         .set({ signInFailures: 0, lockedUntil: null })
@@ -115,7 +115,7 @@ export async function signIn(db: Db, rawEmail: string, secret: string): Promise<
   }
 
   // No password to check: spend the time one would take, so timing tells nothing.
-  await verifyPassword(secret, DECOY_HASH);
+  await passwords.spendVerifyTime();
   const codeHash = row?.codeHash;
   if (!codeHash || !inviteCodeMatches(secret, codeHash)) return { kind: "refused" };
   await db.insert(users).values({ email }).onConflictDoNothing();
@@ -174,7 +174,7 @@ export function registerAuthRoutes(
   app.post("/api/auth/sign-in", async (c) => {
     const parsed = signInInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success) return c.json(refuse("enter-email-and-password"), 400);
-    const outcome = await signIn(options.db, parsed.data.email, parsed.data.password);
+    const outcome = await signIn(options, parsed.data.email, parsed.data.password);
     if (outcome.kind === "locked") return c.json(refuse("too-many-attempts"), 429);
     if (outcome.kind === "refused") return c.json(refuse("email-or-password-wrong"), 403);
     await setSession(c, options, outcome.user);
@@ -197,7 +197,7 @@ export function registerPasswordRoutes(
   app: Hono<{ Variables: { user: SignedInUser } }>,
   options: AuthOptions,
 ): void {
-  const { db } = options;
+  const { db, passwords } = options;
   app.put("/api/auth/password", async (c) => {
     const parsed = passwordInput.safeParse(await c.req.json().catch(() => null));
     if (!parsed.success)
@@ -219,13 +219,13 @@ export function registerPasswordRoutes(
     if (user.passwordHash) {
       if (user.lockedUntil && user.lockedUntil > new Date())
         return c.json(refuse("too-many-attempts"), 429);
-      if (!(await verifyPassword(parsed.data.current ?? "", user.passwordHash))) {
+      if (!(await passwords.verify(parsed.data.current ?? "", user.passwordHash))) {
         await recordFailure(db, id, user.signInFailures);
         return c.json(refuse("current-password-wrong"), 403);
       }
     }
 
-    const passwordHash = await hashPassword(parsed.data.password);
+    const passwordHash = await passwords.hash(parsed.data.password);
     await db.transaction(async (tx) => {
       await tx
         .update(users)

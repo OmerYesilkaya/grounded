@@ -9,7 +9,8 @@ import { randomBytes, scrypt, timingSafeEqual } from "node:crypto";
 export const PASSWORD_MIN_LENGTH = 10;
 export const PASSWORD_MAX_LENGTH = 200;
 
-const COST = 2 ** 15;
+/** scrypt's N for a new hash: about 40 ms on a laptop core. */
+export const PASSWORD_COST = 2 ** 15;
 const BLOCK_SIZE = 8;
 const PARALLELISM = 1;
 const KEY_LENGTH = 32;
@@ -28,20 +29,6 @@ const derive = (password: string, salt: Buffer, N: number, r: number, p: number)
     );
   });
 
-/** The stored form: `scrypt$N$r$p$salt$hash`, salt and hash base64. */
-export async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(16);
-  const key = await derive(password, salt, COST, BLOCK_SIZE, PARALLELISM);
-  return [
-    "scrypt",
-    COST,
-    BLOCK_SIZE,
-    PARALLELISM,
-    salt.toString("base64"),
-    key.toString("base64"),
-  ].join("$");
-}
-
 /** Whether the password is the one the stored hash was made from; false for a hash it can't read. */
 export async function verifyPassword(password: string, stored: string): Promise<boolean> {
   const [scheme, N, r, p, salt, hash] = stored.split("$");
@@ -51,8 +38,47 @@ export async function verifyPassword(password: string, stored: string): Promise<
   return key.length === expected.length && timingSafeEqual(key, expected);
 }
 
-/**
- * A hash to verify against when there is no real one, so refusing an unknown email takes as long
- * as refusing a wrong password and the allowlist can't be probed by timing.
- */
-export const DECOY_HASH = await hashPassword("a decoy, never anyone's password");
+export interface PasswordHasher {
+  /** The stored form: `scrypt$N$r$p$salt$hash`, salt and hash base64. */
+  hash(password: string): Promise<string>;
+  verify(password: string, stored: string): Promise<boolean>;
+  /**
+   * Spends the time a verify takes, for when there is no hash to verify against: refusing an
+   * unknown email then takes as long as refusing a wrong password, and the allowlist can't be
+   * probed by timing.
+   */
+  spendVerifyTime(): Promise<void>;
+}
+
+export interface PasswordHasherOptions {
+  /**
+   * scrypt's N for new hashes (default `PASSWORD_COST`). The test harness lowers it: it signs in
+   * hundreds of times a run, and nothing it tests depends on how slow the hash is.
+   */
+  cost?: number;
+}
+
+export function createPasswordHasher(options: PasswordHasherOptions = {}): PasswordHasher {
+  const cost = options.cost ?? PASSWORD_COST;
+  const hash = async (password: string): Promise<string> => {
+    const salt = randomBytes(16);
+    const key = await derive(password, salt, cost, BLOCK_SIZE, PARALLELISM);
+    return [
+      "scrypt",
+      cost,
+      BLOCK_SIZE,
+      PARALLELISM,
+      salt.toString("base64"),
+      key.toString("base64"),
+    ].join("$");
+  };
+  // Nobody's password, hashed at the same cost as everyone's, so verifying against it takes as long.
+  const decoy = hash("a decoy, never anyone's password");
+  return {
+    hash,
+    verify: verifyPassword,
+    spendVerifyTime: async () => {
+      await verifyPassword("", await decoy);
+    },
+  };
+}
