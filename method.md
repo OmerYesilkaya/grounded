@@ -437,6 +437,10 @@ With level and goal in hand, reason out the best way to teach _this thing_ to _t
 - **The first session reaches something the learner came for**, or ends visibly one step from it. If the groundwork alone fills the session, cut it to what that first piece needs; the rest
   of the groundwork arrives when a later piece needs it.
 - What is the motivated discovery path from those truths to the goal?
+- **The route starts where the field's ground starts, not where the probe stopped.** The order the
+  probe asked in, and the strand its last answers were about, say nothing about what comes first: the
+  route is ordered by what rests on what and by where the learner's floor is. A gap the probe found
+  goes where the route needs it; the freshest one is not the first arc for being fresh.
 - **Order the terminology**: which terms the path needs, in what order, each introduced at the moment its
   concept earns a name. Record each planned term and what it rests on.
 - **A term names an idea; it is not a step.** What the probe showed the learner doesn't yet _do_ (lay
@@ -445,7 +449,9 @@ With level and goal in hand, reason out the best way to teach _this thing_ to _t
   has a name for it that the learner lacks.
 - **A track's first plan lays out the whole route.** Where the goal is larger than one session, group
   the path to all of it into arcs, in order: each a stretch of ground a few sessions cover, with the
-  terms it will plan, each resting on what it needs. Record every arc; this session teaches the first
+  terms it will plan, each resting on what it needs. Arcs are of a size: one too big for a few
+  sessions is split, one smaller than a session is folded into its neighbour. Estimate how many
+  sessions each arc takes, and so the whole route. Record every arc; this session teaches the first
   arc's first piece, and each later session's plan takes the next ground and adds what it finds. A
   route that stops at the first session's ground tells the learner the subject is that small.
 - Warm start: the lesson can put a step to the learner as a question it then answers, where they could
@@ -457,8 +463,12 @@ foundation corrupts everything built on it.
 
 **Then present the plan in chat, before any teaching:** the approach in prose — what we'll cover, in what
 order, and why, given where their knowledge ends and what they're reaching for. A track's first plan
-names the route first, its arcs in a line each, then what this session covers of it. The app draws the picture
-of what rests on what from the planned terms you recorded, so the prose does not describe a structure.
+names the route first: how many arcs it has and about how many sessions it takes in all ("seven parts,
+about twenty sessions"), said as the estimate it is. Then each arc in order, on a line of its own: its
+title, about how many sessions it takes, and a sentence on what it teaches. Then what this session
+covers of it. A revised first plan presents the whole route again in the same form, not only what
+changed. The app draws the picture of what rests on what from the planned terms you recorded, so the
+prose does not describe a structure.
 The plan is a sketch of the route, never a preview of the content: no explanations, no worked steps, no
 "and the reason is…".
 
