@@ -39,10 +39,11 @@ length (`docs/design.md` §6.4). Keep a copy of `KEY_VAULT_MASTER_KEYS` outside 
 stored API keys can't be decrypted.
 
 Invite people from a shell in the API service (`railway ssh -s @grounded/api`):
-`pnpm cli invite someone@example.com` prints their invite code once; give it to them with the email
-and they sign in from the sign-in page by entering both, and stay signed in. Only the code's hash is
-stored, so a lost code is replaced by running invite again (the old one stops working).
-`pnpm cli revoke someone@example.com` shuts them out at once; `pnpm cli list` shows who is invited.
+`pnpm cli invite someone@example.com` prints their one-time invite code once; give it to them and they
+sign in with their email and the code as the password, then choose a password of their own, and stay
+signed in. Only the code's hash is stored, so a lost code or a forgotten password is replaced by
+running invite again (the old code and password stop working). `pnpm cli revoke someone@example.com`
+shuts them out at once; `pnpm cli list` shows who is invited and where their sign-in stands.
 
 Use a direct Postgres connection, never a transaction-mode pooler: jobs and streams rely on
 `LISTEN/NOTIFY`. To try the image locally: `docker build -t grounded .`, then run it with the variables

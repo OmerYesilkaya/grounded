@@ -15,6 +15,7 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import type { SignedInUser } from "../auth.js";
 import { warnOfOpenExam } from "../engine/arc-exams.js";
 import { finalOutcome, trackFinalStanding } from "../engine/final.js";
 import { asidesSnapshot, hasAskedAside } from "../engine/asides.js";
@@ -33,7 +34,7 @@ import { addLogContext } from "../log.js";
 import { notFound, refuse } from "../refusals.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 const messageInput = z.object({ text: z.string().trim().min(1).max(4000) });

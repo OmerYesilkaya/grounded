@@ -11,9 +11,10 @@ import {
 } from "@grounded/db";
 import { estimateCost } from "@grounded/providers";
 import type { Hono } from "hono";
+import type { SignedInUser } from "../auth.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 /** What a set of model calls used, and what it cost at the model list's prices (design §4.4). */

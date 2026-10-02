@@ -10,6 +10,7 @@ import {
   recordAsideMessage,
   waitingFor,
 } from "../engine/asides.js";
+import type { SignedInUser } from "../auth.js";
 import { publish } from "../engine/events.js";
 import type { JobQueue } from "../engine/queue.js";
 import { applyActions } from "../engine/track-state.js";
@@ -17,7 +18,7 @@ import { addLogContext } from "../log.js";
 import { notFound, refuse } from "../refusals.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 const question = z.string().trim().min(1).max(ASIDE_LIMITS.question);

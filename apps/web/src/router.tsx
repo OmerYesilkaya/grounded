@@ -15,6 +15,7 @@ import { tracksQuery } from "@/lib/tracks";
 import { ImportedLessonPage } from "./pages/imported-lesson";
 import { KeySettingsPage } from "./pages/key-settings";
 import { NewTrackPage } from "./pages/new-track";
+import { PasswordPage } from "./pages/password";
 import { SignInPage } from "./pages/sign-in";
 import { TeachingNotesPage } from "./pages/teaching-notes";
 import { TrackPage } from "./pages/track";
@@ -30,14 +31,21 @@ async function requireSession() {
   return user;
 }
 
+/** Signed in with a password chosen: until then, only choosing one is open (design §4.3). */
+async function requirePassword() {
+  const user = await requireSession();
+  if (!user.passwordSet) throw redirect({ to: "/set-password" });
+  return user;
+}
+
 const rootRoute = createRootRoute({ component: Outlet });
 
-/** Signed in, with a key saved: the app with its track sidebar. */
+/** Signed in, password chosen, with a key saved: the app with its track sidebar. */
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
   beforeLoad: async () => {
-    const user = await requireSession();
+    const user = await requirePassword();
     const credential = await queryClient.query({
       queryKey: ["credential"],
       queryFn: () => api<Credential | null>("/api/credentials"),
@@ -132,10 +140,33 @@ const signInRoute = createRoute({
   },
 });
 
+const setPasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/set-password",
+  beforeLoad: async () => {
+    const user = await requireSession();
+    if (user.passwordSet) throw redirect({ to: "/" });
+  },
+  component: function SetPassword() {
+    const navigate = useNavigate();
+    return <PasswordPage change={false} onDone={() => void navigate({ to: "/" })} />;
+  },
+});
+
+const changePasswordRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/settings/password",
+  beforeLoad: requirePassword,
+  component: function ChangePassword() {
+    const navigate = useNavigate();
+    return <PasswordPage change onDone={() => void navigate({ to: "/" })} />;
+  },
+});
+
 const keySettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/settings/key",
-  beforeLoad: requireSession,
+  beforeLoad: requirePassword,
   component: KeySettingsPage,
 });
 
@@ -152,6 +183,8 @@ export const router = createRouter({
       teachingNotesRoute,
     ]),
     signInRoute,
+    setPasswordRoute,
+    changePasswordRoute,
     keySettingsRoute,
   ]),
 });

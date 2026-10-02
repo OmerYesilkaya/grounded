@@ -50,21 +50,27 @@ const updatedAt = () =>
 // ---------------------------------------------------------------------------------------------
 
 /** A learner, created on their first sign-in. Signed-in browsers hold a cookie with the id. */
+/**
+ * A learner, created on their first sign-in (design §4.3). Their password, chosen on that first
+ * visit, is kept as a scrypt hash; none yet means they sign in with their invite code and are
+ * asked to choose one. Wrong passwords are counted and lock sign-in for a while.
+ */
 export const users = pgTable("users", {
   id: id(),
   email: text("email").notNull().unique(),
+  passwordHash: text("password_hash"),
+  passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
+  signInFailures: integer("sign_in_failures").notNull().default(0),
+  lockedUntil: timestamp("locked_until", { withTimezone: true }),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
 
 /**
- * Who may sign in: an email here signs in by entering it. Managed with `pnpm invite` /
- * `pnpm revoke` (or a row added by hand). Emails are stored lowercased.
- */
-/**
- * Who may sign in, and with what (design §4.3). The invite code is kept only as a hash, so no one
- * reads a code back from here: `pnpm cli invite` mints a new one. A row without a hash is from
- * before codes: it keeps a signed-in person in, and lets nobody sign in until a code is issued.
+ * Who may sign in (design §4.3), with the hash of the one-time invite code `pnpm cli invite` minted
+ * for them: no one reads a code back from here, inviting again mints a new one. The hash is
+ * cleared once they choose a password; a row with neither (from before codes) keeps a signed-in
+ * person in and lets nobody sign in until a code is issued.
  */
 export const allowlist = pgTable("allowlist", {
   email: text("email").primaryKey(),

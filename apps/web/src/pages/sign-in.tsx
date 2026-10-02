@@ -7,11 +7,14 @@ import { ApiError } from "@/lib/api";
 import { signIn } from "@/lib/auth";
 import { CentredPage, WhatIsStored } from "./auth-layout";
 
-/** Sign-in is the invited email and the invite code handed over with it (design §4.3). */
+/**
+ * Sign-in is the invited email and the password; the first time, the password is the invite code
+ * handed over in person, and the app then has the person choose one (design §4.3).
+ */
 export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
   const t = useT();
   const [email, setEmail] = useState("");
-  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
   const [state, setState] = useState<
     { kind: "idle" | "sending" } | { kind: "failed"; message: string }
   >({ kind: "idle" });
@@ -19,13 +22,12 @@ export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
   const submit = async () => {
     setState({ kind: "sending" });
     try {
-      await signIn(email.trim(), code.trim());
+      await signIn(email.trim(), password);
       onSignedIn();
     } catch (error) {
       setState({
         kind: "failed",
-        message:
-          error instanceof ApiError && error.status === 403 ? error.message : t.common.failedMoment,
+        message: error instanceof ApiError && error.notice ? error.message : t.common.failedMoment,
       });
     }
   };
@@ -53,23 +55,22 @@ export function SignInPage({ onSignedIn }: { onSignedIn: () => void }) {
           />
         </div>
         <div className="space-y-2">
-          <Label htmlFor="code">{t.account.signIn.code}</Label>
+          <Label htmlFor="password">{t.account.signIn.password}</Label>
           <Input
-            id="code"
-            autoComplete="one-time-code"
-            autoCapitalize="none"
-            spellCheck={false}
+            id="password"
+            type="password"
+            autoComplete="current-password"
             required
-            value={code}
+            value={password}
             onChange={(event) => {
-              setCode(event.target.value);
+              setPassword(event.target.value);
             }}
           />
         </div>
         <Button
           type="submit"
           className="w-full"
-          disabled={state.kind === "sending" || !email.trim() || !code.trim()}
+          disabled={state.kind === "sending" || !email.trim() || !password}
         >
           {state.kind === "sending" ? t.account.signIn.signingIn : t.account.signIn.signIn}
         </Button>

@@ -3,6 +3,7 @@ import { and, eq, importedLessons, trackFiles, tracks, type Db } from "@grounded
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
+import type { SignedInUser } from "../auth.js";
 import type { JobQueue } from "../engine/queue.js";
 import { readAttachments, type UploadedFile } from "../files/attachments.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
@@ -12,7 +13,7 @@ import { trackList } from "../track-list.js";
 import { notFound, refuse } from "../refusals.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 // No language: the tutor infers it from the learner's messages and records it (set-language).

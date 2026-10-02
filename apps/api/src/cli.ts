@@ -3,8 +3,9 @@ import { invite, listInvited, normalizeEmail, revoke } from "./allowlist.js";
 
 /*
  * Omer's side of sign-in (design §4.3, §10), run from a shell in the API service. `invite` mints
- * the invite code and prints it once: it is not stored, so the same command is how a lost code is
- * replaced. `list` shows who is invited and when their code was issued, never the code.
+ * the one-time invite code and prints it once: it is not stored, so the same command is how a
+ * lost code or a forgotten password is replaced. `list` shows who is invited and where their
+ * sign-in stands, never the code or the password.
  */
 
 const usage = "usage: pnpm cli invite <email> | pnpm cli revoke <email> | pnpm cli list";
@@ -23,8 +24,10 @@ try {
     const code = await invite(db, email);
     console.log(`invited ${normalizeEmail(email)}. Their invite code:\n\n    ${code}\n`);
     console.log(
-      "Give it to them with the email; they sign in by entering both. The code is not stored and " +
-        "can't be shown again: running invite for this email again makes a new one and ends the old.",
+      "Give it to them: they sign in with their email and this code as the password, and choose a " +
+        "password of their own, which ends the code. It is not stored and can't be shown again; " +
+        "running invite for this email again makes a new one, ends the old, and clears any " +
+        "password they had chosen.",
     );
   } else if (command === "revoke" && email) {
     await revoke(db, email);
@@ -33,10 +36,12 @@ try {
     const rows = await listInvited(db);
     if (rows.length === 0) console.log("nobody is invited");
     for (const row of rows) {
-      const code = row.codeIssuedAt
-        ? `code issued ${row.codeIssuedAt.toISOString()}`
-        : "no code yet: run invite to issue one";
-      console.log(`${row.email}\tinvited ${row.invitedAt.toISOString()}\t${code}`);
+      const standing = row.passwordSetAt
+        ? `password set ${row.passwordSetAt.toISOString()}`
+        : row.codePending && row.codeIssuedAt
+          ? `code issued ${row.codeIssuedAt.toISOString()}, not yet used`
+          : "no code: run invite to issue one";
+      console.log(`${row.email}\tinvited ${row.invitedAt.toISOString()}\t${standing}`);
     }
   }
 } finally {

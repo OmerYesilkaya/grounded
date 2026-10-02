@@ -3,6 +3,7 @@ import {
   ChartNoAxesColumn,
   ChevronsUpDown,
   KeyRound,
+  LockKeyhole,
   LogOut,
   NotebookPen,
   Monitor,
@@ -74,6 +75,12 @@ export function AccountMenu({ email }: { email: string }) {
           <Link to="/settings/key">
             <KeyRound />
             {t.apiKey}
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to="/settings/password">
+            <LockKeyhole />
+            {t.password}
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>

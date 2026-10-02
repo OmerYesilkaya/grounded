@@ -10,13 +10,14 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import type { SignedInUser } from "../auth.js";
 import { addLogContext } from "../log.js";
 import { loadTrackTerms, termMap, type TermMap } from "../term-map.js";
 import { trackProgress } from "../track-progress.js";
 import { notFound } from "../refusals.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 /** A session's pictures of what rests on what (design §3.2, §9.1). */

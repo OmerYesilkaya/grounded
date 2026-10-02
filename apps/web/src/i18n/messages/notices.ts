@@ -107,8 +107,13 @@ const en: Words = {
   "not-found": () => "Not found.",
   "server-error": () => "Something went wrong on our side. Try again in a moment.",
   "sign-in-first": () => "Sign in first.",
-  "enter-email-and-code": () => "Enter your email and your invite code.",
-  "email-or-code-wrong": () => "That email and invite code don't match an invitation.",
+  "enter-email-and-password": () => "Enter your email and your password, or your invite code.",
+  "email-or-password-wrong": () =>
+    "That email and password don't match. The first time, the password is your invite code.",
+  "too-many-attempts": () => "Too many wrong tries. Wait a quarter of an hour and try again.",
+  "password-length": (n) =>
+    `Choose a password of ${enNumber(n.min)} to ${enNumber(n.max)} characters.`,
+  "current-password-wrong": () => "That isn't your current password.",
   "credential-incomplete": () => "Choose a provider and a model, and paste your API key.",
   "model-unavailable": () => "That model isn't available for this provider.",
   "goal-required": (n) => `Say what you want to learn, in at most ${enNumber(n.max)} characters.`,
@@ -265,8 +270,13 @@ export const notices = defineMessages({
     "not-found": () => "Bulunamadı.",
     "server-error": () => "Bizim tarafımızda bir şeyler ters gitti. Birazdan bir daha dene.",
     "sign-in-first": () => "Önce giriş yap.",
-    "enter-email-and-code": () => "E-postanı ve davet kodunu yaz.",
-    "email-or-code-wrong": () => "Bu e-posta ve davet kodu bir davetle eşleşmiyor.",
+    "enter-email-and-password": () => "E-postanı ve şifreni ya da davet kodunu yaz.",
+    "email-or-password-wrong": () =>
+      "Bu e-posta ve şifre eşleşmiyor. İlk girişte şifre, sana verilen davet kodudur.",
+    "too-many-attempts": () => "Çok fazla yanlış deneme oldu. Çeyrek saat bekleyip bir daha dene.",
+    "password-length": (n) =>
+      `${trNumber(n.min)} ile ${trNumber(n.max)} karakter arasında bir şifre seç.`,
+    "current-password-wrong": () => "Bu, şu anki şifren değil.",
     "credential-incomplete": () => "Bir sağlayıcı ve bir model seç, sonra API anahtarını yapıştır.",
     "model-unavailable": () => "Bu model bu sağlayıcıda yok.",
     "goal-required": (n) => `Ne öğrenmek istediğini en fazla ${trNumber(n.max)} karakterle yaz.`,

@@ -1,30 +1,29 @@
-import { allowlist, eq, type Db } from "@grounded/db";
-import { hashInviteCode, inviteCodeMatches, mintInviteCode } from "./invite-code.js";
+import { allowlist, eq, sql, users, type Db } from "@grounded/db";
+import { hashInviteCode, mintInviteCode } from "./invite-code.js";
 
 export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 /**
- * Invites the email, or re-invites it, minting its invite code: the one thing that is returned
- * here and nowhere else. Only the code's hash is stored, so inviting again is how a lost code is
- * replaced; the old one stops working at once.
+ * Invites the email, or re-invites it, minting its one-time invite code: the one thing that is
+ * returned here and nowhere else. Only the code's hash is stored, so inviting again is how a lost
+ * code or a forgotten password is replaced: the old code stops at once, and any password the
+ * person had is cleared, so they sign in with the new code and choose a password again.
  */
-export async function invite(db: Db, email: string): Promise<string> {
+export async function invite(db: Db, rawEmail: string): Promise<string> {
+  const email = normalizeEmail(rawEmail);
   const code = mintInviteCode();
   const issued = { codeHash: hashInviteCode(code), codeIssuedAt: new Date() };
-  await db
-    .insert(allowlist)
-    .values({ email: normalizeEmail(email), ...issued })
-    .onConflictDoUpdate({ target: allowlist.email, set: issued });
+  await db.transaction(async (tx) => {
+    await tx
+      .insert(allowlist)
+      .values({ email, ...issued })
+      .onConflictDoUpdate({ target: allowlist.email, set: issued });
+    await tx
+      .update(users)
+      .set({ passwordHash: null, passwordSetAt: null, signInFailures: 0, lockedUntil: null })
+      .where(eq(users.email, email));
+  });
   return code;
-}
-
-/** Whether the email is invited and the code is its current one. */
-export async function invitedWith(db: Db, email: string, code: string): Promise<boolean> {
-  const [row] = await db
-    .select({ codeHash: allowlist.codeHash })
-    .from(allowlist)
-    .where(eq(allowlist.email, normalizeEmail(email)));
-  return row?.codeHash != null && inviteCodeMatches(code, row.codeHash);
 }
 
 /** Removes the invitation; every request checks it, so the person is out at once. */
@@ -32,14 +31,17 @@ export async function revoke(db: Db, email: string): Promise<void> {
   await db.delete(allowlist).where(eq(allowlist.email, normalizeEmail(email)));
 }
 
-/** Everyone invited, with when, and when their current code was issued (never the code). */
+/** Everyone invited, with when, and where their sign-in stands (never the code or password). */
 export function listInvited(db: Db) {
   return db
     .select({
       email: allowlist.email,
       invitedAt: allowlist.invitedAt,
       codeIssuedAt: allowlist.codeIssuedAt,
+      codePending: sql<boolean>`${allowlist.codeHash} is not null`,
+      passwordSetAt: users.passwordSetAt,
     })
     .from(allowlist)
+    .leftJoin(users, eq(users.email, allowlist.email))
     .orderBy(allowlist.invitedAt);
 }

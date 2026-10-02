@@ -6,6 +6,7 @@ export const account = defineMessages({
     menu: {
       howYouLearn: "How you learn",
       apiKey: "API key",
+      password: "Password",
       usage: "Usage",
       theme: "Theme",
       themes: { dark: "Dark", light: "Light", system: "Follow system" },
@@ -14,13 +15,26 @@ export const account = defineMessages({
     },
     signIn: {
       email: "Email",
-      code: "Invite code",
+      password: "Password",
       signIn: "Sign in",
       signingIn: "Signing in…",
       inviteOnly:
-        "Grounded is invite-only: enter the email you were invited with and the invite code you were given. No password needed.",
+        "Grounded is invite-only. The first time, enter the email you were invited with and the invite code you were given as the password; you choose your own next.",
       whatIsStored:
         "What is stored: your answers, your progress, the questions you ask, the files you attach and your API key, encrypted. Nothing is shared; the tutor's calls go to the AI provider whose key you bring. Whoever runs Grounded can technically access the database, but does not read it.",
+    },
+    password: {
+      chooseTitle: "Choose a password",
+      chooseIntro:
+        "From now on you sign in with your email and this password; the invite code stops working. If you forget it, whoever invited you can give you a new invite code.",
+      changeTitle: "Change your password",
+      changeIntro: "Enter your current password and the new one.",
+      current: "Current password",
+      new: "New password",
+      repeat: "New password again",
+      differ: "The two passwords differ.",
+      save: "Save password",
+      saving: "Saving…",
     },
     key: {
       title: "Your AI key",
@@ -77,6 +91,7 @@ export const account = defineMessages({
     menu: {
       howYouLearn: "Nasıl öğreniyorsun",
       apiKey: "API anahtarı",
+      password: "Şifre",
       usage: "Kullanım",
       theme: "Tema",
       themes: { dark: "Koyu", light: "Açık", system: "Sistemi izle" },
@@ -85,13 +100,26 @@ export const account = defineMessages({
     },
     signIn: {
       email: "E-posta",
-      code: "Davet kodu",
+      password: "Şifre",
       signIn: "Giriş yap",
       signingIn: "Giriş yapılıyor…",
       inviteOnly:
-        "Grounded yalnızca davetle açılıyor: davet edildiğin e-postayı ve sana verilen davet kodunu yaz. Şifreye gerek yok.",
+        "Grounded yalnızca davetle açılıyor. İlk girişte davet edildiğin e-postayı ve şifre olarak sana verilen davet kodunu yaz; ardından kendi şifreni seçersin.",
       whatIsStored:
         "Saklananlar: cevapların, ilerlemen, sorduğun sorular, eklediğin dosyalar ve şifrelenmiş olarak API anahtarın. Hiçbiri paylaşılmaz; öğretmenin çağrıları, anahtarını getirdiğin yapay zekâ sağlayıcısına gider. Grounded'ı işleten kişi veritabanına teknik olarak erişebilir, ama içini okumaz.",
+    },
+    password: {
+      chooseTitle: "Bir şifre seç",
+      chooseIntro:
+        "Bundan sonra e-postan ve bu şifreyle giriş yaparsın; davet kodu geçersiz olur. Unutursan seni davet eden kişi sana yeni bir davet kodu verebilir.",
+      changeTitle: "Şifreni değiştir",
+      changeIntro: "Şu anki şifreni ve yenisini yaz.",
+      current: "Şu anki şifre",
+      new: "Yeni şifre",
+      repeat: "Yeni şifre, bir daha",
+      differ: "İki şifre birbirinden farklı.",
+      save: "Şifreyi kaydet",
+      saving: "Kaydediliyor…",
     },
     key: {
       title: "Yapay zekâ anahtarın",

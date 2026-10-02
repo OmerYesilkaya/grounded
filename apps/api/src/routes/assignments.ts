@@ -39,6 +39,7 @@ import {
   snoozeAssignment,
   type AssignmentRow,
 } from "../engine/assignments.js";
+import type { SignedInUser } from "../auth.js";
 import type { JobQueue } from "../engine/queue.js";
 import { waitingReply } from "../engine/review-reply.js";
 import { loadReview, recordReviewMessage, startReview } from "../engine/reviews.js";
@@ -49,7 +50,7 @@ import { addLogContext } from "../log.js";
 import { notFound, refuse } from "../refusals.js";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 const answerInput = z.object({

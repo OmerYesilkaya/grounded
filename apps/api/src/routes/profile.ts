@@ -11,12 +11,13 @@ import {
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
+import type { SignedInUser } from "../auth.js";
 import { TEACHING_NOTES_MAX } from "../engine/profile.js";
 import { notFound, refuse } from "../refusals.js";
 import { refusal } from "@grounded/core";
 
 interface Env {
-  Variables: { user: { id: string; email: string } };
+  Variables: { user: SignedInUser };
 }
 
 /** A teaching note as the learner sees it, with the sessions it rests on. */

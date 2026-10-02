@@ -87,7 +87,7 @@ export interface Embedded {
   /** Learners' files, in memory. */
   files: ReturnType<typeof createMemoryFileStore>;
   request: (path: string, init?: RequestInit & { cookie?: string }) => Response | Promise<Response>;
-  /** Invites the email (minting its code) and signs it in as the sign-in page does; the cookie. */
+  /** Invites the email and signs it in with the code, as a first visit does; the session cookie. */
   signIn: (email: string) => Promise<string>;
   /** Polls until the condition holds (for work done by the worker). */
   waitFor: (condition: () => Promise<boolean>, timeoutMs?: number) => Promise<void>;
@@ -132,7 +132,7 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
     const code = await invite(db, email);
     const response = await request("/api/auth/sign-in", {
       method: "POST",
-      body: JSON.stringify({ email, code }),
+      body: JSON.stringify({ email, password: code }),
     });
     if (!response.ok) throw new Error(`${email} could not sign in: ${await response.text()}`);
     return response.headers

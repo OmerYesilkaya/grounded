@@ -6,6 +6,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import {
   registerAuthRoutes,
+  registerPasswordRoutes,
   requireSignIn,
   setSession,
   type AuthOptions,
@@ -76,6 +77,7 @@ export function createApp(deps: AppDependencies) {
     addLogContext({ userId: c.get("user").id });
     await next();
   });
+  registerPasswordRoutes(app, auth);
 
   /** Who is signed in; every page load asks, and each answer renews the cookie. */
   app.get("/api/me", async (c) => {

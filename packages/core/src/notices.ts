@@ -57,8 +57,11 @@ export type RefusalNotice =
   | { code: "server-error" }
   // Signing in and the key (design §4.3)
   | { code: "sign-in-first" }
-  | { code: "enter-email-and-code" }
-  | { code: "email-or-code-wrong" }
+  | { code: "enter-email-and-password" }
+  | { code: "email-or-password-wrong" }
+  | { code: "too-many-attempts" }
+  | { code: "password-length"; min: number; max: number }
+  | { code: "current-password-wrong" }
   | { code: "credential-incomplete" }
   | { code: "model-unavailable" }
   // Tracks and what they bring (design §4.5)
