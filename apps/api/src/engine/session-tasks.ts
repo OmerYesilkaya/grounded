@@ -29,9 +29,12 @@ import {
   and,
   asc,
   checkMessages,
+  desc,
   eq,
+  isNotNull,
   learningSessions,
   lessons,
+  ne,
   sessionMessages,
   sql,
   tracks,
@@ -1545,15 +1548,30 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 : verdictIssues(applied.errors),
           });
           if (applied.ok) {
-            // What the plan's picture is drawn around (term-map.ts): this session's ground.
+            // What the plan's picture is drawn around (term-map.ts): this session's ground, the
+            // plan this one revises included.
             const [row] = await db
               .select({ plan: tracks.plan })
               .from(tracks)
               .where(eq(tracks.id, session.trackId));
+            const [revised] = await db
+              .select({ terms: sessionMessages.planTerms })
+              .from(sessionMessages)
+              .where(
+                and(
+                  eq(sessionMessages.sessionId, sessionId),
+                  eq(sessionMessages.kind, "plan"),
+                  ne(sessionMessages.id, reply.messageId),
+                  isNotNull(sessionMessages.planTerms),
+                ),
+              )
+              .orderBy(desc(sessionMessages.createdAt), desc(sessionMessages.id))
+              .limit(1);
             const planTerms = plannedIn(
               output.actions,
               row?.plan.arcs ?? [],
               await loadTrackTerms(db, session.trackId),
+              revised?.terms ?? [],
             );
             await db
               .update(sessionMessages)

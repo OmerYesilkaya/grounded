@@ -1556,7 +1556,9 @@ Three structurally different variants were explored
   - **The plan** draws the ideas its record planned (`session_messages.plan_terms`, written when the
     record applies), inside the latest plan's card under "What rests on what", once recorded. Those
     it placed in an arc after the current one (a first plan's route beyond this session) are left
-    out: the picture is the ground this session covers (`plannedIn`). The
+    out: the picture is the ground this session covers (`plannedIn`). A revised plan's record
+    plans only what the revision added, so its picture also keeps the terms of the plan it
+    revises, less those the revision moved to a later arc. The
     plan message names them already; the picture adds what rests on what.
   - **The lesson's end**, after the last check (the session in homework or later), draws "What you
     just built": the ideas the outline introduces. Never before: the lesson has no opener (§3.2).

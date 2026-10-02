@@ -126,12 +126,16 @@ export function termMap(track: TrackTerms, focus: readonly string[]): TermMap {
  * The terms a plan's record planned, in its order: what the plan's picture is drawn around. A term
  * it placed in an arc after the current one (the first in plan order with a planned term) is the
  * route beyond this session, as a track's first plan lays it out, and is left out: the picture is
- * the ground this session covers. `arcs` and `track` are as the record left them. Pure.
+ * the ground this session covers. A revised plan's record plans only what the revision added, so
+ * `earlier`, the terms of the plan it revises in this session, comes first: the ground it still
+ * covers, less what the revision moved to a later arc. `arcs` and `track` are as the record left
+ * them. Pure.
  */
 export function plannedIn(
   actions: readonly TrackAction[],
   arcs: readonly { terms: readonly string[] }[],
   track: TrackTerms,
+  earlier: readonly string[] = [],
 ): string[] {
   const status = new Map(track.terms.map((t) => [key(t.term), t.status]));
   const current = arcs.findIndex((arc) => arc.terms.some((t) => status.get(key(t)) === "planned"));
@@ -140,6 +144,11 @@ export function plannedIn(
   );
   const placed = new Set(actions.flatMap((a) => (a.type === "add-to-arc" ? a.terms.map(key) : [])));
   const names = new Map<string, string>();
+  for (const term of earlier) {
+    const name = key(term);
+    if (names.has(name) || !status.has(name) || later.has(name)) continue;
+    names.set(name, term);
+  }
   for (const action of actions) {
     if (action.type !== "add-planned-term") continue;
     const name = key(action.term);
