@@ -1,7 +1,6 @@
 import type { PhrasingContent, Root, RootContent } from "mdast";
 import remarkDirective from "remark-directive";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 import {
@@ -9,6 +8,7 @@ import {
   convertLeafDirective,
   convertTypedCode,
 } from "./typed-blocks.js";
+import { remarkMath } from "./math.js";
 import { lineOf } from "./position.js";
 import type { Block, Inline, Issue, ParseResult } from "./types.js";
 
