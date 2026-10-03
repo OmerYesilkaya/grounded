@@ -78,6 +78,9 @@ export function registerSessionRoutes(
       .from(tracks)
       .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)));
     if (!track) return c.json(notFound, 404);
+    // A track taught from a source starts once the source is read (design §4.6).
+    if (track.source && track.source.status !== "ready")
+      return c.json(refuse("source-not-ready"), 409);
     const [open] = await db
       .select({ id: learningSessions.id })
       .from(learningSessions)

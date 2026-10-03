@@ -4,16 +4,23 @@ import { AttachmentChip } from "@/components/attachment-chip";
 import { FinalOutcomeCard } from "@/components/final-outcome";
 import { NextSession } from "@/components/next-session";
 import { OpenWork, TrackProgressView } from "@/components/track-progress";
+import { SourceCoverageView, SourceReadingCard } from "@/components/track-source";
 import { useT } from "@/i18n";
 import { useTracks } from "@/lib/tracks";
 
 export function TrackPage({ trackId }: { trackId: string }) {
   const tracks = useTracks();
-  const t = useT().track.page;
+  const all = useT();
+  const t = all.track.page;
+  const tSource = all.track.source;
   const track = tracks.data?.find((each) => each.id === trackId);
 
   if (!track) return null;
   const open = track.items.filter((item) => !item.done);
+  // A track taught from a source starts once the source is read (design §4.6).
+  const unread = track.source !== null && track.source.status !== "ready";
+  const sources = track.files.filter((file) => file.role === "source");
+  const brought = track.files.filter((file) => file.role === "brought");
   return (
     <>
       <PhoneBar />
@@ -40,26 +47,34 @@ export function TrackPage({ trackId }: { trackId: string }) {
               <OpenWork items={open} />
             </section>
           )}
-          {!track.openSession && !track.finishedIn && <NextSession track={track} />}
+          {track.source && unread && <SourceReadingCard trackId={trackId} reading={track.source} />}
+          {!track.openSession && !track.finishedIn && !unread && <NextSession track={track} />}
         </div>
         <TrackProgressView trackId={trackId} items={track.items} />
-        {track.files.length > 0 && (
-          <section className="mt-10">
-            <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">
-              {t.brought}
-            </h2>
-            <ul className="mt-3 flex flex-wrap gap-2">
-              {track.files.map((file) => (
-                <AttachmentChip
-                  key={file.id}
-                  name={file.name}
-                  size={file.sizeBytes}
-                  image={file.kind === "image"}
-                  href={`/api/tracks/${trackId}/files/${file.id}`}
-                />
-              ))}
-            </ul>
-          </section>
+        {track.source?.status === "ready" && <SourceCoverageView trackId={trackId} />}
+        {[
+          { files: sources, heading: tSource.title },
+          { files: brought, heading: t.brought },
+        ].map(
+          ({ files, heading }) =>
+            files.length > 0 && (
+              <section key={heading} className="mt-10">
+                <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">
+                  {heading}
+                </h2>
+                <ul className="mt-3 flex flex-wrap gap-2">
+                  {files.map((file) => (
+                    <AttachmentChip
+                      key={file.id}
+                      name={file.name}
+                      size={file.sizeBytes}
+                      image={file.kind === "image"}
+                      href={`/api/tracks/${trackId}/files/${file.id}`}
+                    />
+                  ))}
+                </ul>
+              </section>
+            ),
         )}
         {track.importedLesson && (
           <Link

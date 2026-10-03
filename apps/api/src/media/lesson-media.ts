@@ -9,8 +9,13 @@ import { createVerifier, type VerifierOptions } from "./verify.js";
 export interface LessonMediaOptions extends VerifierOptions {
   /** Runs a search under an activity the learner sees ("Looking for an image of …"). */
   activity?: <T>(label: ActivityNotice, run: () => Promise<T>) => Promise<T>;
-  /** The research's pages the lesson may cite, each seen to open (sources.ts). */
+  /**
+   * What the lesson may cite: the source's sections it teaches from first (a track taught from a
+   * source, design §4.6), then the research's pages, each seen to open (sources.ts).
+   */
   sources?: readonly CitedSource[];
+  /** How many of `sources`, from the first, are the learner's source's sections. */
+  fromSource?: number;
 }
 
 const queryInput = z.object({
@@ -69,7 +74,10 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
       find_audio: find("audio"),
     },
     found() {
-      return [mediaFound([...found.values()]), sourcesOffered(options.sources ?? [])]
+      return [
+        mediaFound([...found.values()]),
+        sourcesOffered(options.sources ?? [], options.fromSource ?? 0),
+      ]
         .filter(Boolean)
         .join("\n\n");
     },
@@ -111,11 +119,27 @@ function mediaFound(found: readonly (CommonsCandidate & { query: string })[]): s
   ].join("\n");
 }
 
-/** The sources the writer may cite, numbered as `:cite[n]` names them. */
-function sourcesOffered(sources: readonly CitedSource[]): string {
+/**
+ * The sources the writer may cite, numbered as `:cite[n]` names them: the learner's source's
+ * sections first (`fromSource` of them), then the pages the research found.
+ */
+function sourcesOffered(sources: readonly CitedSource[], fromSource: number): string {
   if (sources.length === 0) return "";
+  const line = (s: CitedSource, i: number) => `${String(i + 1)}. ${s.title}`;
+  const own = sources.slice(0, fromSource);
+  const found = sources.slice(fromSource);
   return [
-    "Sources this session's research found, each seen to open. Cite one by its number (`:cite[3]`) right after what it supports:",
-    ...sources.map((s, i) => `${String(i + 1)}. ${s.title}: ${s.url}`),
+    ...(own.length
+      ? [
+          "The learner's source, the sections this lesson teaches from. Cite one by its number (`:cite[1]`) right after what it says, and name the page where it helps:",
+          ...own.map(line),
+        ]
+      : []),
+    ...(found.length
+      ? [
+          `${own.length ? "And sources" : "Sources"} this session's research found, each seen to open. Cite one by its number (\`:cite[3]\`) right after what it supports:`,
+          ...found.map((s, i) => `${line(s, fromSource + i)}: ${s.url}`),
+        ]
+      : []),
   ].join("\n");
 }

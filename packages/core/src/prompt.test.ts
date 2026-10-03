@@ -44,6 +44,62 @@ const context: PromptContext = {
   teachingNotes: ["Abstract ideas land after one concrete example first."],
 };
 
+const SOURCE: NonNullable<PromptContext["source"]> = {
+  files: ["networks.pdf", "lecture-notes.md"],
+  sections: [
+    {
+      n: 1,
+      file: "networks.pdf",
+      title: "Packets",
+      pages: "pp. 2–30",
+      summary: "What a packet is.",
+    },
+    { n: 2, file: "networks.pdf", title: "Routing", pages: "pp. 31–60", summary: null },
+    { n: 3, file: "lecture-notes.md", title: "Week 1", pages: null, summary: "Sockets." },
+  ],
+  map: {
+    arcs: [
+      { title: "Binary and bytes", sections: [] },
+      { title: "Packets and routes", sections: [1, 2] },
+    ],
+    known: [3],
+  },
+};
+
+describe("a source track's prompt", () => {
+  it("carries the source's sections by file, and what the plan teaches from where", () => {
+    const prompt = assembleSystemPrompt(parseMethod(FIXTURE), "plan", { source: SOURCE });
+    expect(prompt.track).toContain(
+      [
+        "## The source",
+        "",
+        "The learner chose to learn from these sources: networks.pdf, lecture-notes.md. Its sections, numbered across them:",
+        "",
+        "### networks.pdf",
+        "",
+        "- §1 Packets (pp. 2–30): What a packet is.",
+        "- §2 Routing (pp. 31–60)",
+        "",
+        "### lecture-notes.md",
+        "",
+        "- §3 Week 1: Sockets.",
+        "",
+        "What the plan teaches from where:",
+        "",
+        "- Binary and bytes: groundwork from outside the source",
+        "- Packets and routes: §1, §2",
+        "- Already held by the learner: §3",
+      ].join("\n"),
+    );
+  });
+
+  it("rejects a section for tracks the method doesn't know", () => {
+    expect(() => parseMethod("<!-- phases: probe; tracks: imported -->\n# X")).toThrow(
+      'Unknown tracks "imported" in method.md.',
+    );
+  });
+});
+
 describe("assemblePrompt", () => {
   const method = parseMethod(FIXTURE);
 
@@ -316,10 +372,23 @@ describe("the real method.md", () => {
       expect(joinSystemPrompt(prompt), phase).toBe(
         method.sections
           .filter((s) => s.phases.includes("all") || s.phases.includes(phase))
+          .filter((s) => s.tracks === undefined)
           .map((s) => s.text)
           .join("\n\n"),
       );
     }
+  });
+
+  it("gives the rules for a source track only to a source track's calls", () => {
+    const heading = "## Tracks taught from a source";
+    expect(assemblePrompt(method, "probe", context)).not.toContain(heading);
+    for (const phase of ["probe", "plan", "lesson", "check", "homework", "review"] as const)
+      expect(assemblePrompt(method, phase, { ...context, source: SOURCE }), phase).toContain(
+        heading,
+      );
+    expect(assemblePrompt(method, "profile", { ...context, source: SOURCE })).not.toContain(
+      heading,
+    );
   });
 
   it("keeps each phase's own rules to that phase", () => {

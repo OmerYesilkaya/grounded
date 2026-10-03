@@ -11,6 +11,8 @@ export type {
   Phase,
   PlanArc,
   PromptContext,
+  SourceContext,
+  SourceSection,
   SystemPrompt,
   TermRow,
   TermStatus,
@@ -28,6 +30,7 @@ export type {
   NoticeCode,
   ProviderFailureKind,
   RefusalNotice,
+  SourceFailure,
 } from "./notices.js";
 export { awaitedJob, initialFinal, initialSession, resolved, transition } from "./session.js";
 export { breakDemotions, finalStanding, type FinalStanding } from "./final.js";
@@ -164,6 +167,15 @@ export {
   attachmentsProblem,
 } from "./attachments.js";
 export type { AttachmentKind } from "./attachments.js";
+export {
+  pageRange,
+  SOURCE_ACCEPT,
+  SOURCE_LIMITS,
+  sourceKind,
+  sourceProblem,
+  sourcesProblem,
+} from "./sources.js";
+export type { SourceKind, SourceReading, SourceSectionView, SourceStatus } from "./sources.js";
 export {
   dueTag,
   type DueTag,

@@ -61,6 +61,9 @@ export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
  *   spent up to 2,400 tokens reasoning; #13).
  * - left-off, conversation-summary, track-brief: summaries of what is already written ("where you
  *   left off", a long session's older turns, the files the learner attached).
+ * - source-transcribe, source-summary: reading a source (design §4.6), on the cheap model: copying
+ *   pages out and saying in a sentence what a section covers need no deliberation, and a long book
+ *   makes many of them.
  * Everything else keeps the default, above all plans, lessons and check grading, where a weak plan
  * or a wrong verdict costs more than the wait.
  */
@@ -78,6 +81,8 @@ export const REASONING: Readonly<
   "conversation-summary": "low",
   "track-brief": "low",
   "wording-review": "low",
+  "source-transcribe": "low",
+  "source-summary": "low",
 };
 
 /** What a call is for and about, as the middleware sees it (ModelRequest). */

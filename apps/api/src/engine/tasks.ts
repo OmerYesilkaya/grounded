@@ -5,6 +5,7 @@ import { createProbeVerdictTasks } from "./probe-verdict.js";
 import { createProfileTasks } from "./profile.js";
 import { createReviewTasks } from "./review-tasks.js";
 import { createSessionTasks, type SessionTaskDependencies } from "./session-tasks.js";
+import { createSourceTasks } from "./source-tasks.js";
 import { createTrackTasks } from "./track-tasks.js";
 
 /** Every job the worker runs; a job whose track was deleted ends quietly (gone.ts). */
@@ -15,6 +16,7 @@ export function createTasks(deps: SessionTaskDependencies): TaskList {
       ...createAsideTasks(deps),
       ...createProbeVerdictTasks(deps),
       ...createTrackTasks(deps),
+      ...createSourceTasks(deps),
       ...createProfileTasks(deps),
       ...createReviewTasks(deps),
     },

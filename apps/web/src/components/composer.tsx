@@ -40,6 +40,8 @@ export interface ComposerProps {
   disabled?: boolean;
   /** Editing stays open, sending is held back (e.g. while the last message is on its way). */
   submitDisabled?: boolean;
+  /** The words are optional: sending with the box empty sends "" (a source track's notes). */
+  allowEmpty?: boolean;
   /** Buttons shown before the send button, such as "I don't know". */
   actions?: ReactNode;
   /** Below the small breakpoint, stack the buttons full width (design §9.4). */
@@ -91,6 +93,7 @@ export function Composer({
   submitShortcut = "enter",
   disabled = false,
   submitDisabled = false,
+  allowEmpty = false,
   actions,
   stackActions = false,
   onAddFiles,
@@ -108,7 +111,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const t = useT().session;
   const acceptsFiles = onAddFiles !== undefined && !disabled;
-  const canSubmit = !disabled && !submitDisabled && value.trim() !== "";
+  const canSubmit = !disabled && !submitDisabled && (allowEmpty || value.trim() !== "");
 
   useAutoHeight(textareaRef, value);
 
@@ -128,7 +131,7 @@ export function Composer({
 
   /** Sends `text`: what the box holds, which the rich editor gives as it is this moment. */
   const submit = (text = value) => {
-    if (!disabled && !submitDisabled && text.trim() !== "") onSubmit(text.trim());
+    if (!disabled && !submitDisabled && (allowEmpty || text.trim() !== "")) onSubmit(text.trim());
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {

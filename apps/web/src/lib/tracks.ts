@@ -1,4 +1,5 @@
 import type { AttachmentKind } from "@grounded/core/attachments";
+import type { SourceKind, SourceReading } from "@grounded/core/sources";
 import type { FinalStanding, SessionPhase, TaskForm } from "@grounded/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -21,8 +22,10 @@ export interface TrackSummary {
   finishedIn: string | null;
   /** The last lesson imported from the learner's earlier setup, if any. */
   importedLesson: { title: string } | null;
-  /** The files attached when the track was created (design §4.5). */
+  /** The files attached when the track was created (design §4.5), its sources among them (§4.6). */
   files: TrackFile[];
+  /** A track taught from a source (design §4.6): where reading it stands; null for any other. */
+  source: SourceReading | null;
 }
 
 /**
@@ -101,15 +104,28 @@ export const isDue = (item: TrackItem, now: Date): item is AssignedItem & { due:
 export interface TrackFile {
   id: string;
   name: string;
-  kind: AttachmentKind;
+  kind: AttachmentKind | SourceKind;
+  /** brought: about the learner (design §4.5) · source: what the track teaches (§4.6). */
+  role: "brought" | "source";
   sizeBytes: number;
 }
 
-/** The learner's tracks; checked again every second while the tutor is naming one. */
+/** Whether the tutor is at work on a track's source: surveying it, or reading it. */
+export const readingSource = (track: Pick<TrackSummary, "source">) =>
+  track.source?.status === "surveying" || track.source?.status === "reading";
+
+/**
+ * The learner's tracks; checked again every second while the tutor is naming one, and every two
+ * while it is reading one's source.
+ */
 export const tracksQuery = queryOptions({
   queryKey: ["tracks"],
   queryFn: () => api<TrackSummary[]>("/api/tracks"),
-  refetchInterval: (query) => (query.state.data?.some((t) => t.naming) ? 1000 : false),
+  refetchInterval: (query) => {
+    const tracks = query.state.data ?? [];
+    if (tracks.some((t) => t.naming)) return 1000;
+    return tracks.some(readingSource) ? 2000 : false;
+  },
 });
 
 export function useTracks() {

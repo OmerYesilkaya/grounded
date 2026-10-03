@@ -120,6 +120,45 @@ describe("the new-track page", () => {
     expect(attached()).toHaveLength(2);
   });
 
+  it("starts from a source when the learner chooses to: the source, and notes that may stay empty", async () => {
+    const user = userEvent.setup();
+    const { container } = renderPage();
+    await user.click(screen.getByRole("radio", { name: "A source to learn from" }));
+    expect(screen.getByRole("radio", { name: "A source to learn from" })).toBeChecked();
+    const notes = screen.getByRole("textbox", { name: "Why are you reading it?" });
+    // Nothing to create from until the source is added.
+    expect(createButton()).toBeDisabled();
+    const picker = container.querySelector<HTMLInputElement>('input[aria-label="Choose files"]');
+    if (!picker) throw new Error("no source picker");
+    await user.upload(picker, [file("networks.pdf", 40 * MB)]);
+    expect(
+      within(screen.getByRole("list", { name: "Sources" }))
+        .getAllByRole("listitem")
+        .map((item) => item.textContent),
+    ).toEqual(["networks.pdf40.0 MB"]);
+    expect(notes).toHaveValue("");
+
+    await user.click(createButton());
+    const [path, init] = vi.mocked(api).mock.calls[0] ?? [];
+    expect(path).toBe("/api/tracks?from=source");
+    const body = init?.body as FormData;
+    expect(body.get("goal")).toBe("");
+    expect(body.getAll("files").map((f) => (f as File).name)).toEqual(["networks.pdf"]);
+  });
+
+  it("says why a file can't be a source", async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const { container } = renderPage();
+    await user.click(screen.getByRole("radio", { name: "A source to learn from" }));
+    const picker = container.querySelector<HTMLInputElement>('input[aria-label="Choose files"]');
+    if (!picker) throw new Error("no source picker");
+    await user.upload(picker, [file("page.png")]);
+    expect(screen.getByRole("list", { name: "Sources" })).toHaveTextContent(
+      "a source can be a PDF, an EPUB, a Word document or a text file",
+    );
+    expect(createButton()).toBeDisabled();
+  });
+
   it("speaks Turkish when the app does, sizes included", async () => {
     act(() => {
       setLanguage("tr");

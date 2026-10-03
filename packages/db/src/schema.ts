@@ -28,6 +28,8 @@ import type {
   ProbeVerdict,
   ReviewAnchor,
   SessionState,
+  SourceKind,
+  SourceReading,
   StoredLessonOutline,
   TeachBackBreak,
 } from "@grounded/core";
@@ -250,9 +252,26 @@ export const tracks = pgTable("tracks", {
    * notes, which only the close reads (design §4.4). Null until the first is written.
    */
   leftOff: text("left_off"),
+  /**
+   * A track taught from a source the learner brought (design §4.6): where reading it stands. Null
+   * for a track started from the learner's words.
+   */
+  source: jsonb("source").$type<SourceReading>(),
+  /**
+   * Which of the source's sections (`source_sections.n`) each arc of the plan teaches from, and
+   * which the plan found the learner already holds; written after each plan (design §4.6). Null
+   * until the first plan, and for a track without a source.
+   */
+  sourceMap: jsonb("source_map").$type<SourceMap>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
+
+export interface SourceMap {
+  /** In the plan's order. An arc with no sections is groundwork from outside the source. */
+  arcs: { title: string; sections: number[] }[];
+  known: number[];
+}
 
 /**
  * Files the learner attached when creating the track (design §4.5): a CV, a syllabus, a photo of a
@@ -268,17 +287,62 @@ export const trackFiles = pgTable(
       .references(() => tracks.id, { onDelete: "cascade" }),
     /** The file's name as the learner had it, without folders. */
     name: text("name").notNull(),
-    kind: text("kind").$type<AttachmentKind>().notNull(),
+    /**
+     * brought: about the learner, read by the first probe and plan and summarized as "what you
+     * brought" (§4.5) · source: what the track teaches, read into `source_sections` (§4.6).
+     */
+    role: text("role").$type<"brought" | "source">().notNull().default("brought"),
+    kind: text("kind").$type<AttachmentKind | SourceKind>().notNull(),
     mediaType: text("media_type").notNull(),
     sizeBytes: integer("size_bytes").notNull(),
     /** A PDF's page count; null for other kinds. */
     pages: integer("pages"),
-    /** Text files and Word documents: the text taken out of them. Null for images and PDFs. */
+    /**
+     * Text files and Word documents brought: the text taken out of them. Null for images, PDFs and
+     * sources (a source's text is in its sections).
+     */
     text: text("text"),
+    /**
+     * A source PDF's pages the model transcribed, by page number (design §4.6): kept as each batch
+     * is read, so reading that stops and starts again doesn't pay for them twice.
+     */
+    transcripts: jsonb("transcripts").$type<Record<string, string>>().notNull().default({}),
     storageKey: text("storage_key").notNull().unique(),
     createdAt: createdAt(),
   },
   (table) => [index("track_files_track").on(table.trackId, table.createdAt)],
+);
+
+/**
+ * A track's sources read into sections (design §4.6): a chapter, or a part of a long one. Calls
+ * carry the list (titles, pages, summaries) and the lesson carries the text of the sections it
+ * teaches from.
+ */
+export const sourceSections = pgTable(
+  "source_sections",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    fileId: uuid("file_id")
+      .notNull()
+      .references(() => trackFiles.id, { onDelete: "cascade" }),
+    /** The section's number across the track's sources, from 1, in reading order. */
+    n: integer("n").notNull(),
+    title: text("title").notNull(),
+    /**
+     * For a PDF: the file's page it starts on (from 1, for a link into the file), and the pages it
+     * spans as the book numbers them ("pp. 112–131", "pp. xi–xiv"). Null for a source without pages.
+     */
+    pageStart: integer("page_start"),
+    pages: text("pages"),
+    /** Its text; a PDF's with a "[p. 112]" line where each page starts, so the tutor can cite it. */
+    text: text("text").notNull(),
+    /** A sentence or two on what it covers, for the tutor; null until written. */
+    summary: text("summary"),
+  },
+  (table) => [uniqueIndex("source_sections_n").on(table.trackId, table.n)],
 );
 
 export const terms = pgTable(
@@ -383,6 +447,12 @@ export const learningSessions = pgTable(
      * want to reach. Null until the probe finishes on its own (not when the learner skips to the plan).
      */
     probeSummary: text("probe_summary"),
+    /**
+     * On a track taught from a source (design §4.6): the sections this session's plan teaches
+     * from, which the lesson carries in place of web research. Null until the plan maps them, and
+     * for a session whose plan teaches only groundwork from outside the source.
+     */
+    sourceSections: jsonb("source_sections").$type<number[]>(),
     /**
      * "See where you stand" after a track's first probe (design §7.1): the verdict the learner asked
      * for, written for them from the probe's records, once. The status is null until they ask,
