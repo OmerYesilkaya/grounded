@@ -121,6 +121,36 @@ describe("callModel", () => {
     expect(logs.text()).not.toContain("sk-secret-1234");
   });
 
+  it("records the method version the call was made under and the release it ran in", async () => {
+    const userId = await userWithKey("openai", "gpt-6-luna");
+    const model = new MockLanguageModelV4({ doGenerate: reply("Got it.") });
+    const released = createModelCaller({
+      db: t.db,
+      vault: t.vault,
+      createLanguageModel: () => model,
+      release: "abc123",
+    });
+    await generateText({
+      model: await released.model({
+        userId,
+        purpose: "probe",
+        role: "strong",
+        methodVersion: "0123456789ab",
+      }),
+      prompt: "hi",
+    });
+    await generateText({
+      model: await callerWith(model).caller.model({ userId, purpose: "import", role: "strong" }),
+      prompt: "hi",
+    });
+
+    const events = await t.db.select().from(usageEvents).orderBy(usageEvents.purpose);
+    expect(events.map((e) => [e.purpose, e.methodVersion, e.release])).toEqual([
+      ["import", null, null],
+      ["probe", "0123456789ab", "abc123"],
+    ]);
+  });
+
   it("records usage for streamed calls when the stream finishes", async () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
     const chunks: LanguageModelV4StreamPart[] = [

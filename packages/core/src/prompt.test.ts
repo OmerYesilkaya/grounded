@@ -330,6 +330,13 @@ describe("assemblePrompt", () => {
       'Unknown phase "dance" in method.md.',
     );
   });
+
+  it("versions a method by its text: any change to it is a new version", () => {
+    const method = parseMethod(FIXTURE);
+    expect(method.version).toMatch(/^[0-9a-f]{12}$/);
+    expect(parseMethod(FIXTURE).version).toBe(method.version);
+    expect(parseMethod(`${FIXTURE} `).version).not.toBe(method.version);
+  });
 });
 
 describe("the real method.md", () => {

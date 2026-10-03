@@ -37,7 +37,12 @@ const runner = await startWorker(
     models:
       env.DEMO_MODELS === "true"
         ? createDemoModels()
-        : createModelCaller({ db, vault, createLanguageModel }),
+        : createModelCaller({
+            db,
+            vault,
+            createLanguageModel,
+            ...(env.RAILWAY_GIT_COMMIT_SHA ? { release: env.RAILWAY_GIT_COMMIT_SHA } : {}),
+          }),
   }),
   {
     concurrency: 4,

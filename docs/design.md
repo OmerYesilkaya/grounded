@@ -375,6 +375,12 @@ about, test and debug.
   shown simply per session and per month. Each attempt also records its duration (`duration_ms`,
   from the request to a stream's finish or the failure), so the effect of caching and reasoning
   effort shows per purpose.
+- **Each call records what it ran under** (decided 2026-10-03): the version of `method.md`
+  (`usage_events.method_version`, the first 12 hex digits of its text's SHA-256, `Method.version`;
+  the worker's tasks stamp it on every call they make, `apps/api/src/engine/tasks.ts`) and the
+  commit the app was deployed from (`release`, Railway's `RAILWAY_GIT_COMMIT_SHA`). So the effect of
+  a method change shows in the calls before and after it, and the eval's `--method` label uses the
+  same version. An import's calls, made outside the tasks, have no method version.
 - **Every model call is stored in full** (`model_calls`, decided 2026-09-30, #58), so model
   behaviour can be studied across sessions while the product is in its training period, where
   nothing is private yet: what a call saw, what the model answered before and after validation,

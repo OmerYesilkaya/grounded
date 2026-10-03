@@ -1,3 +1,4 @@
+import { loadMethod } from "@grounded/core";
 import { asc, eq, modelCalls, usageEvents } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createFlows, homework } from "./test/flows.js";
@@ -218,5 +219,14 @@ describe("lessons", () => {
       [0, ["s1 lesson/missing-check"]],
       [1, []],
     ]);
+  });
+});
+
+describe("every call", () => {
+  it("records the version of the method it was made under", async () => {
+    await inLesson();
+    const rows = await t.db.select({ methodVersion: usageEvents.methodVersion }).from(usageEvents);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(new Set(rows.map((row) => row.methodVersion))).toEqual(new Set([loadMethod().version]));
   });
 });

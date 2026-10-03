@@ -145,6 +145,14 @@ export const usageEvents = pgTable(
      * failure. Null for calls recorded before it was measured.
      */
     durationMs: integer("duration_ms"),
+    /**
+     * The version of method.md the call was made under (`Method.version`), so calls can be
+     * compared across method changes. Null for calls made outside the worker's tasks (an import)
+     * and for those recorded before it was kept.
+     */
+    methodVersion: text("method_version"),
+    /** The commit the app was deployed from (Railway's RAILWAY_GIT_COMMIT_SHA); null elsewhere. */
+    release: text("release"),
     createdAt: createdAt(),
   },
   (table) => [

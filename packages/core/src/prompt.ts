@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 /** The phases of method.md's tags (see its header comment). */
 export const PHASES = [
   "probe",
@@ -23,6 +24,11 @@ interface Section {
 
 export interface Method {
   sections: readonly Section[];
+  /**
+   * The method's version: the first 12 hex digits of its text's SHA-256. Every model call made
+   * with it records it (`usage_events.method_version`), so calls can be compared across versions.
+   */
+  version: string;
 }
 
 const TAG = /^<!-- phases: ([a-z ]+?)(?:; tracks: ([a-z]+))? -->$/gm;
@@ -48,7 +54,7 @@ export function parseMethod(markdown: string): Method {
       text: markdown.slice(start, end).trim(),
     };
   });
-  return { sections };
+  return { sections, version: createHash("sha256").update(markdown).digest("hex").slice(0, 12) };
 }
 
 export type TermStatus = "planned" | "taught" | "confirmed" | "assumed";

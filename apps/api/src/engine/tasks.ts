@@ -8,8 +8,19 @@ import { createSessionTasks, type SessionTaskDependencies } from "./session-task
 import { createSourceTasks } from "./source-tasks.js";
 import { createTrackTasks } from "./track-tasks.js";
 
-/** Every job the worker runs; a job whose track was deleted ends quietly (gone.ts). */
-export function createTasks(deps: SessionTaskDependencies): TaskList {
+/**
+ * Every job the worker runs; a job whose track was deleted ends quietly (gone.ts). Every model
+ * call the jobs make records the version of the method they run with.
+ */
+export function createTasks(given: SessionTaskDependencies): TaskList {
+  const { models, method } = given;
+  const deps: SessionTaskDependencies = {
+    ...given,
+    models: {
+      model: (request) => models.model({ ...request, methodVersion: method.version }),
+      searchTool: (userId) => models.searchTool(userId),
+    },
+  };
   return endingWhenGone(
     {
       ...createSessionTasks(deps),

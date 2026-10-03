@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs";
-import { createHash } from "node:crypto";
 import { relative, resolve } from "node:path";
 import { parseArgs } from "node:util";
 
@@ -70,8 +69,8 @@ let method: { method: import("@grounded/core").Method; label: string } | undefin
 if (values.method) {
   const path = resolve(process.env.INIT_CWD ?? process.cwd(), values.method);
   const text = readFileSync(path, "utf8");
-  const hash = createHash("sha256").update(text).digest("hex").slice(0, 8);
-  method = { method: parseMethod(text), label: `${relative(resolve("../.."), path)}@${hash}` };
+  const parsed = parseMethod(text);
+  method = { method: parsed, label: `${relative(resolve("../.."), path)}@${parsed.version}` };
 }
 
 const personas = values.persona?.length ? values.persona : personaIds();

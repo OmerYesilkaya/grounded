@@ -34,6 +34,8 @@ const schema = z
      * video's length; without it, only that the video exists and may be embedded (design §6.4).
      */
     YOUTUBE_API_KEY: z.string().min(1).optional(),
+    /** Set by Railway on a deploy from GitHub: the commit, recorded with every model call. */
+    RAILWAY_GIT_COMMIT_SHA: z.string().min(1).optional(),
   })
   .refine(
     (env) =>

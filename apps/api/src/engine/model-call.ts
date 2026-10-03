@@ -80,6 +80,8 @@ export interface ModelCallerDependencies {
   limitsFor?: (purpose: string) => CallLimits;
   /** The wait before the first retry, doubled for each one after (default 1 s). */
   retryDelayMs?: number;
+  /** The commit the app was deployed from, recorded with every call (`usage_events.release`). */
+  release?: string;
 }
 
 /** What session jobs need from model access; tests substitute scripted models. */
@@ -102,6 +104,8 @@ export interface ModelRequest {
   trackId?: string;
   /** The session the call is made in, if any: its usage is shown per session. */
   sessionId?: string;
+  /** The version of method.md the call is made under (`Method.version`), recorded with its usage. */
+  methodVersion?: string;
 }
 
 /** One attempt at a call: what it was sent, what it answered (so far), and the run it is traced in. */
@@ -126,7 +130,7 @@ const isForeignKeyViolation = (error: unknown): boolean => {
  * caller.
  */
 export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
-  const { db, vault, limitsFor = callLimitsFor, retryDelayMs = 1000 } = deps;
+  const { db, vault, limitsFor = callLimitsFor, retryDelayMs = 1000, release } = deps;
 
   return {
     async searchTool(userId) {
@@ -248,6 +252,8 @@ export function createModelCaller(deps: ModelCallerDependencies): ModelAccess {
             status: failure ? "error" : "ok",
             errorKind: failure?.kind ?? null,
             durationMs,
+            methodVersion: request.methodVersion ?? null,
+            release: release ?? null,
           })
           .returning({ id: usageEvents.id });
         if (event) await store(event.id, exchange, reply, failure ? failure.error : undefined);
