@@ -52,6 +52,7 @@ const withItems = (items: HomeworkItem[]): TrackSummary[] => [
     finishedIn: null,
     importedLesson: null,
     files: [],
+    source: null,
   },
 ];
 

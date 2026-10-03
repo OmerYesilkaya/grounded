@@ -6,6 +6,7 @@ import { dueLabel, tagOf, useNow } from "@/lib/snooze";
 import { describeItem } from "@/lib/track-list";
 import { isAssigned, isDue, type TrackItem, type TrackSummary } from "@/lib/tracks";
 import { cn } from "@/lib/utils";
+import { SourceMarker } from "./track-source";
 
 /**
  * One track in the track list (design §9.2): its name as the parent line, and when expanded its
@@ -60,6 +61,7 @@ export function TrackGroup(props: {
           )}
           title={track.title}
         >
+          {track.source && <SourceMarker className="mr-1.5 inline align-[-2px]" />}
           {track.title}
         </Link>
         {/* What is waiting, while the items aren't shown; the menu takes its place on hover. With

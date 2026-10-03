@@ -10,6 +10,12 @@ export function CitationsProvider(props: { sources: readonly CitedSource[]; chil
   return <Cited.Provider value={props.sources}>{props.children}</Cited.Provider>;
 }
 
+/**
+ * A section of the track's own source (design §4.6), as against a page on the web: its link is the
+ * app's, to the learner's file (a download), and its title already says where in the file it is.
+ */
+const inApp = (url: string) => url.startsWith("/");
+
 /** Where the lesson's "Sources" list holds source `n`. */
 const sourceAnchor = (n: number) => `lesson-source-${String(n)}`;
 
@@ -53,14 +59,14 @@ export function LessonSources({ sources }: { sources: readonly CitedSource[] }) 
               <li key={source.url} id={sourceAnchor(i + 1)} className="scroll-mt-20">
                 <a
                   href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  {...(inApp(source.url) ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                   className="text-foreground underline decoration-border-strong underline-offset-2 hover:decoration-primary"
                 >
                   {source.title}
                 </a>
-                {/* A source the provider gave no title is named by its site already. */}
-                {source.title !== hostname(source.url) && (
+                {/* A source the provider gave no title is named by its site already; one of the
+                    track's own source has no site. */}
+                {!inApp(source.url) && source.title !== hostname(source.url) && (
                   <span className="text-subtle-foreground"> · {hostname(source.url)}</span>
                 )}
               </li>

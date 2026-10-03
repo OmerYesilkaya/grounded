@@ -2,6 +2,7 @@ import {
   finalStanding,
   type FinalStanding,
   type SessionPhase,
+  type SourceReading,
   type TaskForm,
 } from "@grounded/core";
 import {
@@ -99,7 +100,15 @@ export interface TrackSummary {
   /** The final that finished the track, while it is finished. */
   finishedIn: string | null;
   importedLesson: { title: string } | null;
-  files: { id: string; name: string; kind: string; sizeBytes: number }[];
+  files: {
+    id: string;
+    name: string;
+    kind: string;
+    role: "brought" | "source";
+    sizeBytes: number;
+  }[];
+  /** A track taught from a source (design §4.6): where reading it stands; null for any other. */
+  source: SourceReading | null;
 }
 
 /** When something last happened on an assignment: changed, or its answers written. */
@@ -237,6 +246,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       finishedIn: final === "finished" ? (latest?.id ?? null) : null,
       importedLesson: lesson ? { title: lesson.title } : null,
       files: attached.get(track.id) ?? [],
+      source: track.source,
     };
   });
   return list.sort((a, b) => b.activeAt.localeCompare(a.activeAt));

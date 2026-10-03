@@ -72,6 +72,20 @@ export const session = defineMessages({
       attachHint:
         "Attach anything that shows where you start or where you’re heading: a CV, a syllabus, notes, a photo of a page (images, PDFs, Word documents and text files).",
       shortcut: (key: string) => `${key} Enter to create.`,
+      /** The two ways to start a track (design §9.5). */
+      startFrom: "Start from",
+      fromWords: "What you want to learn",
+      fromSource: "A source to learn from",
+      fromSourceIntro:
+        "Bring a book, a long PDF or your course notes. The tutor reads it once, asks what you already know of it, and teaches it to you whole: lessons, homework and exams, all from the source.",
+      notes: "Why are you reading it?",
+      notesPlaceholder:
+        "Optional: what it's for, what you hope to get from it, what you already know of the subject.",
+      sources: "Sources",
+      sourceHint:
+        "PDFs (scans too), EPUBs, Word documents and text files: up to 5, 100 MB together.",
+      addSource: "Choose files",
+      dropSource: "Drop your source here, or",
     },
   },
   tr: {
@@ -140,6 +154,19 @@ export const session = defineMessages({
       attachHint:
         "Nereden başladığını ya da nereye gittiğini gösteren her şeyi ekleyebilirsin: bir özgeçmiş, bir müfredat, notlar, bir sayfanın fotoğrafı (resimler, PDF'ler, Word belgeleri ve metin dosyaları).",
       shortcut: (key: string) => `Oluşturmak için ${key} Enter.`,
+      startFrom: "Başlangıç",
+      fromWords: "Ne öğrenmek istediğin",
+      fromSource: "Öğreneceğin bir kaynak",
+      fromSourceIntro:
+        "Bir kitap, uzun bir PDF ya da ders notlarını getir. Öğretmen onu bir kez okur, ondan neyi zaten bildiğini sorar ve sana baştan sona öğretir: dersler, ödevler ve sınavlar, hepsi kaynaktan.",
+      notes: "Neden okuyorsun?",
+      notesPlaceholder:
+        "İsteğe bağlı: ne için okuduğun, ondan ne beklediğin, konuyu ne kadar bildiğin.",
+      sources: "Kaynaklar",
+      sourceHint:
+        "PDF'ler (taranmış olanlar da), EPUB'lar, Word belgeleri ve metin dosyaları: en fazla 5 dosya, toplam 100 MB.",
+      addSource: "Dosya seç",
+      dropSource: "Kaynağını buraya bırak ya da",
     },
   },
 });

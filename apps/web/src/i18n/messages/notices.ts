@@ -136,6 +136,22 @@ const en: Words = {
     `${n.name} has ${enNumber(n.characters)} characters of text; at most ${enNumber(n.max)} can be attached.`,
   "attachments-pdf-pages": (n) =>
     `The PDFs come to ${enNumber(n.pages)} pages; at most ${enNumber(n.max)} can be attached.`,
+  // A track taught from a source (design §4.6)
+  "source-required": () => "Add the source you want to learn from.",
+  "source-kind": (n) =>
+    `${n.name}: a source can be a PDF, an EPUB, a Word document or a text file.`,
+  "source-not-ready": () =>
+    "The tutor is still reading your source; the first session starts once it's read.",
+  "source-not-awaiting": () => "Reading your source has already started.",
+  "source-needs-vision": (n) =>
+    `${enNumber(n.pages)} ${n.pages === 1 ? "page has" : "pages have"} no text the app can take out (a scan, or an unusual font), and ${n.model} doesn't read PDFs. Choose a model that does in Settings, then try again.`,
+  "source-unreadable": (n) => `${n.name} couldn't be opened and read.`,
+  "source-too-long": (n) =>
+    `Your sources hold about ${enNumber(n.characters)} characters of text; a track can hold at most ${enNumber(n.max)}.`,
+  "source-reading-stopped": (n) =>
+    n.cause === null || n.cause.code === "our-side" || n.cause.code === "interrupted"
+      ? "Reading stopped because of a problem on our side. What was read is kept; try again to go on from there."
+      : `Reading stopped. ${enCause(n.cause)} What was read is kept; try again to go on from there.`,
   "session-open": () => "This track already has an open session.",
   "not-a-session-kind": () => "Not a kind of session.",
   "final-after-exam": () => "The final comes once your arc exam is handed in.",
@@ -298,6 +314,20 @@ export const notices = defineMessages({
       `${n.name} içinde ${trNumber(n.characters)} karakter metin var; en fazla ${trNumber(n.max)} karakter eklenebilir.`,
     "attachments-pdf-pages": (n) =>
       `PDF'ler toplam ${trNumber(n.pages)} sayfa; en fazla ${trNumber(n.max)} sayfa eklenebilir.`,
+    "source-required": () => "Öğrenmek istediğin kaynağı ekle.",
+    "source-kind": (n) =>
+      `${n.name}: kaynak bir PDF, EPUB, Word belgesi ya da metin dosyası olabilir.`,
+    "source-not-ready": () => "Öğretmen kaynağını hâlâ okuyor; ilk ders, okuma bitince başlar.",
+    "source-not-awaiting": () => "Kaynağının okunması zaten başladı.",
+    "source-needs-vision": (n) =>
+      `${trNumber(n.pages)} sayfada uygulamanın çıkarabileceği bir metin yok (taranmış ya da alışılmadık bir yazı tipi) ve ${n.model} PDF okumuyor. Ayarlar'dan PDF okuyan bir model seç, sonra bir daha dene.`,
+    "source-unreadable": (n) => `${n.name} açılıp okunamadı.`,
+    "source-too-long": (n) =>
+      `Kaynaklarında yaklaşık ${trNumber(n.characters)} karakter metin var; bir konu en fazla ${trNumber(n.max)} karakter alabilir.`,
+    "source-reading-stopped": (n) =>
+      n.cause === null || n.cause.code === "our-side" || n.cause.code === "interrupted"
+        ? "Okuma, bizim tarafımızdaki bir sorun yüzünden durdu. Okunanlar saklandı; kaldığı yerden sürdürmek için bir daha dene."
+        : `Okuma durdu. ${trCause(n.cause)} Okunanlar saklandı; kaldığı yerden sürdürmek için bir daha dene.`,
     "session-open": () => "Bu konunun zaten açık bir oturumu var.",
     "not-a-session-kind": () => "Böyle bir oturum türü yok.",
     "final-after-exam": () => "Final, bölüm sınavını teslim ettiğinde gelir.",

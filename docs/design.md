@@ -61,7 +61,9 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   ChatGPT test; its transcripts seed the eval personas.
 - Sections are **tagged by phase**; the server assembles each phase's prompt from the sections it
   needs (plus the learner profile and track state). One document to read and maintain; shorter,
-  focused prompts per call — cheaper and much better for weaker models.
+  focused prompts per call — cheaper and much better for weaker models. A tag may also name the
+  tracks a section is for (`; tracks: source`, §4.6): the rules for teaching from a source reach
+  only a source track's calls, so every other call doesn't pay for them.
 - Teach in the learner's language; terms are gated in the language taught. The teaching language
   is the track's, inferred from the learner's messages; the app's own language (§9.3) is a separate
   choice and never feeds it.
@@ -613,38 +615,112 @@ about, test and debug.
   finishes and is paid for; it is recorded in `usage_events` like any other, and its content is
   not stored, having no track left to belong to.
 
+### 4.6 Tracks taught from a source (decided 2026-10-03, #63)
+
+A track can start from a source the learner brings (a book, a long PDF, an EPUB, lecture notes)
+instead of from their words: the tutor probes them on it, then teaches it whole with the same
+session loop (lessons, checks, homework, arc exams, the final). The source, not the web, is the
+reference.
+
+- **Creating one** (§9.5): "Learn from a source" beside "What do you want to learn?". The learner
+  adds 1–5 sources (`@grounded/core/sources`: PDF, EPUB, Word, text and Markdown; 100 MB in all,
+  3,000 PDF pages, 6 million characters once read) and, if they like, notes on why they are reading
+  it (`tracks.goal`, which may be empty). `POST /api/tracks` takes them as a form with
+  `from=source`; the files are stored as `track_files` with `role = source` (the files a learner
+  brings to a goal track are `brought`, §4.5, and a source is never read as one of those: it would
+  not fit a call). The track is named after the file, then after the book's own title when the
+  survey finds one.
+- **Reading it, once, and only when the learner says** (`engine/source-tasks.ts`, `sources/*`).
+  Two jobs, the track's reading state in `tracks.source` (`SourceReading`: surveying, awaiting,
+  reading, ready, failed):
+  - The **survey** (`survey-source`) takes the text out with no model: a PDF's text layer page by
+    page (pdf.js through `unpdf`, with the book's page labels and its bookmarks for chapters), an
+    EPUB's chapters in spine order, a Word document's or text file's text split at its headings. A
+    PDF page whose text layer is missing or garbled (under 80 letters, or over 5% unmappable glyphs)
+    and that paints an image is marked for the model. It counts the pages and estimates the cost on
+    the learner's cheap model (`sources/estimate.ts`, erring high), then waits (`awaiting`). A
+    source the cheap model can't read (it doesn't read PDFs: DeepSeek) fails here with the pages
+    that need it (`source-needs-vision`), so nothing is spent; changing model and asking again
+    surveys again.
+  - The learner sees the estimate and says to read (`POST /api/tracks/:id/source/read`). The
+    **reading** (`read-source`) sends the marked pages to the cheap model a few at a time
+    (`sources/transcribe.ts`: up to five consecutive pages copied into a PDF of their own with
+    `pdf-lib`, transcribed as markdown with a `=== page N ===` line each; a page the reply leaves out
+    is asked for alone, once). Each batch is kept as it is read (`track_files.transcripts`), so a
+    reading that stops at a model call (`source-reading-stopped`, the learner asks again) goes on
+    where it stopped and never pays twice. Then it splits the sources into **sections**
+    (`sources/sections.ts`): chapters, a chapter over 24,000 characters split into parts at page or
+    paragraph breaks, a stretch under 1,500 joined to its neighbour; a PDF section's text has a
+    `[p. 112]` line where each page starts, and its pages as the book numbers them. They are
+    numbered across the track's sources (`source_sections.n`, "§12") and each gets a sentence or two
+    (`sources/summarize.ts`, the cheap model, about 100,000 characters a call): what it teaches, the
+    terms it introduces, and what it expects the reader to know already.
+  - No OCR service: the pages that need reading go to the learner's own model, on their key, like
+    every other call (§2). The same path would take formulas and tables a text layer mangles; for
+    now only pages with no usable text layer go.
+  - A session can't start until the source is read (`source-not-ready`).
+- **Every call knows the source** (`PromptContext.source`, the track part of the prompt, after "what
+  you brought"; `engine/source-teaching.ts`): its sections by file with their pages and summaries
+  (on a source of more than 40 sections only the current arc's keep their summaries, the titles
+  stay), and what the plan teaches from where. The method's rules for it are a section of
+  `method.md` tagged `; tracks: source`, which reaches only a source track's calls (§3.1).
+- **The probe is about the source** (method.md): the session opens on it and on the learner's notes,
+  and probes whether they know what it teaches and, below that, whether they hold what it assumes.
+- **The plan** researches only the groundwork the source assumes and the learner lacks
+  (`SOURCE_PLAN_RESEARCH_PROMPT`); the source itself is never checked against the web. After each
+  plan is recorded, a structured call on the plan's model maps it onto the source (`mapSource`):
+  each arc's sections (none for groundwork from outside the source), the sections the learner
+  already holds, and the up to three this session's lesson teaches from
+  (`learning_sessions.source_sections`). The map is kept on the track (`tracks.source_map`), held to
+  the plan's arcs and the sections that exist. If the call fails, the map stays as it was and the
+  lesson takes the current arc's first sections.
+- **The lesson teaches from the sections' text** (`lessonPassages`): up to 60,000 characters, in the
+  outline's and the writing's request, in place of the lesson's web research (which still runs for
+  a lesson of groundwork only). The sections are offered first among what the lesson may cite (§6.4,
+  #62): `:cite[1]` is the first passage, shown in the lesson's Sources as the file, the section and
+  its pages, linked to the file. The method has the lesson teach what the source says as what it
+  says, without judging or correcting it (Omer, #63: the learner chose the source).
+- **Coverage** (`GET /api/tracks/:id/source`, `track-source.ts`): each section taught (a session's
+  lesson taught from it), known (the plan found the learner holds it), planned (an arc covers it) or
+  ahead, shown on the track page (§9.2).
+- **Later** (not built): adding a source to an existing track; web pages as sources; cropping the
+  source's own figures into lessons (lessons draw their own, and may point to a figure by its page);
+  opening a citation at its page (the file is downloaded, never shown inline, §4.5, so a link's
+  `#page=` does nothing yet).
+
 ## 5. Data model
 
 The schema is `packages/db/src/schema.ts`. Tables that exist:
 
-| Table                                | Holds                                                                                                                                                                    |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `users`                              | a learner: email, created on their first sign-in; their password's hash and the wrong-password count and lock (§4.3)                                                     |
-| `allowlist`                          | who may sign in, and the hash of their invite code                                                                                                                       |
-| `credentials`                        | provider, encrypted key, credential source                                                                                                                               |
-| `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off                                   |
-| `track_files`                        | per track: the attached files' name, kind, media type, size, PDF pages, text, file store key                                                                             |
-| `terms`                              | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                  |
-| `term_events`                        | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                             |
-| `term_dependencies`                  | "rests on" edges — the map; source of every structure picture                                                                                                            |
-| `fix_list_items`                     | the audit's misconceptions and their status                                                                                                                              |
-| `learning_sessions`                  | track, kind (normal / final), its state, open/closed, what the opening review and the probe found (and the learner's verdict), teach-back breaks, older turns summarized |
-| `session_messages`                   | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms         |
-| `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
-| `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
-| `check_messages`                     | per step: answers, verdicts, repairs, fresh questions                                                                                                                    |
-| `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries and the pages they returned                                        |
-| `asides`, `aside_messages`           | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
-| `usage_events`                       | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
-| `model_calls`                        | per `usage_events` row, in the training period: the call in full (prompt as sent, response format, tools, settings, reply, error), the validators' verdict (§4.4)        |
-| `imported_lessons`                   | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                           |
-| `learner_profile_notes`              | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                |
-| `profile_refreshes`                  | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                  |
-| `assignments`                        | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at                   |
-| `submissions`                        | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                                             |
-| `answer_files`                       | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                                   |
-| `reviews`                            | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up                                 |
-| `review_comments`, `review_messages` | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads                         |
+| Table                                | Holds                                                                                                                                                                                                                   |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `users`                              | a learner: email, created on their first sign-in; their password's hash and the wrong-password count and lock (§4.3)                                                                                                    |
+| `allowlist`                          | who may sign in, and the hash of their invite code                                                                                                                                                                      |
+| `credentials`                        | provider, encrypted key, credential source                                                                                                                                                                              |
+| `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off, a source's reading and map (§4.6)                                               |
+| `track_files`                        | per track: the attached files' role (brought or source), name, kind, media type, size, PDF pages, text, a source's transcribed pages, file store key                                                                    |
+| `source_sections`                    | per source track: each section of its sources (§4.6): its number, title, pages, text and summary                                                                                                                        |
+| `terms`                              | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                                                                 |
+| `term_events`                        | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                                                                            |
+| `term_dependencies`                  | "rests on" edges — the map; source of every structure picture                                                                                                                                                           |
+| `fix_list_items`                     | the audit's misconceptions and their status                                                                                                                                                                             |
+| `learning_sessions`                  | track, kind (normal / final), its state, open/closed, what the opening review and the probe found (and the learner's verdict), teach-back breaks, older turns summarized, the source's sections its lesson teaches from |
+| `session_messages`                   | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms                                                        |
+| `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                                                                 |
+| `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                                                                     |
+| `check_messages`                     | per step: answers, verdicts, repairs, fresh questions                                                                                                                                                                   |
+| `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries and the pages they returned                                                                                       |
+| `asides`, `aside_messages`           | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                                                                        |
+| `usage_events`                       | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                                                                        |
+| `model_calls`                        | per `usage_events` row, in the training period: the call in full (prompt as sent, response format, tools, settings, reply, error), the validators' verdict (§4.4)                                                       |
+| `imported_lessons`                   | per imported track: the last lesson of the earlier setup, original HTML, shown read-only (§10)                                                                                                                          |
+| `learner_profile_notes`              | per learner: teaching notes (§8): text, evidence (session and what showed it), created/revised at, whether the learner wrote or edited it                                                                               |
+| `profile_refreshes`                  | per learner: each refresh of the teaching notes and the close it ran at, changed or not                                                                                                                                 |
+| `assignments`                        | homework, and the arc exams (#42): its session, kind, name, its tasks (each's answer kind and blocks), "what a good answer demonstrates", handed in at                                                                  |
+| `submissions`                        | per assignment: the learner's answers, saved as they write: each task's fields as markdown, and when a prediction was locked                                                                                            |
+| `answer_files`                       | pictures in the answers (a photo of a notebook page): media type, size, file store key                                                                                                                                  |
+| `reviews`                            | per handed-in assignment: its review's status (reviewing, done, failed and why), the checklist marked, the later session that took it up                                                                                |
+| `review_comments`, `review_messages` | the review's margin comments (anchored to a field's words, the checklist items they bear on, resolved at and in which session) and their threads                                                                        |
 
 An assignment also holds when it is snoozed until (`snoozed_until`, "Later"), the later homework
 it was folded into (`subsumed_by`) and, for an arc exam, when starting a session warned it was
@@ -1062,7 +1138,8 @@ session (method.md, "Review"):
 ### 7.2 Lesson generation pipeline
 
 1. **Research, then outline**: research checks on the web what the lesson will state and the model
-   isn't sure of (§4.4, a call of its own, searching only where it needs to); then the outline:
+   isn't sure of (§4.4, a call of its own, searching only where it needs to; on a source track, the
+   text of the sections the lesson teaches from takes its place, §4.6); then the outline:
    the lesson's title (the idea it builds, as a tutor would name
    it; the track list shows it, §9.2), steps, the motivation for each, the terms each introduces and
    rests on, the drawings needed (the writing is then offered the sources it may cite, §6.2).
@@ -1803,6 +1880,12 @@ every other page usable (tried at 360–430px wide, in both themes).
   selection handles near the ask button, and dragging the sheet with a thumb.
 
 ### 9.5 A new track (decided 2026-09-28)
+
+- **Two ways to start** (decided 2026-10-03, #63): "What you want to learn" (below, as it was) or "A
+  source to learn from" (§4.6): the sources added to a drop area, and the box becomes optional notes
+  on why the learner is reading them. The track page then shows the reading: the pages, how many the
+  learner's model will read and what it will cost ("Read it"), its progress, why it stopped (with
+  "Try again" where trying helps), and once it is read, the source's coverage section by section.
 
 - **One box: "What do you want to learn?"** A composer that starts five lines tall and grows, for as
   many words as the learner likes (up to 4,000 characters): where they want to get to, where they

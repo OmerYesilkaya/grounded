@@ -10,6 +10,13 @@ const RESEARCH_STEPS = 6;
 export const PLAN_RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before planning, scope the field with web search: core concepts, real first principles, standard framings, common gotchas and the field's actual terminology. Prefer official docs and primary sources. Reply with research notes for yourself, with their sources.";
 
+/**
+ * A source track's plan (design §4.6): the source is the ground and the authority, so the web is
+ * searched only for the groundwork it assumes and the learner lacks.
+ */
+export const SOURCE_PLAN_RESEARCH_PROMPT =
+  "(For the app; the learner doesn't see this.) Before planning, check with web search only the groundwork the learner lacks that the source assumes and doesn't teach, from what the probe found: how it is usually taught, its first principles and its terms. Don't research or check the source itself: here it is the authority. If the learner lacks nothing outside the source, search nothing and reply only: Nothing to check. Otherwise reply with research notes for yourself, with their sources.";
+
 export const LESSON_RESEARCH_PROMPT =
   "(For the app; the learner doesn't see this.) Before outlining the lesson for the approved plan, check with web search what it will state that you aren't sure of: names, dates, figures, quotes, definitions, how a mechanism really works, what a source actually says. Search only for those. If you are sure of everything the lesson needs, search nothing and reply only: Nothing to check. Otherwise reply with notes for yourself: each fact as the sources state it, with its source.";
 

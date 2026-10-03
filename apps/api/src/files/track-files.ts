@@ -12,6 +12,7 @@ import {
 import { v7 as uuidv7 } from "uuid";
 import { log } from "../log.js";
 import type { Attachment } from "./attachments.js";
+import type { SourceUpload } from "./sources.js";
 import type { FileStore } from "./store.js";
 
 type TrackValues = Omit<typeof tracks.$inferInsert, "id">;
@@ -19,13 +20,15 @@ type TrackValues = Omit<typeof tracks.$inferInsert, "id">;
 /**
  * Creates a track with its files (design §4.5): the bytes go to the store first, then the track and
  * its file rows in one transaction, so a row never names bytes that aren't there. If anything
- * fails, the bytes already stored are deleted again.
+ * fails, the bytes already stored are deleted again. The files are what the learner brought, or
+ * the sources the track teaches (§4.6).
  */
 export async function createTrack(
   db: Db,
   store: FileStore,
   values: TrackValues,
-  attachments: readonly Attachment[],
+  attachments: readonly Attachment[] | readonly SourceUpload[],
+  role: "brought" | "source" = "brought",
 ): Promise<typeof tracks.$inferSelect> {
   const trackId = uuidv7();
   const rows = attachments.map((a) => {
@@ -33,12 +36,13 @@ export async function createTrack(
     return {
       id,
       trackId,
+      role,
       name: a.name,
       kind: a.kind,
       mediaType: a.mediaType,
       sizeBytes: a.bytes.length,
       pages: a.pages,
-      text: a.text,
+      text: "text" in a ? a.text : null,
       storageKey: `tracks/${trackId}/${id}`,
     };
   });
@@ -117,6 +121,7 @@ export async function filesOf(db: Db, trackIds: readonly string[]) {
           trackId: trackFiles.trackId,
           name: trackFiles.name,
           kind: trackFiles.kind,
+          role: trackFiles.role,
           sizeBytes: trackFiles.sizeBytes,
         })
         .from(trackFiles)
@@ -125,18 +130,21 @@ export async function filesOf(db: Db, trackIds: readonly string[]) {
     : [];
   const byTrack = new Map<
     string,
-    { id: string; name: string; kind: string; sizeBytes: number }[]
+    { id: string; name: string; kind: string; role: "brought" | "source"; sizeBytes: number }[]
   >();
   for (const { trackId, ...file } of rows)
     byTrack.set(trackId, [...(byTrack.get(trackId) ?? []), file]);
   return byTrack;
 }
 
-/** One track's files, with what is needed to read them. */
+/**
+ * One track's files the learner brought (not its sources, which are read into sections), with what
+ * is needed to read them.
+ */
 export function trackFileRows(db: Db, trackId: string) {
   return db
     .select()
     .from(trackFiles)
-    .where(eq(trackFiles.trackId, trackId))
+    .where(and(eq(trackFiles.trackId, trackId), eq(trackFiles.role, "brought")))
     .orderBy(asc(trackFiles.createdAt), asc(trackFiles.id));
 }

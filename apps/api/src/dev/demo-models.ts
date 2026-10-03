@@ -311,6 +311,9 @@ export function createDemoModels(options: DemoModelOptions = {}): ModelAccess {
       ),
     "track-name": () => model("", [JSON.stringify({ name: "Demo track" })]),
     "track-brief": () => model("The demo doesn't read files; this stands in for their summary."),
+    // A source is read with no pages copied out and no section summarized (design §4.6).
+    "source-transcribe": () => model("The demo doesn't read pages; this stands in for the page."),
+    "source-summary": () => model("", [JSON.stringify({ summaries: [] })]),
     "wording-review": () => model("", [JSON.stringify({ flagged: [], jargon: [] })]),
     // The first session confirms the working copy; the final's closes the fix-list item its audit
     // found no trace of, and leaves the teach-back's break as it left it.

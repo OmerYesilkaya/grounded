@@ -12,7 +12,8 @@
     "./probe-verdict": "./src/probe-verdict.ts",
     "./session": "./src/session.ts",
     "./notices": "./src/notices.ts",
-    "./snooze": "./src/snooze.ts"
+    "./snooze": "./src/snooze.ts",
+    "./sources": "./src/sources.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

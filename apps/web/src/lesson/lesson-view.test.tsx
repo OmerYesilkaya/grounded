@@ -386,11 +386,12 @@ describe("LessonView: step timeline", () => {
 
 describe("LessonView: sources", () => {
   /** The lesson's steps, with the server's sources given to their citations as it verified them. */
-  function citing(): LessonStep[] {
-    const sources = [
+  function citing(
+    sources = [
       { url: "https://example.org/rmw", title: "Read-modify-write" },
       { url: "https://example.org/races", title: "example.org" },
-    ];
+    ],
+  ): LessonStep[] {
     const markdown = LESSON.replace("Body of step 1.", "Body of step 1:cite[2]:cite[1].").replace(
       "Body of step 2.",
       "Body of step 2:cite[2].",
@@ -432,6 +433,23 @@ describe("LessonView: sources", () => {
     expect(
       within(list).getByText(/What has no numbered source comes from the tutor's own knowledge/),
     ).toBeInTheDocument();
+  });
+
+  it("names a section of the track's own source as it is, linked to the learner's file in the app", () => {
+    const book = {
+      url: "/api/tracks/t1/files/f1#page=12",
+      title: 'Networks from the Ground Up, "Packets", pp. 2–3',
+    };
+    renderLesson({ s1: { status: "passed", thread: [] } }, { steps: citing([book, book]) });
+    const list = screen.getByRole("region", { name: "Sources" });
+    expect(
+      within(list)
+        .getAllByRole("listitem")
+        .map((e) => e.textContent),
+    ).toEqual([book.title]);
+    const link = within(list).getByRole("link", { name: book.title });
+    expect(link).toHaveAttribute("href", book.url);
+    expect(link).not.toHaveAttribute("target");
   });
 
   it("says what an uncited lesson rests on, with no list", () => {

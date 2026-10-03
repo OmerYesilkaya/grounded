@@ -1,3 +1,4 @@
+import { loadSourceContext, sourceOpening } from "./source-teaching.js";
 import {
   assembleSystemPrompt,
   PROBE_VERDICT_PROMPT,
@@ -216,6 +217,8 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
     );
     const records = await probeRecords(db, session);
     const files = await trackFileRows(db, session.trackId);
+    // On a source track, the verdict is about the source (design §4.6).
+    const source = await loadSourceContext(db, track, null);
     // The probe's own phase: its method holds here too (a probe teaches nothing).
     const system = systemMessages(
       assembleSystemPrompt(method, "probe", {
@@ -223,6 +226,7 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
         ...(files.length
           ? { brought: { files: files.map((f) => f.name), summary: track.brief } }
           : {}),
+        ...(source ? { source } : {}),
         extra: [
           ...records.sections,
           ...(session.probeSummary
@@ -231,7 +235,9 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
         ],
       }),
     );
-    const opening = `(The learner started a session. They said they want to learn: ${track.goal})`;
+    const opening = source
+      ? sourceOpening(source.files, track.goal)
+      : `(The learner started a session. They said they want to learn: ${track.goal})`;
     const asking: ModelMessage[] = [
       {
         role: "user",

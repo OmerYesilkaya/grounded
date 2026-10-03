@@ -1,3 +1,4 @@
+import { lessonPassages, mapSource, sourceOpening } from "./source-teaching.js";
 import {
   allowedBlocksLine,
   assembleSystemPrompt,
@@ -123,6 +124,7 @@ import { createReviewer } from "./review.js";
 import {
   LESSON_RESEARCH_PROMPT,
   PLAN_RESEARCH_PROMPT,
+  SOURCE_PLAN_RESEARCH_PROMPT,
   research,
   sessionResearch,
   storeResearch,
@@ -333,7 +335,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // they want to learn (their words as typed) and any files they read here, so the first question
     // builds on them.
     if (messages[0]?.role !== "user") {
-      const opening = `(The learner started a session. They said they want to learn: ${track.goal})`;
+      // A track from a source opens on the source, and the learner's notes on why they read it.
+      const opening = track.source
+        ? sourceOpening(track.source.files, track.goal)
+        : `(The learner started a session. They said they want to learn: ${track.goal})`;
       messages.unshift({
         role: "user",
         content: originals
@@ -966,7 +971,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     }),
 
     lesson: guarded(async ({ sessionId }) => {
-      const { session, terms, messages, system } = await contextFor(sessionId, "lesson");
+      const { session, track, terms, messages, system } = await contextFor(sessionId, "lesson");
       await db.insert(lessons).values({ sessionId }).onConflictDoNothing();
       // A failed lesson written again from where it stopped keeps its outline and the steps written
       // before it (lesson-again.ts); one written from the start has no outline yet.
@@ -988,10 +993,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "lesson",
         role: "strong",
       });
+      // On a source track, the lesson carries the text of the sections it teaches from (design
+      // §4.6): the source is its ground, so the web is searched only for a lesson of groundwork.
+      const passages = track.source
+        ? await lessonPassages(db, session, track.plan.arcs.find((a) => a.current)?.title ?? null)
+        : { notes: "", cited: [] };
       // Before an outline, what the lesson will state and the tutor isn't sure of is checked on the
       // web (design §7.2): a call of its own, which searches only where it needs to. It is
       // best-effort: without it, the lesson is written as it was before.
-      const search = resume ? undefined : await models.searchTool(session.userId);
+      const search =
+        resume || passages.cited.length ? undefined : await models.searchTool(session.userId);
       if (search) {
         try {
           const found = await research({
@@ -1020,16 +1031,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       // lesson written again, which searches nothing). The pages it found are what the lesson may
       // cite, once each is seen to open (design §6.4).
       const researched = await sessionResearch(db, sessionId);
-      const notes = researched.notes
-        ? `\n\nResearch notes from this session, with their sources (the learner hasn't seen them): state these facts as the sources do.\n\n${researched.notes}`
-        : "";
+      const notes =
+        passages.notes +
+        (researched.notes
+          ? `\n\nResearch notes from this session, with their sources (the learner hasn't seen them): state these facts as the sources do.\n\n${researched.notes}`
+          : "");
       const outlining = resume
         ? undefined
         : await startActivity(db, sessionId, { code: "outlining" });
       let writing: Activity | undefined;
       let totalSteps = resume?.outline.steps.length ?? 0;
       try {
-        const sources = await citableSources(researched.sources, deps.media.web);
+        // The source's sections first, numbered as their passages are; then the pages found.
+        const sources = [
+          ...passages.cited,
+          ...(await citableSources(researched.sources, deps.media.web)),
+        ];
         const result = await generateLesson({
           model,
           system,
@@ -1041,6 +1058,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           media: createLessonMedia({
             ...deps.media,
             sources,
+            fromSource: passages.cited.length,
             activity: (label, run) => withActivity(db, sessionId, label, run),
           }),
           onOutline: async (outline) => {
@@ -1484,7 +1502,8 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             system: systemFor("plan", { ...track, extra: probeFound }),
             messages,
             search,
-            request: PLAN_RESEARCH_PROMPT,
+            // A source track's ground is its source: research covers only what it assumes.
+            request: track.source ? SOURCE_PLAN_RESEARCH_PROMPT : PLAN_RESEARCH_PROMPT,
             label: { code: "researching" },
           })
         : undefined;
@@ -1581,6 +1600,24 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               .update(sessionMessages)
               .set({ planTerms })
               .where(eq(sessionMessages.id, reply.messageId));
+            // A source track's plan is mapped onto the source (design §4.6). If the call fails,
+            // the map stays as it was and the lesson takes the current arc's sections.
+            if (track.source) {
+              try {
+                await withActivity(db, sessionId, { code: "recording-plan" }, () =>
+                  mapSource({
+                    db,
+                    model,
+                    system,
+                    messages: [...conversation, { role: "assistant", content: reply.text }],
+                    trackId: session.trackId,
+                    sessionId,
+                  }),
+                );
+              } catch (error) {
+                log.warn({ err: error }, "the plan couldn't be mapped onto the source");
+              }
+            }
             await applyEvent(db, sessionId, { type: "plan-proposed" });
             return;
           }

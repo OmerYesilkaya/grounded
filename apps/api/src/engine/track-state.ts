@@ -1,3 +1,4 @@
+import { loadSourceContext } from "./source-teaching.js";
 import {
   keepClosedArcs,
   NOTES_PHASES,
@@ -637,7 +638,10 @@ function addedNotes(notes: string, added: string): string {
 export interface TrackContext
   extends
     Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
-    Pick<PromptContext, "termsNotListed" | "brought" | "heldElsewhere" | "teachingNotes"> {
+    Pick<
+      PromptContext,
+      "termsNotListed" | "brought" | "source" | "heldElsewhere" | "teachingNotes"
+    > {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
   /** What the learner wrote they want to learn, as typed (the session's opening turn). */
@@ -800,8 +804,14 @@ export async function loadTrackContext(
   const files = await db
     .select({ name: trackFiles.name })
     .from(trackFiles)
-    .where(eq(trackFiles.trackId, trackId))
+    .where(and(eq(trackFiles.trackId, trackId), eq(trackFiles.role, "brought")))
     .orderBy(trackFiles.createdAt, trackFiles.id);
+  // The source the track is taught from (design §4.6), its summaries all there or the current
+  // arc's.
+  const sourceFor = async (currentArc: string | null) => {
+    const source = await loadSourceContext(db, track, currentArc);
+    return source ? { source } : {};
+  };
   const whole = {
     track: { title: track.title, language: track.language },
     // What the learner brought, summarized (design §4.5); a call that reads the files leaves it out.
@@ -815,7 +825,7 @@ export async function loadTrackContext(
     // How this learner learns, across their tracks (design §8): in every call.
     teachingNotes: await loadTeachingNotes(db, track.userId),
   };
-  if (!options.sessionId) return whole;
+  if (!options.sessionId) return { ...whole, ...(await sourceFor(null)) };
 
   const { phase } = options;
   const view = selectTrackView({
@@ -837,6 +847,7 @@ export async function loadTrackContext(
   const byTrack = Map.groupBy(elsewhere.slice(0, HELD_ELSEWHERE_LIMIT), (h) => h.track);
   return {
     ...whole,
+    ...(await sourceFor(view.arcs.find((a) => a.current)?.title ?? null)),
     terms: view.terms,
     termsNotListed: view.termsNotListed,
     plan: { arcs: view.arcs, ...notes },

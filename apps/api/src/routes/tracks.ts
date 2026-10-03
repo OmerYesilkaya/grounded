@@ -1,13 +1,24 @@
-import { ATTACHMENT_LIMITS, needsNaming, standInTitle, refusal } from "@grounded/core";
-import { and, eq, importedLessons, trackFiles, tracks, type Db } from "@grounded/db";
+import {
+  ATTACHMENT_LIMITS,
+  cleanTitle,
+  needsNaming,
+  refusal,
+  SOURCE_LIMITS,
+  standInTitle,
+  type SourceReading,
+} from "@grounded/core";
+import { and, eq, importedLessons, sql, trackFiles, tracks, type Db } from "@grounded/db";
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { SignedInUser } from "../auth.js";
 import type { JobQueue } from "../engine/queue.js";
 import { readAttachments, type UploadedFile } from "../files/attachments.js";
+import { readSources } from "../files/sources.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
 import { createTrack, deleteTrack } from "../files/track-files.js";
+import { SURVEYING } from "../engine/source-tasks.js";
+import { sourceCoverage } from "../track-source.js";
 import { addLogContext } from "../log.js";
 import { trackList } from "../track-list.js";
 import { notFound, refuse } from "../refusals.js";
@@ -19,6 +30,8 @@ interface Env {
 // No language: the tutor infers it from the learner's messages and records it (set-language).
 const GOAL_MAX = 4000;
 const trackInput = z.object({ goal: z.string().trim().min(1).max(GOAL_MAX) });
+/** A track from a source: the learner's words are optional notes on why they are reading it. */
+const sourceInput = z.object({ goal: z.string().trim().max(GOAL_MAX).default("") });
 const GOAL_REQUIRED = refusal({ code: "goal-required", max: GOAL_MAX });
 
 /**
@@ -41,6 +54,10 @@ async function trackInputOf(
   return { goal: form.goal, files };
 }
 
+/** A source track's name until the survey reads the book's own title: the file's name. */
+const sourceTitle = (name: string) =>
+  cleanTitle(name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ")) ?? name;
+
 /** Tracks: creating, listing and deleting them, and what hangs off them (design §4.5, §9.2). */
 export function registerTrackRoutes(
   app: Hono<Env>,
@@ -48,35 +65,69 @@ export function registerTrackRoutes(
 ) {
   const { db, queue, files } = deps;
 
-  // The files' limit (design §4.5), with room for the form around them.
-  const uploadLimit = bodyLimit({
-    maxSize: ATTACHMENT_LIMITS.totalBytes + 1024 * 1024,
-    onError: (c) => c.json(refuse("files-too-large"), 413),
-  });
+  // What a request may carry, with room for the form around the files: the files brought (design
+  // §4.5), or a track's sources (`?from=source`, §4.6). Named in the address, so the limit applies
+  // before anything is read.
+  const limit = (bytes: number) =>
+    bodyLimit({
+      maxSize: bytes + 1024 * 1024,
+      onError: (c) => c.json(refuse("files-too-large"), 413),
+    });
+  const broughtLimit = limit(ATTACHMENT_LIMITS.totalBytes);
+  const sourceLimit = limit(SOURCE_LIMITS.totalBytes);
 
-  app.post("/api/tracks", uploadLimit, async (c) => {
-    const input = await trackInputOf(c);
-    const parsed = trackInput.safeParse({ goal: input?.goal });
-    if (!input || !parsed.success) return c.json(GOAL_REQUIRED, 400);
-    const read = await readAttachments(input.files);
-    if (!read.ok) return c.json({ error: read.error }, 400);
-    const { goal } = parsed.data;
-    // Words that already are a name are the name; the tutor names anything longer (design §9.5).
-    const naming = needsNaming(goal);
-    const track = await createTrack(
-      db,
-      files,
-      { userId: c.get("user").id, goal, title: standInTitle(goal), titlePending: naming },
-      read.attachments,
-    );
-    addLogContext({ trackId: track.id });
-    if (naming) await queue.enqueue("name-track", { trackId: track.id });
-    if (read.attachments.length) await queue.enqueue("track-brief", { trackId: track.id });
-    return c.json(
-      { id: track.id, title: track.title, naming: track.titlePending, language: track.language },
-      201,
-    );
-  });
+  app.post(
+    "/api/tracks",
+    (c, next) => (c.req.query("from") === "source" ? sourceLimit : broughtLimit)(c, next),
+    async (c) => {
+      const input = await trackInputOf(c);
+      if (input && c.req.query("from") === "source") {
+        const notes = sourceInput.safeParse({ goal: input.goal ?? "" });
+        if (!notes.success) return c.json(GOAL_REQUIRED, 400);
+        const read = await readSources(input.files);
+        if (!read.ok) return c.json({ error: read.error }, 400);
+        const first = read.sources[0]?.name ?? "";
+        const track = await createTrack(
+          db,
+          files,
+          {
+            userId: c.get("user").id,
+            goal: notes.data.goal,
+            title: sourceTitle(first),
+            source: SURVEYING,
+          },
+          read.sources,
+          "source",
+        );
+        addLogContext({ trackId: track.id });
+        await queue.enqueue("survey-source", { trackId: track.id });
+        return c.json(
+          { id: track.id, title: track.title, naming: false, language: track.language },
+          201,
+        );
+      }
+      const parsed = trackInput.safeParse({ goal: input?.goal });
+      if (!input || !parsed.success) return c.json(GOAL_REQUIRED, 400);
+      const read = await readAttachments(input.files);
+      if (!read.ok) return c.json({ error: read.error }, 400);
+      const { goal } = parsed.data;
+      // Words that already are a name are the name; the tutor names anything longer (design §9.5).
+      const naming = needsNaming(goal);
+      const track = await createTrack(
+        db,
+        files,
+        { userId: c.get("user").id, goal, title: standInTitle(goal), titlePending: naming },
+        read.attachments,
+      );
+      addLogContext({ trackId: track.id });
+      if (naming) await queue.enqueue("name-track", { trackId: track.id });
+      if (read.attachments.length) await queue.enqueue("track-brief", { trackId: track.id });
+      return c.json(
+        { id: track.id, title: track.title, naming: track.titlePending, language: track.language },
+        201,
+      );
+    },
+  );
 
   /** A file the learner attached, for its owner only, as a download (never shown inline). */
   app.get("/api/tracks/:id/files/:fileId", async (c) => {
@@ -133,6 +184,48 @@ export function registerTrackRoutes(
     return c.json(lesson);
   });
 
+  /**
+   * A source track's reading and coverage (design §4.6): where reading stands, and each section
+   * with what the plan and the lessons have done with it.
+   */
+  app.get("/api/tracks/:id/source", async (c) => {
+    const trackId = c.req.param("id");
+    if (!z.uuid().safeParse(trackId).success) return c.json(notFound, 404);
+    addLogContext({ trackId });
+    const coverage = await sourceCoverage(db, { userId: c.get("user").id, trackId });
+    if (!coverage) return c.json(notFound, 404);
+    return c.json(coverage);
+  });
+
+  /**
+   * The learner says to read the source, once they have seen what it will cost; or to try again
+   * after reading stopped. Reading that stopped at a model call starts again where it stopped; a
+   * source the model couldn't read is surveyed again (the learner may have changed their model).
+   */
+  app.post("/api/tracks/:id/source/read", async (c) => {
+    const trackId = c.req.param("id");
+    if (!z.uuid().safeParse(trackId).success) return c.json(notFound, 404);
+    addLogContext({ trackId });
+    const [track] = await db
+      .select({ source: tracks.source })
+      .from(tracks)
+      .where(and(eq(tracks.id, trackId), eq(tracks.userId, c.get("user").id)));
+    if (!track?.source) return c.json(notFound, 404);
+    const next = nextReading(track.source);
+    if (!next) return c.json(refuse("source-not-awaiting"), 409);
+    // Only from the state just read, so two requests don't start two readings.
+    const [moved] = await db
+      .update(tracks)
+      .set({ source: { ...track.source, status: next, failure: null } })
+      .where(
+        and(eq(tracks.id, trackId), sql`${tracks.source} ->> 'status' = ${track.source.status}`),
+      )
+      .returning({ id: tracks.id });
+    if (!moved) return c.json(refuse("source-not-awaiting"), 409);
+    await queue.enqueue(next === "reading" ? "read-source" : "survey-source", { trackId });
+    return c.body(null, 202);
+  });
+
   /** The track list (design §9.2): every track with its items, the most recently active first. */
   app.get("/api/tracks", async (c) => c.json(await trackList(db, c.get("user").id)));
 
@@ -148,4 +241,13 @@ export function registerTrackRoutes(
     if (!deleted) return c.json(notFound, 404);
     return c.body(null, 204);
   });
+}
+
+/** Where reading goes when the learner says to read: on from the estimate, or again after a stop. */
+function nextReading(reading: SourceReading): "reading" | "surveying" | null {
+  if (reading.status === "awaiting") return "reading";
+  if (reading.status !== "failed") return null;
+  if (reading.failure?.code === "source-reading-stopped") return "reading";
+  if (reading.failure?.code === "source-needs-vision") return "surveying";
+  return null;
 }

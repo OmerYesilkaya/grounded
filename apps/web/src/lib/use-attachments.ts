@@ -1,4 +1,5 @@
 import { attachmentKind, attachmentProblem, attachmentsProblem } from "@grounded/core/attachments";
+import { sourceProblem, sourcesProblem } from "@grounded/core/sources";
 import { useEffect, useRef, useState } from "react";
 import { type RefusalNotice } from "@grounded/core/notices";
 
@@ -16,10 +17,31 @@ export interface PendingFile {
 let next = 0;
 
 /**
- * Files chosen to attach, checked as they are added against the rules the API applies (design
- * §4.5). The same file picked twice is kept once.
+ * What the files are for: brought, about the learner (design §4.5), or the source a track is
+ * taught from (§4.6), each with the rules the API applies to it.
  */
-export function useAttachments() {
+export type AttachmentRules = "brought" | "source";
+
+const RULES = {
+  brought: {
+    problem: attachmentProblem,
+    together: attachmentsProblem,
+    image: (name: string) => attachmentKind(name)?.kind === "image",
+  },
+  source: {
+    problem: sourceProblem,
+    // Nothing chosen yet is not a problem to show; it only holds creating back.
+    together: (files: readonly { size: number }[]) => (files.length ? sourcesProblem(files) : null),
+    image: () => false,
+  },
+} as const;
+
+/**
+ * Files chosen to attach, checked as they are added against the rules the API applies (design
+ * §4.5, §4.6). The same file picked twice is kept once.
+ */
+export function useAttachments(rules: AttachmentRules = "brought") {
+  const rule = RULES[rules];
   const [files, setFiles] = useState<PendingFile[]>([]);
   const previews = useRef(new Set<string>());
 
@@ -40,8 +62,8 @@ export function useAttachments() {
         ),
     );
     const pending = fresh.map((file): PendingFile => {
-      const problem = attachmentProblem(file.name, file.size);
-      const image = attachmentKind(file.name)?.kind === "image";
+      const problem = rule.problem(file.name, file.size);
+      const image = rule.image(file.name);
       const preview = image && !problem ? URL.createObjectURL(file) : null;
       if (preview) previews.current.add(preview);
       next += 1;
@@ -60,7 +82,9 @@ export function useAttachments() {
   };
 
   /** Why the files can't go together (too many, too large); each file shows its own problem. */
-  const together = attachmentsProblem(files.map((f) => f.file));
-  const blocked = together !== null || files.some((f) => f.problem);
+  const together = rule.together(files.map((f) => f.file));
+  // A source track can't be made without its source.
+  const blocked =
+    together !== null || files.some((f) => f.problem) || (rules === "source" && !files.length);
   return { files, add, remove, together, blocked };
 }

@@ -67,6 +67,11 @@ export type RefusalNotice =
   // Tracks and what they bring (design §4.5)
   | { code: "goal-required"; max: number }
   | { code: "files-too-large" }
+  // Tracks taught from a source (design §4.6)
+  | { code: "source-required" }
+  | { code: "source-kind"; name: string }
+  | { code: "source-not-ready" }
+  | { code: "source-not-awaiting" }
   | { code: "attachment-kind"; name: string }
   | { code: "attachment-empty"; name: string }
   | { code: "attachment-too-large"; name: string; megabytes: number }
@@ -166,7 +171,18 @@ export type FailureNotice =
   /** Said in a thread in place of the tutor's answer: the learner can ask, answer or reply again. */
   | { code: "thread-failed"; thread: "check" | "aside" | "reply"; cause: Cause | null };
 
-export type Notice = RefusalNotice | FailureNotice | ActivityNotice;
+/** Why reading a track's source stopped (design §4.6), shown on the track. */
+export type SourceFailure =
+  /** Pages need the model to read them, and the learner's model doesn't read PDFs. */
+  | { code: "source-needs-vision"; pages: number; model: string }
+  /** A file turned out not to be readable once opened (a broken EPUB, a PDF that won't parse). */
+  | { code: "source-unreadable"; name: string }
+  /** The sources hold more text than a track can (`SOURCE_LIMITS.characters`). */
+  | { code: "source-too-long"; characters: number; max: number }
+  /** A model call failed while reading; the learner can try again. */
+  | { code: "source-reading-stopped"; cause: Cause | null };
+
+export type Notice = RefusalNotice | FailureNotice | ActivityNotice | SourceFailure;
 export type NoticeCode = Notice["code"];
 
 /** The codes of refusals that take no values: "not-found". */

@@ -16,6 +16,8 @@ export type Phase = (typeof PHASES)[number];
 
 interface Section {
   phases: readonly (Phase | "all")[];
+  /** Only for the calls of some tracks: `source`, a track taught from a source (design §4.6). */
+  tracks?: "source";
   text: string;
 }
 
@@ -23,12 +25,15 @@ export interface Method {
   sections: readonly Section[];
 }
 
-const TAG = /^<!-- phases: ([a-z ]+) -->$/gm;
+const TAG = /^<!-- phases: ([a-z ]+?)(?:; tracks: ([a-z]+))? -->$/gm;
 
 /** Splits method.md at its phase tags. Text before the first tag (the header comment) is dropped. */
 export function parseMethod(markdown: string): Method {
   const tags = [...markdown.matchAll(TAG)];
   const sections = tags.map((tag, i): Section => {
+    const tracks = tag[2];
+    if (tracks !== undefined && tracks !== "source")
+      throw new Error(`Unknown tracks "${tracks}" in method.md.`);
     const phases = (tag[1] ?? "").trim().split(/\s+/);
     for (const phase of phases) {
       if (phase !== "all" && !(PHASES as readonly string[]).includes(phase)) {
@@ -37,7 +42,11 @@ export function parseMethod(markdown: string): Method {
     }
     const start = tag.index + tag[0].length;
     const end = tags[i + 1]?.index ?? markdown.length;
-    return { phases: phases as Section["phases"], text: markdown.slice(start, end).trim() };
+    return {
+      phases: phases as Section["phases"],
+      ...(tracks ? { tracks } : {}),
+      text: markdown.slice(start, end).trim(),
+    };
   });
   return { sections };
 }
@@ -53,6 +62,28 @@ export interface TermRow {
 export interface FixItem {
   text: string;
   status: "open" | "closed";
+}
+
+export interface SourceSection {
+  /** Its number across the track's sources: "§12". */
+  n: number;
+  title: string;
+  /** "pp. 112–131"; null for a source without pages. */
+  pages: string | null;
+  /** What it covers, in a sentence or two; null where left out (a long source, away from the arc). */
+  summary: string | null;
+}
+
+export interface SourceContext {
+  /** The sources' file names, in the order the sections number them. */
+  files: readonly string[];
+  /** Each file's sections, under its name, in order. */
+  sections: readonly (SourceSection & { file: string })[];
+  /** Which sections each arc of the plan teaches from (none: groundwork), and those already held. */
+  map: {
+    arcs: readonly { title: string; sections: readonly number[] }[];
+    known: readonly number[];
+  } | null;
 }
 
 export interface PlanArc {
@@ -75,6 +106,11 @@ export interface PromptContext {
    * until written). Left out where a call reads the files themselves (design §4.5).
    */
   brought?: { files: readonly string[]; summary: string | null };
+  /**
+   * A track taught from a source the learner brought (design §4.6): the source's sections, the
+   * map of what the tutor is taught from, and which arcs of the plan teach which sections.
+   */
+  source?: SourceContext;
   terms?: readonly TermRow[];
   /** The track's terms the term list leaves out (design §4.4), counted by status. */
   termsNotListed?: Partial<Record<TermStatus, number>>;
@@ -135,9 +171,11 @@ export function assembleSystemPrompt(
   const first = method.sections.findIndex((s) => !s.phases.includes("all"));
   const leading = first === -1 ? method.sections.length : first;
   const text = (sections: readonly Section[]) => sections.map((s) => s.text).join("\n\n");
+  // A section for some tracks only reaches their calls: a source track's (design §4.6).
   const phaseSections = method.sections
     .slice(leading)
-    .filter((s) => s.phases.includes("all") || s.phases.includes(phase));
+    .filter((s) => s.phases.includes("all") || s.phases.includes(phase))
+    .filter((s) => s.tracks === undefined || context.source !== undefined);
   const track = renderTrack(context);
   const call = [
     ...renderChanges(context),
@@ -170,7 +208,8 @@ export function assemblePrompt(method: Method, phase: Phase, context: PromptCont
  */
 function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
-  const { track, brought, terms, termsNotListed, borrowed, heldElsewhere, plan, fixList } = context;
+  const { track, brought, source, terms, termsNotListed, borrowed, heldElsewhere, plan, fixList } =
+    context;
   const { teachingNotes } = context;
   if (track) {
     const language =
@@ -184,6 +223,7 @@ function renderTrack(context: PromptContext): string {
       brought.summary ?? "(Not summarized: what is in them isn't known in this call.)";
     parts.push(["## What the learner brought", "", files, "", summary].join("\n"));
   }
+  if (source) parts.push(renderSource(source));
   if (plan) {
     const arcs = plan.arcs.map((arc, i) => `${String(i + 1)}. ${arcLine(arc)}`);
     const notes = plan.notes ? ["", plan.notes] : [];
@@ -285,4 +325,38 @@ function renderChanges({ changes }: PromptContext): string[] {
   if (changes.terms.length) lines.push("", ...termTable(changes.terms));
   if (changes.fixList.length) lines.push("", ...changes.fixList.map(fixLine));
   return [lines.join("\n")];
+}
+
+/** "§2, §5"; "none" for an empty list. */
+const sectionList = (ns: readonly number[]) =>
+  ns.length ? ns.map((n) => `§${String(n)}`).join(", ") : "none";
+
+/**
+ * The source (design §4.6): what the learner chose to learn from, section by section, so every call
+ * knows what is where without carrying the source; and what the plan has made of it.
+ */
+function renderSource(source: SourceContext): string {
+  const lines = [
+    "## The source",
+    "",
+    `The learner chose to learn from ${source.files.length === 1 ? "this source" : "these sources"}: ${source.files.join(", ")}. Its sections, numbered across ${source.files.length === 1 ? "it" : "them"}:`,
+  ];
+  for (const file of source.files) {
+    const sections = source.sections.filter((s) => s.file === file);
+    if (source.files.length > 1) lines.push("", `### ${file}`);
+    lines.push("");
+    for (const s of sections) {
+      const pages = s.pages ? ` (${s.pages})` : "";
+      lines.push(`- §${String(s.n)} ${s.title}${pages}${s.summary ? `: ${s.summary}` : ""}`);
+    }
+  }
+  if (source.map) {
+    lines.push("", "What the plan teaches from where:", "");
+    for (const arc of source.map.arcs)
+      lines.push(
+        `- ${arc.title}: ${arc.sections.length ? sectionList(arc.sections) : "groundwork from outside the source"}`,
+      );
+    lines.push(`- Already held by the learner: ${sectionList(source.map.known)}`);
+  }
+  return lines.join("\n");
 }
