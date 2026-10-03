@@ -1,3 +1,4 @@
+import type { SessionRow, SessionsPage } from "@grounded/core/admin";
 import { sql, type Db, type SQL } from "@grounded/db";
 import { costOf, TOKEN_SUMS, type ModelTokens } from "./cost.js";
 import { iso, sessionsWhere, type AdminFilters } from "./filters.js";
@@ -34,29 +35,6 @@ export interface SessionQuery {
   before: Date | null;
 }
 
-export interface SessionRow {
-  id: string;
-  learner: number;
-  trackId: string;
-  trackTitle: string;
-  kind: "normal" | "final";
-  phase: string;
-  startedAt: string;
-  closedAt: string | null;
-  lastActivity: string;
-  models: string[];
-  calls: number;
-  failedCalls: number;
-  costUsd: number;
-  checked: number;
-  firstTry: number;
-  misses: number;
-  asides: number;
-  rewrites: number;
-  issues: number;
-  errors: number;
-}
-
 /** What the list's first query gives; the rest is added per page. */
 type SessionBase = Pick<
   SessionRow,
@@ -85,7 +63,7 @@ export async function listSessions(
   db: Db,
   f: AdminFilters,
   query: SessionQuery,
-): Promise<{ sessions: SessionRow[]; next: string | null }> {
+): Promise<SessionsPage> {
   const where: SQL[] = [sessionsWhere(f)];
   if (query.learner !== null) where.push(sql`us.learner_number = ${query.learner}`);
   if (query.trackId) where.push(sql`s.track_id = ${query.trackId}`);

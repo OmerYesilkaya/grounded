@@ -17,7 +17,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["apps/web/**/*.{ts,tsx}"],
+    files: ["apps/web/**/*.{ts,tsx}", "apps/admin/**/*.{ts,tsx}"],
     languageOptions: { globals: { ...globals.browser } },
     plugins: { "react-hooks": reactHooks },
     rules: {
@@ -45,7 +45,7 @@ export default tseslint.config(
   },
   {
     // Tests run in Node, where all of @grounded/core loads.
-    files: ["apps/web/**/*.test.{ts,tsx}"],
+    files: ["apps/web/**/*.test.{ts,tsx}", "apps/admin/**/*.test.{ts,tsx}"],
     rules: { "@typescript-eslint/no-restricted-imports": "off" },
   },
   {

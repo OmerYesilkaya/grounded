@@ -9,7 +9,7 @@ import { readEnv } from "./env.js";
 import { fileStoreFor } from "./files/from-env.js";
 import { log, setLogService } from "./log.js";
 import { createPasswordHasher } from "./password.js";
-import { serveWeb } from "./web.js";
+import { serveAdmin, serveWeb } from "./web.js";
 
 setLogService("api");
 const env = readEnv();
@@ -36,6 +36,7 @@ const app = createApp({
   validateKey: (provider, apiKey) => validateKey(provider, apiKey),
 });
 
+if (env.ADMIN_DIST_DIR) serveAdmin(app, env.ADMIN_DIST_DIR);
 if (env.WEB_DIST_DIR) serveWeb(app, env.WEB_DIST_DIR);
 
 const server = serve({ fetch: app.fetch, port: env.PORT }, ({ port }) => {

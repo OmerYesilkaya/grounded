@@ -1,3 +1,4 @@
+import type { Overview } from "@grounded/core/admin";
 import { sql, type Db } from "@grounded/db";
 import { costOf, TOKEN_SUMS, type ModelTokens } from "./cost.js";
 import { callsWhere, iso, sessionsWhere, type AdminFilters } from "./filters.js";
@@ -22,90 +23,6 @@ export const PHASE_ORDER = [
 
 /** An open session with nothing happening for this long has stopped (design §10.1). */
 export const IDLE_AFTER = "1 day";
-
-export interface Overview {
-  totals: { learners: number; sessions: number; closed: number; calls: number; costUsd: number };
-  checks: {
-    /** Steps whose check was answered at least once. */
-    checked: number;
-    firstTry: number;
-    misses: number;
-    /** Steps continued past while still shaky. */
-    settling: number;
-    byModel: { model: string; checked: number; firstTry: number; misses: number }[];
-  };
-  validators: {
-    byPurpose: {
-      purpose: string;
-      model: string;
-      judged: number;
-      rewrites: number;
-      passed: number;
-    }[];
-    issues: {
-      code: string;
-      purpose: string;
-      model: string;
-      count: number;
-      sessions: number;
-      example: string;
-    }[];
-  };
-  failures: {
-    calls: { kind: string; model: string; count: number }[];
-    /** Errors the session showed the learner. */
-    shown: number;
-    latestShown: { sessionId: string; learner: number; message: string; at: string }[];
-    failedSteps: number;
-    unanswered: { checks: number; asides: number; reviewThreads: number };
-  };
-  asides: {
-    total: number;
-    latest: {
-      id: string;
-      sessionId: string;
-      learner: number;
-      stepId: string;
-      quote: string;
-      question: string | null;
-      at: string;
-    }[];
-  };
-  alreadyHeld: {
-    total: number;
-    latest: { sessionId: string; learner: number; stepId: string; what: string; at: string }[];
-  };
-  sessions: {
-    /** Sessions by the furthest phase they reached. */
-    furthest: { phase: string; sessions: number }[];
-    /** Open sessions with nothing happening for a day, by the phase they stopped in. */
-    idle: { phase: string; sessions: number }[];
-    /** Sessions by how many plans the tutor proposed (1: approved as first proposed). */
-    plans: { plans: number; sessions: number }[];
-  };
-  homework: {
-    assignments: {
-      kind: string;
-      total: number;
-      handedIn: number;
-      putOff: number;
-      folded: number;
-      open: number;
-    }[];
-    reviews: { status: string; count: number }[];
-  };
-  calls: {
-    byPurpose: {
-      purpose: string;
-      calls: number;
-      failures: number;
-      p50Ms: number | null;
-      p90Ms: number | null;
-      costUsd: number;
-    }[];
-    byModel: { model: string; calls: number; failures: number; costUsd: number }[];
-  };
-}
 
 type Rows<T> = T[];
 

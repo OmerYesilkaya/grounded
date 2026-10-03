@@ -1,3 +1,4 @@
+import type { FilterOptions } from "@grounded/core/admin";
 import { sql, type Db, type SQL } from "@grounded/db";
 
 /**
@@ -69,7 +70,7 @@ export function sessionsWhere(f: AdminFilters): SQL {
 export const iso = (column: string) => sql.raw(`to_json(${column}) #>> '{}'`);
 
 /** The models and method versions the calls were made with, for the panel's filters. */
-export async function filterOptions(db: Db) {
+export async function filterOptions(db: Db): Promise<FilterOptions> {
   const [models, methods] = await Promise.all([
     db.execute<{ model: string; calls: number }>(sql`
       select model, count(*)::int as calls from usage_events group by model order by 2 desc`),

@@ -23,6 +23,7 @@
     "stages": "pnpm --filter @grounded/api stages",
     "dev:api": "pnpm --filter @grounded/api dev",
     "dev:web": "pnpm --filter @grounded/web dev",
+    "dev:admin": "pnpm --filter @grounded/admin dev",
     "dev:worker": "pnpm --filter @grounded/api worker",
     "eval": "pnpm --filter @grounded/eval eval"
   },

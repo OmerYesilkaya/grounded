@@ -1,11 +1,7 @@
+import type { CallDetail, LearnerRow, Overview, Replay, SessionRow } from "@grounded/core/admin";
 import { eq, users } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
-import type { CallDetail } from "./admin/calls.js";
 import { listInvited, setOperator } from "./allowlist.js";
-import type { LearnerRow } from "./admin/learners.js";
-import type { Overview } from "./admin/overview.js";
-import type { Replay } from "./admin/replay.js";
-import type { SessionRow } from "./admin/sessions.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";

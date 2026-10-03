@@ -1,14 +1,6 @@
+import type { LearnerRow } from "@grounded/core/admin";
 import { sql, type Db } from "@grounded/db";
 import { iso } from "./filters.js";
-
-/** The learners, by number (design §10.1): never their email, which is asked for one at a time. */
-export interface LearnerRow {
-  learner: number;
-  joinedAt: string;
-  tracks: { id: string; title: string; sessions: number }[];
-  sessions: number;
-  lastActivity: string | null;
-}
 
 export async function listLearners(db: Db): Promise<LearnerRow[]> {
   const rows = await db.execute<{

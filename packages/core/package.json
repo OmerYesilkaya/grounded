@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./admin": "./src/admin.ts",
     "./assignment": "./src/assignment.ts",
     "./assignment-review": "./src/assignment-review.ts",
     "./attachments": "./src/attachments.ts",

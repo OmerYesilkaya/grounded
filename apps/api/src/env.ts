@@ -13,6 +13,8 @@ const schema = z
     PORT: z.coerce.number().default(8787),
     /** Production: the built web app, served by the API on the same origin. Vite serves it otherwise. */
     WEB_DIST_DIR: z.string().min(1).optional(),
+    /** Production: the built admin panel, served by the API at /admin (design §10.1). */
+    ADMIN_DIST_DIR: z.string().min(1).optional(),
     ALLOW_UNGATED_MODELS: z.enum(["true", "false"]).default("false"),
     /** Development only: canned responses instead of real model calls. */
     DEMO_MODELS: z.enum(["true", "false"]).default("false"),

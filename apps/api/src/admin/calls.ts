@@ -1,43 +1,6 @@
-import type { CallVerdict } from "@grounded/core";
-import {
-  eq,
-  modelCalls,
-  usageEvents,
-  users,
-  type Db,
-  type StoredJson,
-  type StoredReply,
-} from "@grounded/db";
+import type { CallDetail } from "@grounded/core/admin";
+import { eq, modelCalls, usageEvents, users, type Db } from "@grounded/db";
 import { estimateCost } from "@grounded/providers";
-
-/** A model call in full, for the admin panel's replay (design §4.4, §10.1). */
-export interface CallDetail {
-  id: string;
-  sessionId: string | null;
-  trackId: string | null;
-  learner: number;
-  at: string;
-  purpose: string;
-  provider: string;
-  model: string;
-  status: "ok" | "error";
-  errorKind: string | null;
-  durationMs: number | null;
-  tokens: { input: number; cachedInput: number; cacheWrite: number; output: number };
-  costUsd: number | null;
-  methodVersion: string | null;
-  release: string | null;
-  /** Null when the call's content wasn't stored (before every call was kept). */
-  content: {
-    prompt: StoredJson[];
-    responseFormat: StoredJson;
-    tools: StoredJson[] | null;
-    settings: Record<string, StoredJson>;
-    reply: StoredReply | null;
-    error: StoredJson;
-    verdict: CallVerdict | null;
-  } | null;
-}
 
 export async function callDetail(db: Db, id: string): Promise<CallDetail | null> {
   const [row] = await db

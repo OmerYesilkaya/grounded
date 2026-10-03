@@ -17,6 +17,10 @@ pnpm db:up          # local Postgres
 pnpm lint && pnpm typecheck && pnpm test
 ```
 
+`pnpm dev:api`, `pnpm dev:worker` and `pnpm dev:web` run the app (http://localhost:5173);
+`pnpm dev:admin` runs the admin panel (http://localhost:5174/admin/) for an operator signed in to
+the app (`pnpm cli operator add`, `docs/design.md` §10.1).
+
 To look at homework, arc exams and the final without working through sessions to reach them,
 `pnpm stages` makes a database of its own (`grounded_stages`) with a track stopped at each stage, for
 one learner (`--email`, `--password`; `--only exam-open,…` for some), and prints how to point

@@ -1,4 +1,4 @@
-import type { CallVerdict } from "@grounded/core";
+import type { Replay, TimelineItem } from "@grounded/core/admin";
 import {
   and,
   asc,
@@ -31,90 +31,6 @@ import { blocksText, inlineText } from "./blocks-text.js";
  * is text (blocks-text.ts). A call's content is fetched on its own (calls.ts): a session's prompts
  * run to megabytes.
  */
-
-export interface ReplayCall {
-  id: string;
-  purpose: string;
-  model: string;
-  status: "ok" | "error";
-  errorKind: string | null;
-  durationMs: number | null;
-  inputTokens: number;
-  cachedInputTokens: number;
-  outputTokens: number;
-  costUsd: number | null;
-  methodVersion: string | null;
-  /** Whether its content was stored (calls from before every call was kept have none). */
-  stored: boolean;
-  verdict: CallVerdict | null;
-}
-
-export type TimelineItem = { at: string } & (
-  | { kind: "message"; role: "learner" | "tutor"; messageKind: string; text: string }
-  | { kind: "phase"; phase: string }
-  | { kind: "error"; message: string }
-  | {
-      kind: "outline";
-      title: string | null;
-      steps: { heading: string; establishes: string; introduces: string[]; restsOn: string[] }[];
-    }
-  | { kind: "step"; stepId: string; heading: string; text: string; source: string | null }
-  | {
-      kind: "check";
-      stepId: string;
-      role: "learner" | "tutor";
-      text: string;
-      verdict: "landed" | "missed" | null;
-      failure: string | null;
-    }
-  | {
-      kind: "aside";
-      stepId: string;
-      quote: string;
-      tangent: string | null;
-      thread: { role: "learner" | "tutor"; text: string; failure: string | null }[];
-    }
-  | { kind: "research"; for: "plan" | "lesson"; notes: string; searches: string[]; sources: number }
-  | {
-      kind: "assignment";
-      assignmentKind: string;
-      title: string;
-      tasks: string[];
-      checklist: string[];
-      submittedAt: string | null;
-      snoozedUntil: string | null;
-      folded: boolean;
-      review: {
-        status: string;
-        marks: { item: string; mark: string; note: string }[];
-        comments: { quote: string; thread: { role: string; text: string }[] }[];
-      } | null;
-    }
-  | { kind: "call"; call: ReplayCall }
-);
-
-export interface Replay {
-  session: {
-    id: string;
-    learner: number;
-    kind: "normal" | "final";
-    phase: string;
-    startedAt: string;
-    closedAt: string | null;
-    probeSummary: string | null;
-    reviewSummary: string | null;
-    earlierSummary: string | null;
-  };
-  track: { id: string; title: string; goal: string; language: string | null };
-  lesson: {
-    /** How each step stands: passed, settling, open… with its misses. */
-    steps: { id: string; status: string; misses: number }[];
-    failedSteps: { stepId: string; heading: string }[];
-    notes: Record<string, string>;
-    alreadyHeld: Record<string, string>;
-  } | null;
-  timeline: TimelineItem[];
-}
 
 const failureText = (failure: unknown): string | null =>
   failure === null || failure === undefined ? null : JSON.stringify(failure);

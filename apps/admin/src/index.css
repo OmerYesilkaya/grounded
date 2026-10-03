@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* The app's colour tokens (apps/web/src/index.css), dark unless the system asks for light. */
+:root {
+  --background: #111214;
+  --foreground: #e6e4df;
+  --card: #17181b;
+  --muted: #1e2024;
+  --muted-foreground: #a9a7a1;
+  --subtle-foreground: #75736e;
+  --primary: #e0a458;
+  --primary-foreground: #1a1408;
+  --destructive: #d98572;
+  --success: #7fb88a;
+  --border: #2a2c31;
+  --border-strong: #34373d;
+  --ring: rgba(224, 164, 88, 0.45);
+  --highlight: rgba(224, 164, 88, 0.14);
+  color-scheme: dark;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    --background: #fbfaf7;
+    --foreground: #22211e;
+    --card: #f3f1ec;
+    --muted: #ebe8e1;
+    --muted-foreground: #5d5a53;
+    --subtle-foreground: #8d8980;
+    --primary: #b8741f;
+    --primary-foreground: #ffffff;
+    --destructive: #b0513c;
+    --success: #3f7f4d;
+    --border: #e2ded5;
+    --border-strong: #d3cec3;
+    --ring: rgba(184, 116, 31, 0.45);
+    --highlight: rgba(184, 116, 31, 0.1);
+    color-scheme: light;
+  }
+}
+
+@theme inline {
+  --font-sans: Montserrat, system-ui, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-destructive: var(--destructive);
+  --color-success: var(--success);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-ring: var(--ring);
+  --color-highlight: var(--highlight);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}

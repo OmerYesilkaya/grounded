@@ -8,10 +8,26 @@ import type { Env, Hono, MiddlewareHandler } from "hono";
  * there. /api paths are never answered with the app.
  */
 export function serveWeb<E extends Env>(app: Hono<E>, root: string) {
-  app.use("/assets/*", cached(FOREVER, serveStatic({ root })));
-  app.get("/assets/*", (c) => c.notFound());
-  app.use("*", outsideApi(cached(NO_CACHE, serveStatic({ root }))));
-  app.get("*", outsideApi(cached(NO_CACHE, serveStatic({ root, path: "index.html" }))));
+  serveApp(app, root, "");
+}
+
+/**
+ * Serves the built admin panel (design §10.1) from `root` at /admin, the same way and on the same
+ * origin, so the app's session cookie signs the operator in. Mounted before the web app, whose
+ * catch-all would otherwise answer /admin.
+ */
+export function serveAdmin<E extends Env>(app: Hono<E>, root: string) {
+  serveApp(app, root, "/admin");
+}
+
+function serveApp<E extends Env>(app: Hono<E>, root: string, base: string) {
+  const files = { root, rewriteRequestPath: (path: string) => path.slice(base.length) || "/" };
+  app.use(`${base}/assets/*`, cached(FOREVER, serveStatic(files)));
+  app.get(`${base}/assets/*`, (c) => c.notFound());
+  if (base) app.get(base, (c) => c.redirect(`${base}/`));
+  const scope = base ? `${base}/*` : "*";
+  app.use(scope, outsideApi(cached(NO_CACHE, serveStatic(files))));
+  app.get(scope, outsideApi(cached(NO_CACHE, serveStatic({ root, path: "index.html" }))));
 }
 
 const FOREVER = "public, max-age=31536000, immutable";
