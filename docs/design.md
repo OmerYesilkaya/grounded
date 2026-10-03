@@ -48,8 +48,9 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   job queue, portable containers, an auth library that grows into open sign-up, envelope encryption
   behind an interface (details in §4).
 - **Privacy is a policy we keep and state honestly.** No admin page, no UI for reading anyone's content,
-  learner text and keys never in logs or error reports. The operator can technically read the
-  database (the server must read content to build prompts) and does not.
+  learner text and keys never in logs or error reports. In the training period the database records
+  every session in full, the tutor's calls included, and it is read to improve the teaching; the
+  sign-in page says so (§12).
 - **Development cost carries little weight;** quality, simplicity, robustness and maintainability do.
 
 ## 3. The method in the app
@@ -1982,12 +1983,13 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 - Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
   are content too (§4.5): only their owner can download them, and never inline. In the training
   period the database also keeps every model call in full (`model_calls`, §4.4), read by Omer with
-  SQL to study how the models teach. The sign-in page's sentence below, that the operator does not
-  read the database, no longer holds while it does: its new wording is pending Omer.
+  SQL to study how the models teach.
 - A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
   what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
-  shared (the tutor's calls go to the provider whose key the learner brings), and that the operator
-  can technically access the database but does not read it.
+  shared (the tutor's calls go to the provider whose key the learner brings), and that while
+  Grounded is in its early period everything in their sessions is recorded, the tutor's calls
+  included, and may be read to improve how it teaches (decided 2026-10-03; it had said the operator
+  does not read the database, which stopped holding once every call was kept, #58).
 - Model output is never rendered as HTML or run as code; every URL is verified before display.
 
 ## 13. Settled since the grilling

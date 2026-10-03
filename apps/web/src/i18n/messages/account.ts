@@ -21,7 +21,7 @@ export const account = defineMessages({
       inviteOnly:
         "Grounded is invite-only. The first time, enter the email you were invited with and the invite code you were given as the password; you choose your own next.",
       whatIsStored:
-        "What is stored: your answers, your progress, the questions you ask, the files you attach and your API key, encrypted. Nothing is shared; the tutor's calls go to the AI provider whose key you bring. Whoever runs Grounded can technically access the database, but does not read it.",
+        "What is stored: your answers, your progress, the questions you ask, the files you attach and your API key, encrypted. Nothing is shared; the tutor's calls go to the AI provider whose key you bring. While Grounded is in its early period, everything in your sessions is recorded, the tutor's calls included, and may be read to improve how it teaches.",
     },
     password: {
       chooseTitle: "Choose a password",
@@ -106,7 +106,7 @@ export const account = defineMessages({
       inviteOnly:
         "Grounded yalnızca davetle açılıyor. İlk girişte davet edildiğin e-postayı ve şifre olarak sana verilen davet kodunu yaz; ardından kendi şifreni seçersin.",
       whatIsStored:
-        "Saklananlar: cevapların, ilerlemen, sorduğun sorular, eklediğin dosyalar ve şifrelenmiş olarak API anahtarın. Hiçbiri paylaşılmaz; öğretmenin çağrıları, anahtarını getirdiğin yapay zekâ sağlayıcısına gider. Grounded'ı işleten kişi veritabanına teknik olarak erişebilir, ama içini okumaz.",
+        "Saklananlar: cevapların, ilerlemen, sorduğun sorular, eklediğin dosyalar ve şifrelenmiş olarak API anahtarın. Hiçbiri paylaşılmaz; öğretmenin çağrıları, anahtarını getirdiğin yapay zekâ sağlayıcısına gider. Grounded'ın bu erken döneminde oturumlarındaki her şey, öğretmenin çağrıları da dahil, kaydedilir ve nasıl öğrettiğini geliştirmek için okunabilir.",
     },
     password: {
       chooseTitle: "Bir şifre seç",

@@ -37,12 +37,12 @@ describe("the sign-in page", () => {
     expect(onSignedIn).not.toHaveBeenCalled();
   });
 
-  it("says plainly what is stored, that nothing is shared, and who could read it", () => {
+  it("says plainly what is stored, that nothing is shared, and that sessions are recorded", () => {
     render(<SignInPage onSignedIn={vi.fn()} />);
     const note = screen.getByText(/^What is stored:/);
     for (const stored of ["answers", "progress", "questions", "files", "API key, encrypted"])
       expect(note).toHaveTextContent(stored);
     expect(note).toHaveTextContent("Nothing is shared");
-    expect(note).toHaveTextContent("can technically access the database, but does not read it");
+    expect(note).toHaveTextContent("everything in your sessions is recorded");
   });
 });
