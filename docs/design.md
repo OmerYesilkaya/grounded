@@ -349,12 +349,15 @@ about, test and debug.
   (names, dates, figures, quotes, how a mechanism really works) and to reply "Nothing to check."
   otherwise, so the model's own doubt decides when to search: "only when the outline says a fact is
   uncertain" would cost an outline written twice, and a model that is wrongly sure never says so.
-  Notes are stored only when a search ran (notes without one are memory), with the queries. A
+  Notes are stored only when a search ran (notes without one are memory), with the queries and the
+  pages the searches returned, as the provider reported them (`sources`: each page's address and
+  title; Anthropic reports every result, OpenAI and Gemini the pages they cite, Gemini's through a
+  redirect of its own): what a lesson may cite (§6.4, decided 2026-10-03, #62). A
   session's notes go to its later calls that need them: the plan's to the plan, both to the lesson's
   outline and writing (the plan's research had reached only the plan) and to a lesson written again,
   which searches nothing. Other sessions don't carry them: what matters of them is in the plan's
-  notes; the stored notes are the sources behind the facts (for the eval's judge and a track page
-  later). A lesson's research that fails is logged and the lesson is outlined without it. Research
+  notes; the stored notes are the sources behind the facts (for the eval's judge, and the pages
+  a lesson cites). A lesson's research that fails is logged and the lesson is outlined without it. Research
   runs on the strong model under the lesson's time limits, before "Outlining the lesson", as
   "Checking the facts the lesson needs", with each search shown.
 - Errors surface plainly: invalid key, out of credit, rate limited, refusal — each with what to do.
@@ -630,7 +633,7 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                  |
 | `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                      |
 | `check_messages`                     | per step: answers, verdicts, repairs, fresh questions                                                                                                                    |
-| `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries                                                                    |
+| `research_notes`                     | per session: what the web search found (the first plan's scoping, a lesson's facts), with the queries and the pages they returned                                        |
 | `asides`, `aside_messages`           | questions on a lesson passage (its block id, the quote and the text around it), their threads, a tangent to save                                                         |
 | `usage_events`                       | per model call: purpose, model, tokens (cache reads and writes), duration, its track and session                                                                         |
 | `model_calls`                        | per `usage_events` row, in the training period: the call in full (prompt as sent, response format, tools, settings, reply, error), the validators' verdict (§4.4)        |
@@ -782,6 +785,7 @@ naturally, and ids are what asides, repair notes and validation hang off. No mod
 | audio                                         | Commons audio (music samples, instruments, pronunciation) through `find_audio` — "audio when needed"                                                                                                                                                                              |
 | link card                                     | anything else from sources: title, site, one-line reason                                                                                                                                                                                                                          |
 | check                                         | the step's question; answered and graded inline                                                                                                                                                                                                                                   |
+| citation                                      | inline `:cite[3]`: the third of the sources the lesson's writer was offered, right after the claim it supports; lesson only (below)                                                                                                                                               |
 | word card                                     | `:::word{term="…"}`: a word the learner doesn't hold, and what it means in words they do, given before the lesson uses it (below)                                                                                                                                                 |
 | preview card                                  | `:::about{name="…" track="…"}`: a person, place or work the lesson leans on, in a paragraph at most; `track` offers a track of its own (below)                                                                                                                                    |
 
@@ -825,6 +829,27 @@ what he held and why it mattered"), and the card offers **Make a track about thi
 page (`/tracks/new?goal=…`) in a new tab with the goal in the box, so the lesson stays where it is
 and the learner edits or creates it themselves. It records nothing about the learner. Allowed in
 lessons and asides.
+
+**Citations** (decided 2026-10-03, #62). A lesson says where its facts come from, so the learner
+can open the source and judge it themselves; the tutor rates no source.
+
+- **Only the session's research is cited.** The writer is offered the pages this session's research
+  returned (the plan's and the lesson's, `research_notes.sources`), numbered, each seen to open
+  first (§6.4), and cites one by its number: `:cite[3]` right after the claim. Numbers, not
+  addresses: a model copies a number reliably, and can't cite a page it remembers.
+- **Stored with the page it names**: the inline `{ type: "cite", ref, source }` gets its `source`
+  (the address the page opens at and its title, or its site when the provider gave none) when
+  the step is verified; a citation of a number not offered is fed back like a link that doesn't
+  open (`cite/unknown`), and after the rewrites it is left out. A malformed one (`:cite[a page]`)
+  is `cite/malformed`, likewise degradable.
+- **Shown as a numbered mark** linked to the lesson's **Sources** list below its last step shown
+  (§9.1). Uncited claims aren't marked one by one; the list ends with one line saying that what
+  has no numbered source comes from the tutor's own knowledge. The rule is the method's
+  ("Cite what the research found").
+- **Lesson only.** Only the lesson's prompt teaches the mark; anywhere else a citation finds no
+  sources, so it is left out. Asides, homework and exam reviews, and the plan's scoping research
+  on the track page, may cite later. Providers without web search (DeepSeek) have nothing to cite
+  and are to be removed.
 
 ### 6.3 Per-surface allowlists
 
@@ -880,6 +905,11 @@ offered videos and link cards to sources from the session, not images or audio.
     video or page is dropped, an inline link keeps its text, a chart keeps no source, and a video
     that exists but can't be embedded or shown between the times asked becomes a link card to it
     on YouTube.
+  - **The pages a lesson may cite are checked before it is written**, each once and all at once,
+    under "Outlining the lesson" (`apps/api/src/media/sources.ts`): one that doesn't open is not
+    offered, one that redirects is offered at the address it lands on (Gemini's sources are its
+    own redirects), and two that land on the same page are one. A lesson written again checks
+    them again, and is offered them too.
   - **Verification results live for one lesson job, in memory**; no cache table. A URL used twice,
     or again in a rewrite, is asked about once; nothing outlives the job, since what it verified
     is stored with the lesson. Stored lessons are not re-verified later.
@@ -1035,7 +1065,8 @@ session (method.md, "Review"):
    isn't sure of (§4.4, a call of its own, searching only where it needs to); then the outline:
    the lesson's title (the idea it builds, as a tutor would name
    it; the track list shows it, §9.2), steps, the motivation for each, the terms each introduces and
-   rests on, the drawings needed. Validated against the term list before any writing (`fitOutline`),
+   rests on, the drawings needed (the writing is then offered the sources it may cite, §6.2).
+   Validated against the term list before any writing (`fitOutline`),
    and written in the term list's spelling. The app then places the checks from what each step rests
    on (`placeChecks`, §7.3), and the writing prompt says which steps end with one and what it covers.
    - **Terms are found as a model names them**: by the full name, or, when it names no other term,
@@ -1567,6 +1598,11 @@ Three structurally different variants were explored
   A **step timeline in the empty left gutter** of the reading column — only in Lesson view — follows
   the scroll; clicking an unlocked step scrolls to it; locked steps show as `·····` (upcoming headings
   would give away the discovery); below 1100px it gives way to a step menu in the bar (§9.4).
+- **Sources** (#62): below the last step shown, the sources the steps cite, numbered in the order
+  first cited (a step that opens adds to the list without renumbering it), each a link to the page
+  with its site; then one line saying what has no numbered source comes from the tutor's own
+  knowledge, shown even when nothing is cited. A citation's mark (`[2]`) links to its place in the
+  list and isn't part of a passage the learner asks about.
 - **Reading column ~68ch, truly centred** when there is room; on tighter screens it slides left only as
   far as the margin cards need (Google Docs behaviour).
 - **Margin cards** (Google Docs-style, a thin accent strip, a dashed connector to the highlighted

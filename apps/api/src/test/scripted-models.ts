@@ -18,6 +18,8 @@ export interface StreamScript {
   reasoning?: string;
   /** Web searches the provider runs (and answers) before the text. */
   searches?: string[];
+  /** The pages the searches returned, as the provider reports them. */
+  sources?: { url: string; title?: string }[];
   /** Text the model streams (or returns, for generate calls). */
   text?: string;
   /** Tools the model calls after its text. */
@@ -54,6 +56,9 @@ function streamed(script: StreamScript): LanguageModelV4StreamResult {
       result: { sources: [] },
     });
   });
+  (script.sources ?? []).forEach((source, i) =>
+    parts.push({ type: "source", sourceType: "url", id: `source-${String(i)}`, ...source }),
+  );
   if (script.text) {
     parts.push({ type: "text-start", id: "t" });
     for (let i = 0; i < script.text.length; i += 23)

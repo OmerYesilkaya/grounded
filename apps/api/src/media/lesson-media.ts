@@ -1,4 +1,4 @@
-import type { CheckBlock, Inline } from "@grounded/content";
+import type { CheckBlock, CitedSource, Inline } from "@grounded/content";
 import type { LessonMedia, ActivityNotice } from "@grounded/core";
 import { tool } from "ai";
 import { z } from "zod";
@@ -9,6 +9,8 @@ import { createVerifier, type VerifierOptions } from "./verify.js";
 export interface LessonMediaOptions extends VerifierOptions {
   /** Runs a search under an activity the learner sees ("Looking for an image of …"). */
   activity?: <T>(label: ActivityNotice, run: () => Promise<T>) => Promise<T>;
+  /** The research's pages the lesson may cite, each seen to open (sources.ts). */
+  sources?: readonly CitedSource[];
 }
 
 const queryInput = z.object({
@@ -22,8 +24,8 @@ const queryInput = z.object({
 
 /**
  * One lesson's media (design §6.2, §6.4): find_image and find_audio search Wikimedia Commons for
- * the outline, what they find is listed for the writer, and every step's media and links are
- * verified before the learner sees it.
+ * the outline, what they find is listed for the writer with the sources it may cite, and every
+ * step's media, links and citations are verified before the learner sees it.
  */
 export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
   const verifier = createVerifier(options);
@@ -67,15 +69,9 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
       find_audio: find("audio"),
     },
     found() {
-      if (found.size === 0) return "";
-      const lines = [...found.values()].map(
-        (f) =>
-          `- ${f.kind} \`${f.ref}\` (${f.size}): ${f.description || "no description"} (found for “${f.query}”)`,
-      );
-      return [
-        'Images and recordings found on Wikimedia Commons for this lesson. Use one only where it shows what a step needs, with its ref exactly as given (`::image{ref="…" caption="…"}`, `::audio{ref="…" caption="…"}`); the app adds its credit and licence.',
-        ...lines,
-      ].join("\n");
+      return [mediaFound([...found.values()]), sourcesOffered(options.sources ?? [])]
+        .filter(Boolean)
+        .join("\n\n");
     },
     async verify(step) {
       const heading = {
@@ -101,4 +97,25 @@ export function createLessonMedia(options: LessonMediaOptions): LessonMedia {
       };
     },
   };
+}
+
+function mediaFound(found: readonly (CommonsCandidate & { query: string })[]): string {
+  if (found.length === 0) return "";
+  const lines = found.map(
+    (f) =>
+      `- ${f.kind} \`${f.ref}\` (${f.size}): ${f.description || "no description"} (found for “${f.query}”)`,
+  );
+  return [
+    'Images and recordings found on Wikimedia Commons for this lesson. Use one only where it shows what a step needs, with its ref exactly as given (`::image{ref="…" caption="…"}`, `::audio{ref="…" caption="…"}`); the app adds its credit and licence.',
+    ...lines,
+  ].join("\n");
+}
+
+/** The sources the writer may cite, numbered as `:cite[n]` names them. */
+function sourcesOffered(sources: readonly CitedSource[]): string {
+  if (sources.length === 0) return "";
+  return [
+    "Sources this session's research found, each seen to open. Cite one by its number (`:cite[3]`) right after what it supports:",
+    ...sources.map((s, i) => `${String(i + 1)}. ${s.title}: ${s.url}`),
+  ].join("\n");
 }

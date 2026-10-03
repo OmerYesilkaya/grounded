@@ -14,10 +14,17 @@ export interface WebAccess {
    */
   getJson(url: string): Promise<{ status: number; body: unknown }>;
   /**
-   * Whether a page opens: the status it ends on, after redirects. Rejects when it can't be reached:
-   * not a web address, no such host, an address inside a private network, or no answer in time.
+   * Whether a page opens: the status it ends on and where, after redirects. Rejects when it can't
+   * be reached: not a web address, no such host, an address inside a private network, or no answer
+   * in time.
    */
-  probe(url: string): Promise<number>;
+  probe(url: string): Promise<Landing>;
+}
+
+/** Where a page's redirects end: its status there, and the address. */
+export interface Landing {
+  status: number;
+  url: string;
 }
 
 /** How long an API answer may take. */
@@ -53,12 +60,13 @@ export function createWebAccess(): WebAccess {
  * Follows a page's redirects by hand, so each hop is checked like the first. HEAD first, since the
  * body isn't needed; a server that refuses HEAD is asked with GET, and the body is dropped unread.
  */
-async function probe(address: string, signal: AbortSignal): Promise<number> {
+async function probe(address: string, signal: AbortSignal): Promise<Landing> {
   let url = webAddress(address);
   for (let hop = 0; ; hop++) {
     let answer = await request(url, "HEAD", signal);
     if (answer.status >= 400) answer = await request(url, "GET", signal);
-    if (answer.status < 300 || answer.status >= 400 || !answer.location) return answer.status;
+    if (answer.status < 300 || answer.status >= 400 || !answer.location)
+      return { status: answer.status, url: url.toString() };
     if (hop === MAX_REDIRECTS) throw new Error("too many redirects");
     url = webAddress(new URL(answer.location, url).toString());
   }

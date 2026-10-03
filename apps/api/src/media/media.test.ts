@@ -78,7 +78,7 @@ function fakeWeb(routes: {
       const status = routes.pages?.[url];
       return status === undefined
         ? Promise.reject(new Error("unreachable"))
-        : Promise.resolve(status);
+        : Promise.resolve({ status, url });
     },
   };
 }

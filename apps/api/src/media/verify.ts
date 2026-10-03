@@ -1,4 +1,4 @@
-import type { Block, Inline, Issue } from "@grounded/content";
+import type { Block, CitedSource, Inline, Issue } from "@grounded/content";
 import { log } from "../log.js";
 import { lookupCommons, titleOf, type CommonsCandidate, type CommonsKind } from "./commons.js";
 import type { WebAccess } from "./web.js";
@@ -10,6 +10,14 @@ export interface VerifierOptions {
   youtubeKey?: string | undefined;
 }
 
+export interface VerifyOptions extends VerifierOptions {
+  /**
+   * The sources the writer was offered, in the order it was offered them (`:cite[1]` is the first):
+   * already seen to open. Without them, every citation is left out.
+   */
+  sources?: readonly CitedSource[];
+}
+
 export interface Verified {
   blocks: Block[];
   /** One per thing left out or changed, degradable ("image/…", "video/…", "link/…", "chart/…"). */
@@ -19,15 +27,16 @@ export interface Verified {
 /**
  * Resolves every URL a block tree shows before the learner sees it (design §6.4): Commons images
  * and recordings (the block gets the file it names), YouTube clips, link cards, inline links and a
- * chart's source. What can't be verified is left out: a missing file, video or page is dropped, an
- * inline link keeps its text, a video that exists but can't be shown as asked becomes a link card.
+ * chart's source, and gives each citation the source it names. What can't be verified is left out:
+ * a missing file, video or page is dropped, an inline link keeps its text, a citation of no source
+ * offered is dropped, a video that exists but can't be shown as asked becomes a link card.
  *
  * Each answer is remembered for the verifier's life (one lesson, one message), so a URL used twice,
  * or again in a rewrite, is asked about once; nothing outlives it, since what it verified is stored
  * with the content.
  */
-export function createVerifier(options: VerifierOptions) {
-  const { web } = options;
+export function createVerifier(options: VerifyOptions) {
+  const { web, sources = [] } = options;
   const files = new Map<string, Promise<CommonsCandidate | null>>();
   const videos = new Map<string, Promise<VideoFacts | null>>();
   const pages = new Map<string, Promise<number | null>>();
@@ -48,7 +57,13 @@ export function createVerifier(options: VerifierOptions) {
   const video = (id: string) =>
     remembered(videos, id, () => videoFacts(web, id, options.youtubeKey).catch(() => null));
   /** The status a page ends on, or null when it can't be reached. */
-  const page = (url: string) => remembered(pages, url, () => web.probe(url).catch(() => null));
+  const page = (url: string) =>
+    remembered(pages, url, () =>
+      web.probe(url).then(
+        (landing) => landing.status,
+        () => null,
+      ),
+    );
 
   return {
     /** A file the lesson's tools already found, so verifying its ref asks nothing more. */
@@ -74,6 +89,19 @@ export function createVerifier(options: VerifierOptions) {
             list.map(async (inline): Promise<Inline[]> => {
               if (inline.type === "strong" || inline.type === "emphasis")
                 return [{ ...inline, children: await inlines(inline.children, blockId) }];
+              if (inline.type === "cite") {
+                const report = reporter();
+                const source = sources[inline.ref - 1];
+                if (source) return [{ ...inline, source }];
+                report(
+                  "cite/unknown",
+                  sources.length > 0
+                    ? `There is no source ${String(inline.ref)} among the sources offered. Cite only by a number from that list, or leave the citation out.`
+                    : `No sources were offered here, so nothing can be cited: leave out :cite[${String(inline.ref)}].`,
+                  blockId,
+                );
+                return [];
+              }
               if (inline.type !== "link") return [inline];
               const report = reporter();
               const children = await inlines(inline.children, blockId);

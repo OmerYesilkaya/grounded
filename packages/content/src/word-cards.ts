@@ -54,6 +54,8 @@ function inlines(children: readonly Inline[]): string {
           return `$${inline.value}$`;
         case "break":
           return " ";
+        case "cite":
+          return "";
         default:
           return inlines(inline.children);
       }

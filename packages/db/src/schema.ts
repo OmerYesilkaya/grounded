@@ -525,6 +525,12 @@ export const asides = pgTable(
  * What the tutor found with the provider's web search (design §4.4): before a track's first plan,
  * and before a lesson's outline where it wasn't sure of a fact. Notes for the model, with sources.
  */
+/** A page a web search returned: its address, and its title where the provider gave one. */
+export interface ResearchSource {
+  url: string;
+  title: string | null;
+}
+
 export const researchNotes = pgTable(
   "research_notes",
   {
@@ -540,6 +546,11 @@ export const researchNotes = pgTable(
     notes: text("notes").notNull(),
     /** The searches the notes rest on, as the provider reported their queries. */
     searches: jsonb("searches").$type<string[]>().notNull().default([]),
+    /**
+     * The pages the searches returned, as the provider reported them: what a lesson may cite
+     * (design §6.4). The notes name sources too, but in the model's words.
+     */
+    sources: jsonb("sources").$type<ResearchSource[]>().notNull().default([]),
     createdAt: createdAt(),
   },
   (table) => [index("research_notes_session").on(table.sessionId, table.createdAt)],

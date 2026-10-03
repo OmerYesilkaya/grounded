@@ -1,5 +1,6 @@
 import type { Inline } from "@grounded/content";
 import type { ReactNode } from "react";
+import { CitationMark } from "./citations";
 import { Tex } from "./tex";
 
 export function Inlines({ inlines }: { inlines: readonly Inline[] }) {
@@ -64,6 +65,8 @@ function InlineView({ inline }: { inline: Inline }) {
           <Inlines inlines={inline.children} />
         </a>
       );
+    case "cite":
+      return <CitationMark source={inline.source} />;
     case "break":
       return <br />;
   }

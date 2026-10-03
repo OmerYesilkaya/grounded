@@ -22,7 +22,8 @@ interface ScopeText {
 /**
  * The lesson text of step `stepId` inside `scope`, and where each of its text nodes sits in it. A
  * check's thread and notes are in the step's section too, but they aren't the lesson's blocks
- * (theirs aren't the step's ids), and neither is maths' hidden copy for screen readers.
+ * (theirs aren't the step's ids), and neither is maths' hidden copy for screen readers nor a
+ * citation's mark.
  */
 function textOf(scope: Element, stepId: string): ScopeText {
   const walker = scope.ownerDocument.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
@@ -36,6 +37,7 @@ function textOf(scope: Element, stepId: string): ScopeText {
       !scope.contains(block) ||
       !block.getAttribute("data-block")?.startsWith(`${stepId}.`) ||
       node.parentElement?.closest(".katex-mathml") ||
+      node.parentElement?.closest("[data-cite]") ||
       !(node instanceof Text) ||
       !node.data
     )

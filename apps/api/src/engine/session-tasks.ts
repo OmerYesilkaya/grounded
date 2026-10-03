@@ -102,6 +102,7 @@ import {
 import { type ModelAccess, causeOf } from "./model-call.js";
 import type { FileStore } from "../files/store.js";
 import { createLessonMedia } from "../media/lesson-media.js";
+import { citableSources } from "../media/sources.js";
 import { withVerifiedLinks, type VerifierOptions } from "../media/verify.js";
 import { addLogContext, content, log } from "../log.js";
 import { profileDue } from "./profile.js";
@@ -1016,10 +1017,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         }
       }
       // This session's research, the plan's included, for the outline and the writing (and for a
-      // lesson written again, which searches nothing).
+      // lesson written again, which searches nothing). The pages it found are what the lesson may
+      // cite, once each is seen to open (design §6.4).
       const researched = await sessionResearch(db, sessionId);
-      const notes = researched
-        ? `\n\nResearch notes from this session, with their sources (the learner hasn't seen them): state these facts as the sources do.\n\n${researched}`
+      const notes = researched.notes
+        ? `\n\nResearch notes from this session, with their sources (the learner hasn't seen them): state these facts as the sources do.\n\n${researched.notes}`
         : "";
       const outlining = resume
         ? undefined
@@ -1027,6 +1029,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       let writing: Activity | undefined;
       let totalSteps = resume?.outline.steps.length ?? 0;
       try {
+        const sources = await citableSources(researched.sources, deps.media.web);
         const result = await generateLesson({
           model,
           system,
@@ -1037,6 +1040,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           ...(resume ? { resume } : {}),
           media: createLessonMedia({
             ...deps.media,
+            sources,
             activity: (label, run) => withActivity(db, sessionId, label, run),
           }),
           onOutline: async (outline) => {

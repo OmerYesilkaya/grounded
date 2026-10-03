@@ -52,17 +52,22 @@ export type LessonOutline = z.infer<typeof lessonOutlineSchema>;
 export type StoredLessonOutline = Omit<LessonOutline, "title"> & { title?: string };
 
 /**
- * A lesson's media (design §6.4): tools the outline may call to find images and recordings, and
- * the server's check of every step's media and links before the learner sees it.
+ * A lesson's media (design §6.4): tools the outline may call to find images and recordings, the
+ * sources the writer may cite, and the server's check of every step's media, links and citations
+ * before the learner sees it.
  */
 export interface LessonMedia {
   /** Offered to the outline only, so the lesson itself is never written around a tool call. */
   tools: ToolSet;
-  /** What the tools found, as the writer is told it (a step's rewrite too); "" when nothing. */
+  /**
+   * What the tools found and the sources it may cite, as the writer is told them (a step's rewrite
+   * and a lesson written again too); "" when nothing.
+   */
   found: () => string;
   /**
-   * Resolves a sound step's media and links. What can't be verified is left out of the step (or
-   * kept as a link card) and reported with a degradable issue, so the step is rewritten first.
+   * Resolves a sound step's media, links and citations. What can't be verified is left out of the
+   * step (or kept as a link card) and reported with a degradable issue, so the step is rewritten
+   * first.
    */
   verify: (step: LessonStep) => Promise<{ step: LessonStep; issues: Issue[] }>;
 }
@@ -139,12 +144,12 @@ export interface LessonResult {
   stepInfo: LessonStepInfo[];
   /** Steps still broken after the retries: the lesson fails there, and is written again from them. */
   failed: { stepId: string; heading: string; issues: Issue[] }[];
-  /** Steps kept without their broken drawings or media. */
+  /** Steps kept without their broken drawings, media or citations. */
   degraded: { stepId: string; issues: Issue[] }[];
 }
 
 const USABLE = new Set(["confirmed", "assumed", "borrowed"]);
-const DEGRADABLE = /^(diagram|stepper|chart|video|image|audio|link)\//;
+const DEGRADABLE = /^(diagram|stepper|chart|video|image|audio|link|cite)\//;
 /** Whether the cheap model's review found the issue (review.ts). */
 const isJudged = (code: string) => code.endsWith("/judged");
 const norm = (term: string) => term.trim().toLowerCase();
@@ -196,7 +201,7 @@ export async function generateLesson(options: GenerateLessonOptions): Promise<Le
         model: options.model,
         system: options.system,
         prompt: resume
-          ? resumePrompt(options.request, planned, resume.written)
+          ? resumePrompt(options.request, planned, resume.written, options.media?.found() ?? "")
           : writePrompt(options.request, planned, options.media?.found() ?? ""),
       }),
     ),
@@ -542,8 +547,8 @@ function checkPlacementErrors(step: LessonStep, placed: StepCheck | null): Issue
 }
 
 /**
- * After the last retry: keep the step without broken drawings or media (what can't be verified is
- * left out or kept as a link card), or report it failed.
+ * After the last retry: keep the step without broken drawings, media or citations (what can't be
+ * verified is left out or kept as a link card), or report it failed.
  */
 async function finalize(
   entry: Extract<Settled, { kind: "retry" }>,
@@ -599,7 +604,12 @@ function writePrompt(request: string, planned: Planned, found: string): string {
   return `${request}\n\nWrite the whole lesson now, following this outline step by step:\n${steps}${media}`;
 }
 
-function resumePrompt(request: string, planned: Planned, written: readonly string[]): string {
+function resumePrompt(
+  request: string,
+  planned: Planned,
+  written: readonly string[],
+  found: string,
+): string {
   const steps = planned.outline.steps
     .map((_, i) => `${String(i + 1)}. ${stepBrief(planned, i)}`)
     .join("\n");
@@ -609,7 +619,10 @@ function resumePrompt(request: string, planned: Planned, written: readonly strin
     `${request}\n\nThe lesson follows this outline:\n${steps}`,
     `Its first ${done} written already:\n\n${written.join("\n\n")}`,
     `Write the rest of the lesson now, from step ${next} to the end, following the outline step by step. Start with step ${next}'s heading.`,
-  ].join("\n\n");
+    found,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function stepBrief(planned: Planned, index: number): string {

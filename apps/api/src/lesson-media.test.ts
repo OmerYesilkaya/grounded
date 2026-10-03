@@ -1,5 +1,5 @@
 import type { Block, LessonStep } from "@grounded/content";
-import { eq, lessons } from "@grounded/db";
+import { eq, lessons, researchNotes } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { WebAccess } from "./media/web.js";
 import { createFlows, storedMessages } from "./test/flows.js";
@@ -8,7 +8,8 @@ import { scriptedModels } from "./test/scripted-models.js";
 
 /*
  * A lesson's media, and any message's links, reach the learner only as the server verified them
- * (design §6.4), on a made-up web: Commons knows one image, and one page is gone.
+ * (design §6.4), on a made-up web: Commons knows one image, one page is gone, and one address
+ * redirects to another.
  */
 
 const asked: string[] = [];
@@ -38,7 +39,10 @@ const web: WebAccess = {
   },
   probe: (url) => {
     asked.push(url);
-    return Promise.resolve(url === "https://example.org/gone" ? 404 : 200);
+    // A provider's redirect, as Gemini hands back its sources, lands on the page itself.
+    if (url.startsWith("https://redirect.example/"))
+      return Promise.resolve({ status: 200, url: "https://example.org/landed" });
+    return Promise.resolve({ status: url === "https://example.org/gone" ? 404 : 200, url });
   },
 };
 
@@ -128,5 +132,99 @@ describe("lesson media", () => {
         ],
       }),
     ]);
+  });
+});
+
+describe("citing the research", () => {
+  const CITING = (cites: string) =>
+    [
+      "## Adding one is three moves",
+      `The value is copied out, changed, and put back${cites}.\n\n:::word{term="working copy"}\nThe copy of a value that is changed before it is put back.\n:::`,
+      ":::check\nWhat is in memory meanwhile?\n:::",
+    ].join("\n\n");
+
+  it("offers the writer the pages its research found that open, and gives each citation its page", async () => {
+    const session = await planned();
+    models.enableSearch();
+    models.script(
+      "lesson",
+      // The writer cites a source it wasn't offered; its rewrite cites only what it was.
+      {
+        text: CITING(":cite[2]:cite[3]"),
+        thenGenerate: [JSON.stringify(OUTLINE), CITING(":cite[2]")],
+      },
+      {
+        searches: ["read-modify-write"],
+        sources: [
+          { url: "https://example.org/gone", title: "A page since taken down" },
+          { url: "https://example.org/here", title: "Read-modify-write" },
+          { url: "https://redirect.example/r1" },
+        ],
+        text: "NOTES: an increment is a read, a change and a write.",
+      },
+    );
+    await t.request(`/api/sessions/${session.sessionId}/approve-plan`, {
+      method: "POST",
+      cookie: session.cookie,
+    });
+    await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 1);
+
+    // The research keeps every page its searches returned, as the provider named it.
+    const [note] = await t.db.select().from(researchNotes);
+    expect(note?.sources).toEqual([
+      { url: "https://example.org/gone", title: "A page since taken down" },
+      { url: "https://example.org/here", title: "Read-modify-write" },
+      { url: "https://redirect.example/r1", title: null },
+    ]);
+    const [writer] = models.used.filter((u) => u.purpose === "lesson").map((u) => u.model);
+    const offered = JSON.stringify(writer?.doStreamCalls[0]?.prompt);
+    expect(offered).toContain("1. Read-modify-write: https://example.org/here");
+    expect(offered).toContain("2. example.org: https://example.org/landed");
+    expect(offered).not.toContain("https://example.org/gone");
+    expect(JSON.stringify(writer?.doGenerateCalls[1]?.prompt)).toContain(
+      "There is no source 3 among the sources offered",
+    );
+
+    const [lesson] = await t.db
+      .select()
+      .from(lessons)
+      .where(eq(lessons.sessionId, session.sessionId));
+    expect(lesson?.steps[0]?.body[0]).toMatchObject({
+      type: "paragraph",
+      children: [
+        { type: "text", value: "The value is copied out, changed, and put back" },
+        {
+          type: "cite",
+          ref: 2,
+          source: { url: "https://example.org/landed", title: "example.org" },
+        },
+        { type: "text", value: "." },
+      ],
+    });
+  });
+
+  it("leaves out a citation when nothing was offered to cite", async () => {
+    const session = await planned();
+    models.script("lesson", {
+      text: CITING(":cite[1]"),
+      thenGenerate: [JSON.stringify(OUTLINE), CITING(":cite[1]"), CITING(":cite[1]")],
+    });
+    await t.request(`/api/sessions/${session.sessionId}/approve-plan`, {
+      method: "POST",
+      cookie: session.cookie,
+    });
+    await until(session.cookie, session.sessionId, (s) => s.lesson?.steps.length === 1);
+
+    const [lesson] = await t.db
+      .select()
+      .from(lessons)
+      .where(eq(lessons.sessionId, session.sessionId));
+    expect(lesson?.steps[0]?.body[0]).toMatchObject({
+      type: "paragraph",
+      children: [
+        { type: "text", value: "The value is copied out, changed, and put back" },
+        { type: "text", value: "." },
+      ],
+    });
   });
 });

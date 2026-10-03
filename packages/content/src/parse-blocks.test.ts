@@ -114,4 +114,30 @@ describe("parseBlocks: text content", () => {
       children: [{ type: "text", value: "Ratio note:this matters" }],
     });
   });
+
+  it("turns :cite[n] into a citation of the nth source offered, its page not yet known", () => {
+    const { blocks, issues } = parseBlocks("Light takes 8 minutes:cite[2] to arrive:cite[10].");
+    expect(issues).toEqual([]);
+    expect(blocks[0]).toEqual({
+      id: "b1",
+      type: "paragraph",
+      children: [
+        { type: "text", value: "Light takes 8 minutes" },
+        { type: "cite", ref: 2, source: null },
+        { type: "text", value: " to arrive" },
+        { type: "cite", ref: 10, source: null },
+        { type: "text", value: "." },
+      ],
+    });
+  });
+
+  it("leaves out a citation that names no source by its number", () => {
+    const { blocks, issues } = parseBlocks("Light is fast:cite[https://example.org].");
+    expect(blocks[0]).toEqual({
+      id: "b1",
+      type: "paragraph",
+      children: [{ type: "text", value: "Light is fast." }],
+    });
+    expect(issues.map((i) => i.code)).toEqual(["cite/malformed"]);
+  });
 });

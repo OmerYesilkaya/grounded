@@ -72,6 +72,11 @@ export const lesson = defineMessages({
       nextFrame: "Next frame",
       frameOf: (at: string, total: string) => `${at} / ${total}`,
     },
+    sources: {
+      heading: "Sources",
+      uncited:
+        "What has no numbered source comes from the tutor's own knowledge, not from a source it checked.",
+    },
   },
   tr: {
     steps: {
@@ -140,6 +145,11 @@ export const lesson = defineMessages({
       frame: "Kare",
       nextFrame: "Sonraki kare",
       frameOf: (at: string, total: string) => `${at} / ${total}`,
+    },
+    sources: {
+      heading: "Kaynaklar",
+      uncited:
+        "Numaralı bir kaynağı olmayan her şey öğretmenin kendi bilgisinden gelir, kontrol ettiği bir kaynaktan değil.",
     },
   },
 });

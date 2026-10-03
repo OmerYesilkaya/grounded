@@ -384,6 +384,64 @@ describe("LessonView: step timeline", () => {
   });
 });
 
+describe("LessonView: sources", () => {
+  /** The lesson's steps, with the server's sources given to their citations as it verified them. */
+  function citing(): LessonStep[] {
+    const sources = [
+      { url: "https://example.org/rmw", title: "Read-modify-write" },
+      { url: "https://example.org/races", title: "example.org" },
+    ];
+    const markdown = LESSON.replace("Body of step 1.", "Body of step 1:cite[2]:cite[1].").replace(
+      "Body of step 2.",
+      "Body of step 2:cite[2].",
+    );
+    const result = parseLesson(markdown);
+    expect(result.issues).toEqual([]);
+    const resolve = (block: LessonStep["body"][number]): LessonStep["body"][number] =>
+      block.type === "paragraph"
+        ? {
+            ...block,
+            children: block.children.map((inline) =>
+              inline.type === "cite"
+                ? { ...inline, source: sources[inline.ref - 1] ?? null }
+                : inline,
+            ),
+          }
+        : block;
+    return result.steps.map((step) => ({ ...step, body: step.body.map(resolve) }));
+  }
+
+  it("numbers the sources the steps shown cite, in the order they are first cited, each mark linked to its place in the list", () => {
+    renderLesson({ s1: { status: "passed", thread: [] } }, { steps: citing() });
+    const list = screen.getByRole("region", { name: "Sources" });
+    const entries = within(list).getAllByRole("listitem");
+    expect(entries.map((e) => e.textContent)).toEqual([
+      "example.org",
+      "Read-modify-write · example.org",
+    ]);
+    expect(within(list).getByRole("link", { name: "Read-modify-write" })).toHaveAttribute(
+      "href",
+      "https://example.org/rmw",
+    );
+    const marks = screen.getAllByRole("link", { name: /^\[\d\]$/ });
+    expect(marks.map((m) => [m.textContent, m.getAttribute("href")])).toEqual([
+      ["[1]", "#lesson-source-1"],
+      ["[2]", "#lesson-source-2"],
+      ["[1]", "#lesson-source-1"],
+    ]);
+    expect(
+      within(list).getByText(/What has no numbered source comes from the tutor's own knowledge/),
+    ).toBeInTheDocument();
+  });
+
+  it("says what an uncited lesson rests on, with no list", () => {
+    renderLesson({});
+    const sources = screen.getByRole("region", { name: "Sources" });
+    expect(within(sources).queryByRole("list")).toBeNull();
+    expect(sources).toHaveTextContent("comes from the tutor's own knowledge");
+  });
+});
+
 describe("LessonView: in Turkish", () => {
   afterEach(() => {
     act(() => {

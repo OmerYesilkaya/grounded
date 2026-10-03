@@ -180,7 +180,18 @@ function convertInlines(nodes: PhrasingContent[], issues: Issue[]): Inline[] {
       case "break":
         out.push({ type: "break" });
         break;
-      case "textDirective":
+      case "textDirective": {
+        if (node.name === "cite") {
+          const ref = toPlainText(node).trim();
+          if (/^[1-9]\d*$/.test(ref)) out.push({ type: "cite", ref: Number(ref), source: null });
+          else
+            issues.push({
+              code: "cite/malformed",
+              message: `A citation names one source by its number, as \`:cite[3]\`; "${ref}" isn't one.`,
+              ...lineOf(node),
+            });
+          break;
+        }
         // "note:this" is prose, not a directive: put the colon and the word back.
         pushText(`:${node.name}`);
         for (const child of convertInlines(node.children, issues)) {
@@ -188,6 +199,7 @@ function convertInlines(nodes: PhrasingContent[], issues: Issue[]): Inline[] {
           else out.push(child);
         }
         break;
+      }
       case "image":
         issues.push({
           code: "markdown-image",

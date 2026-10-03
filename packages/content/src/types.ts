@@ -6,7 +6,20 @@ export type Inline =
   | { type: "inlineCode"; value: string }
   | { type: "inlineMath"; value: string }
   | { type: "link"; url: string; children: Inline[] }
+  /**
+   * A citation (design §6.2): `:cite[3]` names the third of the sources the lesson's writer was
+   * offered from the session's research. `source` is null when parsed; the server fills it in when
+   * it verifies the step, and a stored lesson's citations always have one.
+   */
+  | { type: "cite"; ref: number; source: CitedSource | null }
   | { type: "break" };
+
+/** A page the session's research found and the server checked opens (design §6.4). */
+export interface CitedSource {
+  /** Where the page opens, after its redirects. */
+  url: string;
+  title: string;
+}
 
 /**
  * The block tree: what the app stores and renders. The model never produces it directly; it is

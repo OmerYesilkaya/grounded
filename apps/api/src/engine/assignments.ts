@@ -224,6 +224,7 @@ function plain(inlines: readonly Inline[]): string {
       if (inline.type === "strong" || inline.type === "emphasis" || inline.type === "link")
         return plain(inline.children);
       if (inline.type === "break") return " ";
+      if (inline.type === "cite") return "";
       return inline.value;
     })
     .join("");

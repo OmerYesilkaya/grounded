@@ -1,5 +1,5 @@
 import type { LanguageModelV4 } from "@ai-sdk/provider";
-import { asc, eq, researchNotes, type Db } from "@grounded/db";
+import { asc, eq, researchNotes, type Db, type ResearchSource } from "@grounded/db";
 import { stepCountIs, streamText, type ModelMessage, type SystemModelMessage, type Tool } from "ai";
 import { startActivity, withActivity, type Activity } from "./events.js";
 import { type ActivityNotice } from "@grounded/core";
@@ -18,6 +18,8 @@ export interface Research {
   notes: string;
   /** The queries it searched, as the provider reported them. */
   searches: string[];
+  /** The pages its searches returned, each once, in the order they came. */
+  sources: ResearchSource[];
 }
 
 /**
@@ -40,6 +42,7 @@ export async function research(options: {
   return withActivity(db, sessionId, options.label, async (researching) => {
     const running = new Map<string, Activity>();
     const searched: string[] = [];
+    const sources = new Map<string, ResearchSource>();
     try {
       const reply = streamText({
         model: options.model,
@@ -51,6 +54,10 @@ export async function research(options: {
       for await (const part of reply.stream) {
         if (part.type === "error") throw part.error;
         if (part.type === "reasoning-delta") await researching.reasoning(part.text);
+        if (part.type === "source" && part.sourceType === "url" && !sources.has(part.url)) {
+          const title = part.title?.trim();
+          sources.set(part.url, { url: part.url, title: title === "" ? null : (title ?? null) });
+        }
         if (part.type === "tool-call" && part.toolName === "web_search") {
           const label = searchLabel(searchQuery(part.input));
           running.set(part.toolCallId, await startActivity(db, sessionId, label));
@@ -63,7 +70,11 @@ export async function research(options: {
           await searching?.done();
         }
       }
-      return { notes: (await reply.text).trim(), searches: searched };
+      return {
+        notes: (await reply.text).trim(),
+        searches: searched,
+        sources: [...sources.values()],
+      };
     } finally {
       for (const searching of running.values()) await searching.done();
     }
@@ -80,22 +91,39 @@ export async function storeResearch(
   if (found.searches.length === 0 || !found.notes) return;
   await db
     .insert(researchNotes)
-    .values({ ...ids, kind, notes: found.notes, searches: found.searches });
+    .values({ ...ids, kind, notes: found.notes, searches: found.searches, sources: found.sources });
 }
 
-/** The research made in a session so far, oldest first, for its later calls; "" when none. */
-export async function sessionResearch(db: Db, sessionId: string): Promise<string> {
+export interface SessionResearch {
+  /** The notes, oldest first, for the session's later calls; "" when none. */
+  notes: string;
+  /** The pages they rest on, each once: what the lesson may cite once each is seen to open. */
+  sources: ResearchSource[];
+}
+
+/** The research made in a session so far, the plan's and the lesson's. */
+export async function sessionResearch(db: Db, sessionId: string): Promise<SessionResearch> {
   const rows = await db
-    .select({ kind: researchNotes.kind, notes: researchNotes.notes })
+    .select({
+      kind: researchNotes.kind,
+      notes: researchNotes.notes,
+      sources: researchNotes.sources,
+    })
     .from(researchNotes)
     .where(eq(researchNotes.sessionId, sessionId))
     .orderBy(asc(researchNotes.createdAt), asc(researchNotes.id));
-  return rows
-    .map(
-      (r) =>
-        `### ${r.kind === "plan" ? "Scoping the field, for the plan" : "Checked for the lesson"}\n\n${r.notes}`,
-    )
-    .join("\n\n");
+  const sources = new Map<string, ResearchSource>();
+  for (const source of rows.flatMap((r) => r.sources))
+    if (!sources.has(source.url)) sources.set(source.url, source);
+  return {
+    notes: rows
+      .map(
+        (r) =>
+          `### ${r.kind === "plan" ? "Scoping the field, for the plan" : "Checked for the lesson"}\n\n${r.notes}`,
+      )
+      .join("\n\n"),
+    sources: [...sources.values()],
+  };
 }
 
 const searchLabel = (query: string | undefined): ActivityNotice => ({

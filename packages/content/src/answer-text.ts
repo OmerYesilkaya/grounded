@@ -45,6 +45,8 @@ function inlineText(inlines: readonly Inline[]): string {
           return inlineText(inline.children);
         case "break":
           return "\n";
+        case "cite":
+          return "";
       }
     })
     .join("");

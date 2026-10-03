@@ -1,6 +1,7 @@
-import type { LessonStep } from "@grounded/content";
-import { useRef, type ReactNode } from "react";
+import { citedSources, type LessonStep } from "@grounded/content";
+import { useMemo, useRef, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
+import { CitationsProvider, LessonSources } from "@/content/citations";
 import { Inlines } from "@/content/inlines";
 import { useT } from "@/i18n";
 import { useMediaQuery } from "@/lib/media-query";
@@ -51,6 +52,8 @@ export function LessonView(props: LessonViewProps) {
   const { shown, arrived } = useRevealedSteps(steps, progress);
   const lockedCount = Math.max(0, totalSteps - shown.length);
   const currentStepId = useCurrentStep(shown);
+  // Numbered across the steps shown, so a step that opens adds to the list without renumbering it.
+  const sources = useMemo(() => citedSources(shown), [shown]);
   const grid = useRef<HTMLDivElement>(null);
   const article = useRef<HTMLElement>(null);
   const margin = useRef<HTMLElement>(null);
@@ -78,68 +81,71 @@ export function LessonView(props: LessonViewProps) {
         ref={article}
         className="col-start-2 px-2 font-serif text-[19px] leading-[1.65] max-sm:text-[17.5px]"
       >
-        {shown.map((step, index) => {
-          const stepProgress = progress[step.id] ?? OPEN;
-          return (
-            <section
-              key={step.id}
-              id={stepAnchor(step.id)}
-              // Passages are found by their step and block (passages.ts); the heading is the step's
-              // first block.
-              data-step={step.id}
-              className={cn(
-                "scroll-mt-20 [&+&]:mt-8 [&+&]:border-t [&+&]:pt-10",
-                // A step a check has just opened rises into place as it fades in.
-                arrived.has(step.id) && "motion-safe:animate-arrive",
-              )}
-            >
-              <h2
-                data-block={`${step.id}.b1`}
-                className="mb-[0.6em] text-[28px] leading-tight font-semibold tracking-tight"
+        <CitationsProvider sources={sources}>
+          {shown.map((step, index) => {
+            const stepProgress = progress[step.id] ?? OPEN;
+            return (
+              <section
+                key={step.id}
+                id={stepAnchor(step.id)}
+                // Passages are found by their step and block (passages.ts); the heading is the step's
+                // first block.
+                data-step={step.id}
+                className={cn(
+                  "scroll-mt-20 [&+&]:mt-8 [&+&]:border-t [&+&]:pt-10",
+                  // A step a check has just opened rises into place as it fades in.
+                  arrived.has(step.id) && "motion-safe:animate-arrive",
+                )}
               >
-                <Inlines inlines={step.heading} />
-              </h2>
-              {stepProgress.status === "settling" && (
-                <p className="-mt-2 mb-3 font-sans text-xs tracking-wider text-primary uppercase">
-                  {t.steps.stillSettling}
-                </p>
-              )}
-              <Blocks blocks={step.body} />
-              {stepProgress.note && (
-                <div className="my-4 rounded-r-lg border-l-3 border-primary bg-highlight px-3.5 py-2.5 font-sans text-sm">
-                  <b className="mb-0.5 block text-[11.5px] tracking-wider text-primary uppercase">
-                    {t.steps.afterCheck}
-                  </b>
-                  {stepProgress.note}
-                </div>
-              )}
-              {step.check && (
-                <CheckCard
-                  check={step.check}
-                  progress={stepProgress}
-                  onAnswer={(text) => {
-                    props.onAnswer(step.id, text);
-                  }}
-                  onDontKnow={() => {
-                    props.onDontKnow(step.id);
-                  }}
-                  onPause={() => {
-                    props.onPause(step.id);
-                  }}
-                  onContinue={() => {
-                    props.onContinue(step.id);
-                  }}
-                />
-              )}
-              {index === shown.length - 1 && lockedCount > 0 && (
-                <p className="my-8 rounded-xl border border-dashed border-border-strong p-5 text-center font-sans text-sm text-subtle-foreground">
-                  {t.steps.moreLocked(lockedCount)}
-                </p>
-              )}
-            </section>
-          );
-        })}
+                <h2
+                  data-block={`${step.id}.b1`}
+                  className="mb-[0.6em] text-[28px] leading-tight font-semibold tracking-tight"
+                >
+                  <Inlines inlines={step.heading} />
+                </h2>
+                {stepProgress.status === "settling" && (
+                  <p className="-mt-2 mb-3 font-sans text-xs tracking-wider text-primary uppercase">
+                    {t.steps.stillSettling}
+                  </p>
+                )}
+                <Blocks blocks={step.body} />
+                {stepProgress.note && (
+                  <div className="my-4 rounded-r-lg border-l-3 border-primary bg-highlight px-3.5 py-2.5 font-sans text-sm">
+                    <b className="mb-0.5 block text-[11.5px] tracking-wider text-primary uppercase">
+                      {t.steps.afterCheck}
+                    </b>
+                    {stepProgress.note}
+                  </div>
+                )}
+                {step.check && (
+                  <CheckCard
+                    check={step.check}
+                    progress={stepProgress}
+                    onAnswer={(text) => {
+                      props.onAnswer(step.id, text);
+                    }}
+                    onDontKnow={() => {
+                      props.onDontKnow(step.id);
+                    }}
+                    onPause={() => {
+                      props.onPause(step.id);
+                    }}
+                    onContinue={() => {
+                      props.onContinue(step.id);
+                    }}
+                  />
+                )}
+                {index === shown.length - 1 && lockedCount > 0 && (
+                  <p className="my-8 rounded-xl border border-dashed border-border-strong p-5 text-center font-sans text-sm text-subtle-foreground">
+                    {t.steps.moreLocked(lockedCount)}
+                  </p>
+                )}
+              </section>
+            );
+          })}
+        </CitationsProvider>
         {props.after}
+        {shown.length > 0 && <LessonSources sources={sources} />}
       </article>
 
       {/* Right margin: aside cards (design §7.5), laid over it by the aside layer. */}

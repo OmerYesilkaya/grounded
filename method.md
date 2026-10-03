@@ -519,6 +519,12 @@ and before the word's first use (the step's heading included, so a heading names
 new word). From the card on, use the word freely. A person, place or work the lesson leans on gets
 a **preview card** instead: who or what it is and why it matters here, in a paragraph at most.
 
+**Cite what the research found.** The app lists the pages this session's research found, numbered.
+Where the lesson states a fact one of them supports (a name, date, figure, quote, definition, how a
+mechanism works), put its number right after the claim, with no space before it: `:cite[3]`, or
+`:cite[1]:cite[4]` for two. Cite only from that list, and only for what the page says; the lesson's
+own reasoning needs none. The learner is told that what has no mark comes from your own knowledge.
+
 **Each step must stand on what came before it, in order.** Write every step as if its check will pass —
 a later step may use what an earlier step established — but never lean on anything the lesson has not
 given. If you catch yourself writing a fact the learner would have to take on faith — stop. Either
