@@ -33,7 +33,9 @@ config value.
 - Export and delete-everything.
 - Runnable code (JS and Python, in the browser), generated sound, interactive blocks, function plots.
 
-**Not planned**: onboarding flow for API keys (Omer helps people get keys in person); an admin UI;
+**Operator's side**: the admin panel (§10.1), for studying how the method and the models teach.
+
+**Not planned**: onboarding flow for API keys (Omer helps people get keys in person);
 a "quick question" chat outside sessions (people use their everyday chatbot for that).
 
 ## 2. Principles and constraints
@@ -47,8 +49,9 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
 - **Invite-only now, ready to scale later. No irreversible decisions.** Stateless API servers, a durable
   job queue, portable containers, an auth library that grows into open sign-up, envelope encryption
   behind an interface (details in §4).
-- **Privacy is a policy we keep and state honestly.** No admin page, no UI for reading anyone's content,
-  learner text and keys never in logs or error reports. In the training period the database records
+- **Privacy is a policy we keep and state honestly.** Learner text and keys never in logs or error
+  reports; the one place content is read is the operator's admin panel (§10.1), which shows learners
+  by number, not by name. In the training period the database records
   every session in full, the tutor's calls included, and it is read to improve the teaching; the
   sign-in page says so (§12).
 - **Development cost carries little weight;** quality, simplicity, robustness and maintainability do.
@@ -124,10 +127,13 @@ pnpm workspaces, TypeScript end to end.
 apps/
   web/          Vite + React SPA, shadcn/ui (Tailwind + Radix), Tiptap, TanStack Router/Query;
                 everything the app says, in every language (`src/i18n`, §9.3)
+  admin/        the operator's admin panel (§10.1): Vite + React SPA served at /admin, reading
+                the API's /api/admin routes
   api/          Hono on Node: HTTP + SSE, auth, job enqueueing (`src/server.ts`); the job runners
                 (lesson generation, grading, reviews, profile refresh) in `src/engine`, run by the
                 worker process (`src/worker.ts`); lesson media found and verified (`src/media`);
-                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli revoke`, `pnpm cli list`) and
+                the CLI (`src/cli.ts`: `pnpm cli invite`, `pnpm cli revoke`, `pnpm cli list`,
+                `pnpm cli operator`); the admin panel's routes and queries (`src/admin`); and
                 the track import (`src/import`, `pnpm import-track`)
 packages/
   core/         method phases and the session state machine, prompt assembly, validators, domain types
@@ -427,13 +433,13 @@ about, test and debug.
   rule returns without touching the usage page. A call made for no track (an import) goes with
   the learner. Storing is best-effort: a row that can't be written is logged and the call's work
   goes on, and a call whose track was deleted while it ran stores nothing (its usage is recorded).
-  It is read with SQL for now (join `usage_events` on `usage_event_id` for purpose, model, tokens,
-  time); there is no page for it. A session's calls are a few megabytes, mostly the system prompt
+  It is read in the admin panel's session replay (§10.1), or with SQL (join `usage_events` on
+  `usage_event_id` for purpose, model, tokens, time). A session's calls are a few megabytes, mostly the system prompt
   repeated, which Postgres compresses.
   **Pending Omer's confirmation** (defaults taken 2026-09-30): storing is unconditional, with no
   switch, for as long as the training period lasts, until the privacy rule returns; `LOG_CONTENT`
-  stays as it is (§4.2); rows go with their track and session, unlike usage; reading is raw SQL,
-  no page.
+  stays as it is (§4.2); rows go with their track and session, unlike usage; reading is the admin
+  panel's (§10.1).
 
 - **The usage page** (`/usage`, from the account menu; `GET /api/usage`, `apps/api/src/routes/usage.ts`;
   decided 2026-09-29, #46) shows an **estimated cost** first, tokens second: a learner pays in money,
@@ -701,8 +707,8 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 
 | Table                                | Holds                                                                                                                                                                                                                   |
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `users`                              | a learner: email, created on their first sign-in; their password's hash and the wrong-password count and lock (§4.3)                                                                                                    |
-| `allowlist`                          | who may sign in, and the hash of their invite code                                                                                                                                                                      |
+| `users`                              | a learner: email, created on their first sign-in; their password's hash and the wrong-password count and lock (§4.3); their number in the admin panel (§10.1)                                                           |
+| `allowlist`                          | who may sign in, the hash of their invite code, and whether they are an operator (§10.1)                                                                                                                                |
 | `credentials`                        | provider, encrypted key, credential source                                                                                                                                                                              |
 | `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off, a source's reading and map (§4.6)                                               |
 | `track_files`                        | per track: the attached files' role (brought or source), name, kind, media type, size, PDF pages, text, a source's transcribed pages, file store key                                                                    |
@@ -1910,7 +1916,7 @@ every other page usable (tried at 360–430px wide, in both themes).
   for images) and a remove button; a file that can't go says why in place of its size, and holds
   creating back. The track page lists them under "What you brought", each a download.
 
-## 10. Operating without an admin page
+## 10. Operating
 
 - Allowlist: `pnpm cli invite a@b.com` prints the person's one-time invite code once (running it
   again replaces the code and clears their password: the way a forgotten password is reset),
@@ -1952,6 +1958,69 @@ every other page usable (tried at 360–430px wide, in both themes).
   a stage needs the worker with `DEMO_MODELS=true` (or a real key, saved in settings).
 - Everything else through the database directly, with care.
 
+### 10.1 The admin panel (decided 2026-10-03)
+
+A page for Omer to see how the method and the models teach real learners, so `method.md`, the
+prompts and the model list can be improved from what happens rather than from guesses. It reverses
+"not planned: an admin UI" (§1): every call is kept in full in the training period (§4.4) and read,
+and the sign-in page says so (§12), so reading it in a page instead of with SQL changes nothing for
+the learner and makes the reading far better. It is organised around **where the teaching broke**,
+not around people: no activity league tables, no per-learner graphs of time spent.
+
+- **Who.** An operator is an invited person with `allowlist.operator` set: `pnpm cli operator
+add <email>` and `pnpm cli operator remove <email>`; `pnpm cli list` marks them. Every
+  `/api/admin/*` route needs a signed-in operator and answers anyone else 404, as if it weren't
+  there. The routes only read; nothing in the panel changes a learner's data.
+- **Learners by number.** A learner is "Learner 3" (`users.learner_number`, given in the order
+  they first signed in and never reused), so reading is about the teaching. Their email is shown
+  only when asked, on a learner's page (`GET /api/admin/learners/:number/email`).
+- **Where it lives.** `apps/admin`, its own Vite + React app (TanStack Router and Query, Tailwind,
+  the web's colour tokens; English only). In production the API serves its build at `/admin`
+  (`ADMIN_DIST_DIR`), the same origin as the app, so the session cookie signs the operator in; it
+  has no sign-in page of its own, and sends someone signed out to the app's. In development it runs
+  on port 5174 and reaches the API through its proxy, as the web does. Everything model-written is
+  shown as text (blocks flattened to their words server-side, `src/admin/blocks-text.ts`), never as
+  HTML, as everywhere else (§12).
+- **Filters on every view**: a period (7, 30 or 90 days, or all), the model, and the method version
+  (`usage_events.method_version`, §4.4). A session's model and method are those of its calls: a
+  session matches when any of its calls does. Call-level figures filter the calls themselves.
+- **Overview** (`GET /api/admin/overview`), each figure linked to the sessions behind it:
+  - **Checks**: steps checked, how many landed on the first answer, misses (each a repair), and the
+    steps continued past while still settling; per model. The plainest measure of whether a lesson
+    taught.
+  - **The validators**: the calls they judged, how many were rewrites, and the issue codes they
+    found by purpose and model (`model_calls.verdict`): where the prompt and the model disagree on
+    the rules.
+  - **Failures the learner saw**: failed calls by kind and model, the session errors shown, lesson
+    steps that couldn't be written, and the check, aside and review replies that couldn't be given.
+  - **Asides**: the latest questions in the margin with the passage they quote, each where a lesson
+    wasn't clear enough.
+  - **Already held**: what learners turned out to hold before a step taught it, where the lesson
+    was pitched below them.
+  - **Where sessions stop**: sessions by the furthest phase reached (review, probe, plan, lesson,
+    homework, closed), the open ones idle for over a day by the phase they stopped in, and plan
+    revisions per session.
+  - **Homework**: assigned, handed in, put off, folded into a later one, still open; and reviews
+    done and failed.
+  - **Calls**: per purpose, the calls, failures, median and 90th-percentile time and the estimated
+    cost; per model, the calls and the cost.
+- **Sessions** (`GET /api/admin/sessions`): newest first, with the learner's number, the track, the
+  phase it is in or closed, its last activity, its calls and cost, its first-try checks, misses,
+  asides, rewrites and errors; filtered by learner and track too.
+- **Session replay** (`GET /api/admin/sessions/:id`): one session as a timeline in time order. What
+  the learner saw and did (the chat, the lesson's outline and steps as written, each check thread
+  with its verdicts, asides and their threads, the homework and its review, the research, the phase
+  changes and errors), and between them each model call behind it as a row (purpose, model, time,
+  tokens, cost, the validators' issues). Opening a call (`GET /api/admin/calls/:id`) shows it in
+  full: the prompt as sent, message by message, the response format and tools, the reply with its
+  reasoning and tool calls, the error and the verdict.
+- **Learners** (`GET /api/admin/learners`): numbers with their tracks, sessions and last activity,
+  each linking to their sessions.
+
+Owed after this: marking a moment in a replay with a note (a check answerable from the text, a
+probe stacking questions) and gathering the notes into recurring problems that become issues,
+`method.md` changes and eval cases (§11); and a page per model.
+
 ## 11. Eval harness (`tools/eval`)
 
 A test suite for AI models and for the method, not personalization. `pnpm eval` runs whole sessions of
@@ -1986,10 +2055,11 @@ reports go to `tools/eval/results/` (not committed). Runs before a model joins t
 ## 12. Security and privacy
 
 - HTTPS; least-privilege database roles; backups.
-- Keys: §4.3. Content: never in logs (§4.2) or error reports; no content-reading UI. Attached files
+- Keys: §4.3. Content: never in logs (§4.2) or error reports; read only in the operator's admin
+  panel (§10.1). Attached files
   are content too (§4.5): only their owner can download them, and never inline. In the training
-  period the database also keeps every model call in full (`model_calls`, §4.4), read by Omer with
-  SQL to study how the models teach.
+  period the database also keeps every model call in full (`model_calls`, §4.4), read in the admin
+  panel (§10.1) to study how the models teach.
 - A plain sentence at sign-up (the sign-in page, since an invited email signs up by signing in):
   what is stored (answers, progress, questions, attached files, the encrypted key), that nothing is
   shared (the tutor's calls go to the provider whose key the learner brings), and that while

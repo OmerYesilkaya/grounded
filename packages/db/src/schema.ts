@@ -51,7 +51,6 @@ const updatedAt = () =>
 // Auth (design §4.3): who may sign in, and who has
 // ---------------------------------------------------------------------------------------------
 
-/** A learner, created on their first sign-in. Signed-in browsers hold a cookie with the id. */
 /**
  * A learner, created on their first sign-in (design §4.3). Their password, chosen on that first
  * visit, is kept as a scrypt hash; none yet means they sign in with their invite code and are
@@ -64,6 +63,11 @@ export const users = pgTable("users", {
   passwordSetAt: timestamp("password_set_at", { withTimezone: true }),
   signInFailures: integer("sign_in_failures").notNull().default(0),
   lockedUntil: timestamp("locked_until", { withTimezone: true }),
+  /**
+   * How the admin panel names them, "Learner 3" (design §10.1): numbered in the order they first
+   * signed in, never reused.
+   */
+  learnerNumber: integer("learner_number").notNull().unique().generatedAlwaysAsIdentity(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
@@ -79,6 +83,8 @@ export const allowlist = pgTable("allowlist", {
   invitedAt: timestamp("invited_at", { withTimezone: true }).notNull().defaultNow(),
   codeHash: text("code_hash"),
   codeIssuedAt: timestamp("code_issued_at", { withTimezone: true }),
+  /** May read the admin panel (design §10.1); set with `pnpm cli operator add`. */
+  operator: boolean("operator").notNull().default(false),
 });
 
 // ---------------------------------------------------------------------------------------------

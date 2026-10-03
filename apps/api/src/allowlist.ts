@@ -31,6 +31,19 @@ export async function revoke(db: Db, email: string): Promise<void> {
   await db.delete(allowlist).where(eq(allowlist.email, normalizeEmail(email)));
 }
 
+/**
+ * Makes an invited person an operator, who may read the admin panel (design §10.1), or no longer
+ * one. False when the email isn't invited.
+ */
+export async function setOperator(db: Db, email: string, operator: boolean): Promise<boolean> {
+  const rows = await db
+    .update(allowlist)
+    .set({ operator })
+    .where(eq(allowlist.email, normalizeEmail(email)))
+    .returning({ email: allowlist.email });
+  return rows.length > 0;
+}
+
 /** Everyone invited, with when, and where their sign-in stands (never the code or password). */
 export function listInvited(db: Db) {
   return db
@@ -40,6 +53,7 @@ export function listInvited(db: Db) {
       codeIssuedAt: allowlist.codeIssuedAt,
       codePending: sql<boolean>`${allowlist.codeHash} is not null`,
       passwordSetAt: users.passwordSetAt,
+      operator: allowlist.operator,
     })
     .from(allowlist)
     .leftJoin(users, eq(users.email, allowlist.email))

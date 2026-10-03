@@ -17,6 +17,7 @@ import type { FileStore } from "./files/store.js";
 import type { JobQueue } from "./engine/queue.js";
 import { addLogContext, log } from "./log.js";
 import { requestLogging, unexpectedError } from "./request-log.js";
+import { registerAdminRoutes } from "./routes/admin.js";
 import { registerAsideRoutes } from "./routes/asides.js";
 import { registerAssignmentRoutes } from "./routes/assignments.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
@@ -210,6 +211,7 @@ export function createApp(deps: AppDependencies) {
   registerUsageRoutes(app, { db });
   registerProgressRoutes(app, { db });
   registerProfileRoutes(app, { db });
+  registerAdminRoutes(app, { db });
 
   app.delete("/api/credentials", async (c) => {
     await db.delete(credentials).where(eq(credentials.userId, c.get("user").id));

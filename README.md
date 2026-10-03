@@ -49,6 +49,8 @@ sign in with their email and the code as the password, then choose a password of
 signed in. Only the code's hash is stored, so a lost code or a forgotten password is replaced by
 running invite again (the old code and password stop working). `pnpm cli revoke someone@example.com`
 shuts them out at once; `pnpm cli list` shows who is invited and where their sign-in stands.
+`pnpm cli operator add someone@example.com` lets an invited person open the admin panel at `/admin`
+(`docs/design.md` §10.1); `pnpm cli operator remove someone@example.com` stops them.
 
 Use a direct Postgres connection, never a transaction-mode pooler: jobs and streams rely on
 `LISTEN/NOTIFY`. To try the image locally: `docker build -t grounded .`, then run it with the variables
