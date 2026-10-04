@@ -42,6 +42,8 @@ export interface ChatMessageOptions {
   kind: MessageKind;
   terms: readonly TrackTerm[];
   surface?: Surface;
+  /** A probe question: it may name any term to ask about it (design §3.3, #65). */
+  probe?: boolean;
   /** Where the message's links are verified before it is stored (design §6.4). */
   media: VerifierOptions;
   /** Judges what the validators can't decide by matching (design §3.3). */
@@ -65,6 +67,8 @@ export interface ReplyOptions {
   surface: Surface;
   /** Terms the surroundings teach (a lesson's steps so far), usable here. */
   introduced?: readonly string[];
+  /** A probe question: it may name any term to ask about it (design §3.3, #65). */
+  probe?: boolean;
   /** Receives the text as it streams, in batches. */
   onText: (text: string) => Promise<void>;
   /**
@@ -83,12 +87,10 @@ export interface ReplyOptions {
 /** A text's blocks, the rules it breaks, and the words flagged for the review (design §3.3). */
 export function chatIssues(
   text: string,
-  surface: Surface,
-  terms: readonly TrackTerm[],
-  introduced: readonly string[] = [],
+  context: Pick<ReplyOptions, "surface" | "terms" | "introduced" | "probe">,
 ): { blocks: Block[]; errors: Issue[]; flagged: Issue[] } {
   const parsed = parseBlocks(text);
-  const issues = [...parsed.issues, ...validate(parsed.blocks, { surface, terms, introduced })];
+  const issues = [...parsed.issues, ...validate(parsed.blocks, context)];
   return {
     blocks: parsed.blocks,
     errors: issues.filter((i) => i.severity !== "review"),
@@ -197,7 +199,7 @@ export async function composeReply(
   });
   if (isBlank(text)) throw new ProviderCallError("unknown", { code: "empty-reply" });
 
-  const first = chatIssues(text, surface, options.terms, options.introduced);
+  const first = chatIssues(text, options);
   let { blocks } = first;
   // What matching can't decide, judged by the cheap model; one rewrite fixes both kinds.
   first.errors.push(
@@ -206,6 +208,7 @@ export async function composeReply(
       flagged: first.flagged,
       terms: options.terms,
       introduced: options.introduced ?? [],
+      probe: options.probe ?? false,
     })),
   );
   await draft.judge({ rewrite: 0, issues: verdictIssues(first.errors) });
@@ -227,7 +230,7 @@ export async function composeReply(
     // An empty rewrite is worse than the message the learner has already read.
     if (!isBlank(rewrite.value)) {
       text = rewrite.value;
-      const second = chatIssues(text, surface, options.terms, options.introduced);
+      const second = chatIssues(text, options);
       ({ blocks } = second);
       await rewrite.judge({ rewrite: 1, issues: verdictIssues(second.errors) });
       if (second.errors.length > 0)

@@ -53,6 +53,12 @@ export interface ValidateContext {
    * and is usable only from it on.
    */
   taughtHere?: readonly string[];
+  /**
+   * A probe question (design §3.3, #65): it asks where the learner's knowledge ends, so it may name
+   * any term, taught or not ("have you used Kubernetes?"), and the term checks don't run on it. The
+   * scaffolding checks still do.
+   */
+  probe?: boolean;
 }
 
 /** Always the method's machinery when they appear in learner-facing text. */
@@ -105,7 +111,7 @@ export function validate(blocks: readonly Block[], context: ValidateContext): Is
       const given = pending.find((term) => cardNames(block.term, term));
       usable.add(normalize(given ?? block.term));
     }
-    const left = untaught();
+    const left = context.probe ? [] : untaught();
     for (const text of visibleText(block)) {
       issues.push(...scaffolding(text, block.id, usable), ...untaughtTerms(text, block.id, left));
     }

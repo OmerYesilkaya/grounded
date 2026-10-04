@@ -114,6 +114,16 @@ a "quick question" chat outside sessions (people use their everyday chatbot for 
   reviewed (`REVIEW_MIN_WORDS`): "That's it." has no room for jargon, and the learner is waiting.
   Cost: ~4,600 input tokens on the imported track's 204 terms (§4.4, the budgets), about half a
   cent on Haiku; latency: one cheap call before a text is stored or a step is released.
+- **A probe question may name any term** (decided 2026-10-04, #65). The probe finds where the
+  learner's knowledge ends, and naming a thing to ask whether they know it is exactly that: "have you
+  used Docker or Kubernetes?" is answered by "I don't know" in two words, where the paraphrase the
+  term checks forced ("a tool for packaging an app and its dependencies so it can run consistently…")
+  left the learner guessing what was asked. A probe message (`probe: true` on the chat message, down
+  to `validate` and the review's unit) skips the exact term match and the review's hunt for jargon,
+  in every track kind; the scaffolding checks still run, and without a flagged word the review makes
+  no call. Nowhere else: the review that opens a session asks about what was taught, so its terms are
+  held, and an explanation in the probe is caught by "a probe teaches nothing", not by the term rule.
+  The method's term rule and probe section say the same.
 - **The same validators are the eval harness's scorers** (§11), so "which models are allowed" is
   measured by the checks that protect learners every day.
 

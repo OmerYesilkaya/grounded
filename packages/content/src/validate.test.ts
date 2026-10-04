@@ -126,6 +126,18 @@ describe("validate: no untaught terms", () => {
     ]);
   });
 
+  it("lets a probe question name any term, and still keeps the machinery out of it", () => {
+    const text = "Have you used a lock, or seen a race condition? The ledger says no.";
+    expect(
+      validate(blocks(text), { surface: "chat", terms, probe: true }).map((i) => i.code),
+    ).toEqual(["scaffolding/word"]);
+    expect(validate(blocks(text), { surface: "chat", terms }).map((i) => i.code)).toEqual([
+      "scaffolding/word",
+      "term/untaught",
+      "term/untaught",
+    ]);
+  });
+
   it("allows the terms a lesson step introduces", () => {
     const content = blocks("This pattern has a name: it's called a race condition.");
     expect(validate(content, { surface: "lesson", terms, introduced: ["race condition"] })).toEqual(

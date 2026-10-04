@@ -862,6 +862,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             : context.messages,
         terms: context.terms,
         kind: "message",
+        probe: true,
       });
     }),
 

@@ -131,7 +131,8 @@ Rules:
 1. **Only `confirmed`, `assumed`, borrowed, and plain everyday language may appear in anything you
    write** — explanations, questions, checks, homework, lessons, answers in the margin. Everything else
    is described in plain words ("the thing that resends a lost packet", not "the retransmission
-   buffer") until it has been taught.
+   buffer") until it has been taught. Only a probe question may name an untaught term, to ask
+   whether the learner knows it (see "Probe").
 2. **Introduce terms deliberately, one at a time, at the moment the concept earns a name.** Teach the
    concept in plain words first; then: "this pattern is common enough that it has a name — it's called
    X." The name is a _reward for understanding the thing_, not a substitute for it.
@@ -396,6 +397,12 @@ something they get _right_ (a floor) and something they don't (a ceiling).
   In the first session of a track, record each misconception on the fix-list.
 - **"I don't know" ends that question.** Note where the boundary is and move on. Do not answer it, do not
   soften it, do not offer "here's the short version". The lesson answers it.
+- **A probe question may name what it asks about.** The term rule does not hold here: "have you used
+  Docker or Kubernetes?" asks where their knowledge ends, and "I don't know" answers it in two words,
+  while a paraphrase of the thing ("a tool for packaging an app and its dependencies so it can run
+  consistently…") leaves them guessing what is being asked. Naming is not teaching: the name may be
+  asked about, never explained. Their answer is the evidence: a term they use correctly is `assumed`;
+  one they don't know is simply where the boundary is.
 - **A miss on a hard question is a ceiling, not a zero.** If you have no floor for that strand yet, the
   next question sits beneath the one they missed: the pieces it was made of, one at a time. "Put these
   three events in order, with the gaps between them" missed says nothing about whether they can read a

@@ -44,6 +44,11 @@ export interface ReviewUnit {
   terms: readonly TrackTerm[];
   /** Terms the surroundings teach before it, and the ones its own word cards give. */
   introduced?: readonly string[];
+  /**
+   * A probe question (design §3.3, #65): it may name any term to ask whether the learner knows it,
+   * so only the flagged words are judged and no jargon is reported.
+   */
+  probe?: boolean;
 }
 
 /**
@@ -83,8 +88,13 @@ export function reviewSystem(terms: readonly TrackTerm[], introduced: readonly s
 }
 
 /** The issues a review found, written to be fed back to the tutor as any validator's are. */
-export function reviewIssues(review: WordingReview, flagged: readonly Issue[]): Issue[] {
+export function reviewIssues(
+  review: WordingReview,
+  flagged: readonly Issue[],
+  options: { probe?: boolean } = {},
+): Issue[] {
   const byWord = new Map(flagged.map((i) => [i.word?.toLowerCase(), i]));
+  const jargon = options.probe ? [] : review.jargon;
   return [
     // Only the words it was asked about: a word the validator didn't flag isn't machinery.
     ...review.flagged.flatMap((f): Issue[] => {
@@ -98,7 +108,7 @@ export function reviewIssues(review: WordingReview, flagged: readonly Issue[]): 
         },
       ];
     }),
-    ...review.jargon.map((j): Issue => ({
+    ...jargon.map((j): Issue => ({
       code: "term/judged",
       message: `"${j.word}" is used as if the learner knew it, and they don't; say it in plain words (${j.plain}), or explain it right where it is used.`,
     })),
@@ -111,9 +121,16 @@ export function reviewIssues(review: WordingReview, flagged: readonly Issue[]): 
  */
 export const REVIEW_MIN_WORDS = 25;
 
-function needsReview(markdown: string, words: readonly string[]): boolean {
-  return words.length > 0 || markdown.split(/\s+/).filter(Boolean).length >= REVIEW_MIN_WORDS;
+function needsReview(unit: ReviewUnit, words: readonly string[]): boolean {
+  if (words.length > 0) return true;
+  // A probe question is judged for machinery only, and without a flagged word there is none.
+  if (unit.probe) return false;
+  return unit.markdown.split(/\s+/).filter(Boolean).length >= REVIEW_MIN_WORDS;
 }
+
+/** What the review is told about a probe question, in place of its hunt for jargon. */
+export const PROBE_NOTE =
+  "This text is a probe question: the tutor is finding where the learner's knowledge ends, and may name any term to ask whether the learner knows it. Judge only the listed words; list no jargon.";
 
 /** The learner's words, as the review's prompt carries them (the newest, if there are many). */
 export const LEARNER_WORDS_LIMIT = 6_000;
@@ -142,13 +159,14 @@ export async function reviewWording(
   learner?: LearnerWords,
 ): Promise<Issue[]> {
   const words = [...new Set(unit.flagged.flatMap((i) => (i.word ? [i.word] : [])))];
-  if (!needsReview(unit.markdown, words)) return [];
+  if (!needsReview(unit, words)) return [];
   const { output } = await generateText({
     model,
     system: reviewSystem(unit.terms, unit.introduced ?? []),
     output: Output.object({ schema: wordingReviewSchema }),
     prompt: [
       ...(learner ? [learnerWords(learner)] : []),
+      ...(unit.probe ? [PROBE_NOTE] : []),
       words.length
         ? `Words to judge: ${words.map((w) => `"${w}"`).join(", ")}`
         : "No words to judge.",
@@ -156,5 +174,5 @@ export async function reviewWording(
       unit.markdown,
     ].join("\n\n"),
   });
-  return reviewIssues(output, unit.flagged);
+  return reviewIssues(output, unit.flagged, { probe: unit.probe ?? false });
 }

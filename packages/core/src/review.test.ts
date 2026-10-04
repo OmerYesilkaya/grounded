@@ -62,6 +62,33 @@ describe("the wording review", () => {
     expect(call).toContain("Terms of the subject the learner doesn't hold yet: lost update");
   });
 
+  it("judges a probe question for machinery only: what it names is not jargon", async () => {
+    const model = new MockLanguageModelV4({
+      doGenerate: [
+        reply({
+          flagged: [{ word: "map", machinery: true }],
+          jargon: [
+            { word: "Kubernetes", plain: "a system that runs packaged apps across servers" },
+          ],
+        }),
+      ],
+    });
+    const question = `${LONG} Have you used Docker or Kubernetes for that?`;
+    const issues = await reviewWording(model, { ...unit(question), probe: true });
+    expect(issues.map((i) => i.code)).toEqual(["scaffolding/judged"]);
+    const call = JSON.stringify(model.doGenerateCalls[0]?.prompt);
+    expect(call).toContain("This text is a probe question");
+    expect(call).toContain("list no jargon");
+  });
+
+  it("makes no call for a probe question with no word to judge, however long", async () => {
+    const model = new MockLanguageModelV4({ doGenerate: [] });
+    const question =
+      "Have you used Docker or Kubernetes, or anything else that packages an app with what it needs and runs it the same way on every machine? If so, what for, and where did it get in your way?";
+    expect(await reviewWording(model, { ...unit(question), probe: true })).toEqual([]);
+    expect(model.doGenerateCalls).toHaveLength(0);
+  });
+
   it("finds nothing where the model judged the words everyday ones", async () => {
     const model = new MockLanguageModelV4({
       doGenerate: [reply({ flagged: [{ word: "map", machinery: false }], jargon: [] })],

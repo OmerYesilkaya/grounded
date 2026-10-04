@@ -274,7 +274,7 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
     });
     const issuesOf = async (verdict: ProbeVerdict): Promise<Issue[]> => {
       const text = verdictText(verdict);
-      const { errors, flagged } = chatIssues(text, "chat", records.held);
+      const { errors, flagged } = chatIssues(text, { surface: "chat", terms: records.held });
       return [
         ...errors,
         ...(await review({ markdown: text, flagged, terms: records.held, introduced: [] })),
@@ -300,7 +300,10 @@ export function createProbeVerdictTasks(deps: ProbeVerdictDependencies): TaskLis
         content: `Write it again; it broke these rules:\n${issues.map((i) => `- ${i.message}`).join("\n")}`,
       },
     ]);
-    const still = chatIssues(verdictText(rewrite.value), "chat", records.held).errors;
+    const still = chatIssues(verdictText(rewrite.value), {
+      surface: "chat",
+      terms: records.held,
+    }).errors;
     await rewrite.judge({ rewrite: 1, issues: verdictIssues(still) });
     if (still.length > 0)
       log.warn(
