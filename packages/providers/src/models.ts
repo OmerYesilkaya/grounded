@@ -56,6 +56,18 @@ export const MODELS: readonly ModelEntry[] = [
     reads: READS_ALL,
   },
   {
+    // The newer Sol (released 2026-04-30; OpenAI's gpt-6-sol page points to it). Added 2026-10-04 to
+    // compare its lessons with Luna's: nine of the first ten prod lessons were Luna's, and their
+    // checks mostly asked the learner to repeat the step. Prices: standard tier, cache writes charged.
+    id: "gpt-6.1-sol",
+    provider: "openai",
+    label: "GPT-6.1 Sol",
+    roles: ["strong"],
+    price: { input: 2, cachedInput: 0.1, cacheWrite: 2.5, output: 10 },
+    gate: "manual",
+    reads: READS_ALL,
+  },
+  {
     // Tested by Omer with the chat-app method and costed as acceptable (2026-09-27).
     id: "gpt-6-luna",
     provider: "openai",

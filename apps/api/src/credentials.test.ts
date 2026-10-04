@@ -92,7 +92,7 @@ describe("API key credentials", () => {
       string,
       { id: string }[]
     >;
-    expect(models.openai?.map((m) => m.id)).toEqual(["gpt-6-luna"]);
+    expect(models.openai?.map((m) => m.id)).toEqual(["gpt-6.1-sol", "gpt-6-luna"]);
     expect(models.anthropic?.map((m) => m.id)).toContain("claude-opus-5-5");
   });
 
