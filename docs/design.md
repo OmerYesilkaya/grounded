@@ -643,12 +643,18 @@ about, test and debug.
   finishes and is paid for; it is recorded in `usage_events` like any other, and its content is
   not stored, having no track left to belong to.
 
-### 4.6 Tracks taught from a source (decided 2026-10-03, #63)
+### 4.6 Tracks taught from a source (decided 2026-10-03, #63; reworked 2026-10-04, #66)
 
 A track can start from a source the learner brings (a book, a long PDF, an EPUB, lecture notes)
-instead of from their words: the tutor probes them on it, then teaches it whole with the same
-session loop (lessons, checks, homework, arc exams, the final). The source, not the web, is the
-reference.
+instead of from their words. The learner reads it themselves, a chapter at a time, in their own
+copy; the tutor probes them on each chapter they read, teaches what they missed, and sets homework
+on it, with the same session loop as any track (checks, homework, arc exams, the final). The
+source, not the web, is the reference. (#66 reversed the first design, in which the tutor taught the
+source whole from its text and the learner never read it: the probe opened on the whole source, the
+plan covered it in dependency order and each lesson taught up to three sections from their text.
+What is built is that design's reading pipeline and prompt plumbing, named with its files below;
+the loop is owed to #66, and a learner who doesn't read still gets the first design, see "Not
+reading".)
 
 - **Creating one** (§9.5): "Learn from a source" beside "What do you want to learn?". The learner
   adds 1–5 sources (`@grounded/core/sources`: PDF, EPUB, Word, text and Markdown; 100 MB in all,
@@ -657,60 +663,105 @@ reference.
   `from=source`; the files are stored as `track_files` with `role = source` (the files a learner
   brings to a goal track are `brought`, §4.5, and a source is never read as one of those: it would
   not fit a call). The track is named after the file, then after the book's own title when the
-  survey finds one.
+  survey finds one. Across several sources, the order they were added is the reading order.
 - **Reading it, once, and only when the learner says** (`engine/source-tasks.ts`, `sources/*`).
   Two jobs, the track's reading state in `tracks.source` (`SourceReading`: surveying, awaiting,
   reading, ready, failed):
   - The **survey** (`survey-source`) takes the text out with no model: a PDF's text layer page by
-    page (pdf.js through `unpdf`, with the book's page labels and its bookmarks for chapters), an
-    EPUB's chapters in spine order, a Word document's or text file's text split at its headings. A
-    PDF page whose text layer is missing or garbled (under 80 letters, or over 5% unmappable glyphs)
-    and that paints an image is marked for the model. It counts the pages and estimates the cost on
-    the learner's cheap model (`sources/estimate.ts`, erring high), then waits (`awaiting`). A
-    source the cheap model can't read (it doesn't read PDFs: DeepSeek) fails here with the pages
-    that need it (`source-needs-vision`), so nothing is spent; changing model and asking again
-    surveys again.
+    page (pdf.js through `unpdf`, with the book's page labels and its bookmarks for its structure),
+    an EPUB's chapters in spine order (with its navigation), a Word document's or text file's text
+    split at its headings. The structure is kept as the book has it, a tree (parts, chapters, the
+    headings inside a chapter), not flattened to one level as the first design did. A PDF page whose
+    text layer is missing or garbled (under 80 letters, or over 5% unmappable glyphs) and that
+    paints an image is marked for the model. It counts the pages and estimates the cost on the
+    learner's cheap model (`sources/estimate.ts`, erring high), then waits (`awaiting`). A source
+    the cheap model can't read (it doesn't read PDFs: DeepSeek) fails here with the pages that need
+    it (`source-needs-vision`), so nothing is spent; changing model and asking again surveys again.
   - The learner sees the estimate and says to read (`POST /api/tracks/:id/source/read`). The
     **reading** (`read-source`) sends the marked pages to the cheap model a few at a time
     (`sources/transcribe.ts`: up to five consecutive pages copied into a PDF of their own with
     `pdf-lib`, transcribed as markdown with a `=== page N ===` line each; a page the reply leaves out
     is asked for alone, once). Each batch is kept as it is read (`track_files.transcripts`), so a
     reading that stops at a model call (`source-reading-stopped`, the learner asks again) goes on
-    where it stopped and never pays twice. Then it splits the sources into **sections**
-    (`sources/sections.ts`): chapters, a chapter over 24,000 characters split into parts at page or
-    paragraph breaks, a stretch under 1,500 joined to its neighbour; a PDF section's text has a
-    `[p. 112]` line where each page starts, and its pages as the book numbers them. They are
-    numbered across the track's sources (`source_sections.n`, "§12") and each gets a sentence or two
-    (`sources/summarize.ts`, the cheap model, about 100,000 characters a call): what it teaches, the
-    terms it introduces, and what it expects the reader to know already.
+    where it stopped and never pays twice. Then it divides the sources into **chapters** and
+    **passages**, below.
   - No OCR service: the pages that need reading go to the learner's own model, on their key, like
     every other call (§2). The same path would take formulas and tables a text layer mangles; for
     now only pages with no usable text layer go.
   - A session can't start until the source is read (`source-not-ready`).
+- **Chapters are the reading units, passages the prompt units** (decided 2026-10-04, #66: a reader
+  stops where the author ends a topic, never where a prompt-sized cut lands).
+  - A **chapter** (`source_chapters`) is a stretch the learner is asked to read in one go: the
+    author's chapter by default. A chapter too long for one sitting (over about 40 pages, or
+    100,000 characters in a flowing source) is split at the book's own sub-headings into reading
+    units of their own, never at a character count. A long chapter with no sub-headings, or a book
+    with no structure at all, is divided once by the cheap model (`sources/chapters.ts`) reading its
+    text: where the topic changes, each unit titled. Chapters are numbered across the track's
+    sources in reading order ("Chapter 12", `source_chapters.n`), carry the book's part when it has
+    one, their pages as the book numbers them, and a sentence or two (`sources/summarize.ts`, the
+    cheap model): what the chapter teaches, the terms it introduces, and what it expects the reader
+    to know already.
+  - A **passage** (`source_passages`, the first design's `source_sections`) is a prompt-sized cut of
+    a chapter: at most 24,000 characters, split at page or paragraph breaks, a stretch under 1,500
+    joined to its neighbour (`sources/sections.ts`); a PDF passage's text has a `[p. 112]` line where
+    each page starts. Passages carry no summary of their own: the prompt lists chapters, and a
+    lesson or a probe is given the passages of the chapter at hand.
+  - The book's **parts are the arcs**, so an arc exam lands where the author put a break; a book
+    without parts has its chapters grouped into arcs by the plan.
+- **The loop, a chapter at a time** (decided 2026-10-04, #66). Reading happens between sessions,
+  in the learner's own copy: the app names the chapter and its pages and does not show the book
+  (the learner finds their own way to read it; opening a citation at its page stays "later").
+  - **The first reading is assigned when the source is read**, before any session, on the track page
+    ("Read first: Chapter 1, pp. 1–28"), with what the book expects its reader to know already in a
+    sentence, from the chapters' summaries, so the learner can decide whether they are ready. There is
+    no probe before the first reading: the first chapter's probe is the first probe.
+  - **Every later reading is assigned at the close**, as homework is: the close's recap names the next
+    chapter and its pages ("Next: Chapter 5, pp. 132–160"), and the assignment is kept on the track
+    (`tracks.source.assigned`: the chapter, and when) so the track page and the next session's calls
+    know it. "Where you left off" carries it too.
+  - **The next session opens with the review (§7.1), then the probe on the chapter read.** The
+    probe's first question asks how far they got: a learner who read further is probed on that
+    much; one who stopped mid-chapter is probed on what they read and the rest is the next reading;
+    one who didn't read is probed as any learner would be, see "Not reading". The probe's calls are
+    given the chapter's text (its passages, under the lesson's 60,000-character budget), not its
+    summary alone, so the questions are about what the book actually says. It probes, in the
+    learner's own words, whether they understood what the chapter teaches, strand by strand, and
+    below that whether they hold what it assumed from outside the book; and, before the next
+    chapter is read, whether they hold what that one assumes from outside the book. The probe's
+    structured decision records term evidence per idea as on any track; shaky talk is shaky
+    understanding (Omer, #66), so there is no separate verdict to override, and the learner steers
+    as always, in the chat ("teach it anyway", "move on").
+  - **The plan follows the book.** Its arcs are the parts and its sessions the chapters, in the
+    author's order; the plan does not reorder the book. Groundwork the book assumes and the learner
+    lacks, found by the probe, is an arc of its own placed before the chapter that needs it, from the
+    tutor's own knowledge and research (`SOURCE_PLAN_RESEARCH_PROMPT`, the only research a source
+    track's plan does; the source itself is never checked against the web), and said to come from
+    outside the source. Each session's plan names the gaps this session teaches. The learner approves
+    it at the gate as always. The first design's map of the plan onto the source (`mapSource`,
+    `tracks.source_map`, `learning_sessions.source_sections`) goes: a session is about its chapter.
+  - **The lesson teaches only the gaps**: the ideas the probe found shaky, from the chapter's
+    passages (`lessonPassages`, in place of the lesson's web research, which still runs for a lesson
+    of groundwork only), groundwork first and said to come from outside the source; never the
+    chapter over again. The passages are offered first among what the lesson may cite (§6.4, #62):
+    `:cite[1]` is the first passage, shown in the lesson's Sources as the file, the chapter and its
+    pages, linked to the file. The lesson teaches what the source says as what it says, without
+    judging or correcting it (Omer, #63: the learner chose the source). A chapter the probe found
+    held gets no lesson: the session goes from the plan to homework.
+  - **Homework follows every chapter**, lighter when the chapter held (enough to show it still holds
+    a week on), as it is the evidence that moves a term from taught to settled (§7.4). The arc exam
+    closes a part; the final closes the book.
+  - **Reading progress** (`GET /api/tracks/:id/source`, `track-source.ts`, the first design's
+    coverage): each chapter assigned, read (the probe heard it was), probed (and how it went),
+    taught (a lesson taught its gaps) or held (its terms settled), shown on the track page (§9.2).
 - **Every call knows the source** (`PromptContext.source`, the track part of the prompt, after "what
-  you brought"; `engine/source-teaching.ts`): its sections by file with their pages and summaries
-  (on a source of more than 40 sections only the current arc's keep their summaries, the titles
-  stay), and what the plan teaches from where. The method's rules for it are a section of
-  `method.md` tagged `; tracks: source`, which reaches only a source track's calls (§3.1).
-- **The probe is about the source** (method.md): the session opens on it and on the learner's notes,
-  and probes whether they know what it teaches and, below that, whether they hold what it assumes.
-- **The plan** researches only the groundwork the source assumes and the learner lacks
-  (`SOURCE_PLAN_RESEARCH_PROMPT`); the source itself is never checked against the web. After each
-  plan is recorded, a structured call on the plan's model maps it onto the source (`mapSource`):
-  each arc's sections (none for groundwork from outside the source), the sections the learner
-  already holds, and the up to three this session's lesson teaches from
-  (`learning_sessions.source_sections`). The map is kept on the track (`tracks.source_map`), held to
-  the plan's arcs and the sections that exist. If the call fails, the map stays as it was and the
-  lesson takes the current arc's first sections.
-- **The lesson teaches from the sections' text** (`lessonPassages`): up to 60,000 characters, in the
-  outline's and the writing's request, in place of the lesson's web research (which still runs for
-  a lesson of groundwork only). The sections are offered first among what the lesson may cite (§6.4,
-  #62): `:cite[1]` is the first passage, shown in the lesson's Sources as the file, the section and
-  its pages, linked to the file. The method has the lesson teach what the source says as what it
-  says, without judging or correcting it (Omer, #63: the learner chose the source).
-- **Coverage** (`GET /api/tracks/:id/source`, `track-source.ts`): each section taught (a session's
-  lesson taught from it), known (the plan found the learner holds it), planned (an arc covers it) or
-  ahead, shown on the track page (§9.2).
+  you brought"; `engine/source-teaching.ts`): its chapters by file with their pages and summaries
+  (on a source of more than 40 chapters only the current arc's keep their summaries, the titles
+  stay), which chapter is assigned and which have been read, and in the probe and the lesson the
+  text of the chapter at hand. The method's rules for it are a section of `method.md` tagged
+  `; tracks: source`, which reaches only a source track's calls (§3.1).
+- **Not reading.** A learner who skips the reading and asks to be taught gets the first design: the
+  probe finds nothing held and the lesson teaches the chapter from its passages. Nothing is lost by
+  the loop; the reading is what the learner adds.
 - **Later** (not built): adding a source to an existing track; web pages as sources; cropping the
   source's own figures into lessons (lessons draw their own, and may point to a figure by its page);
   opening a citation at its page (the file is downloaded, never shown inline, §4.5, so a link's
@@ -725,14 +776,15 @@ The schema is `packages/db/src/schema.ts`. Tables that exist:
 | `users`                              | a learner: email, created on their first sign-in; their password's hash and the wrong-password count and lock (§4.3); their number in the admin panel (§10.1)                                                           |
 | `allowlist`                          | who may sign in, the hash of their invite code, and whether they are an operator (§10.1)                                                                                                                                |
 | `credentials`                        | provider, encrypted key, credential source                                                                                                                                                                              |
-| `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off, a source's reading and map (§4.6)                                               |
+| `tracks`                             | name (and whether the tutor is still naming it), learner's words, "what you brought", language, plan (arcs and notes, below), left off, a source's reading and the chapter assigned to read (§4.6)                      |
 | `track_files`                        | per track: the attached files' role (brought or source), name, kind, media type, size, PDF pages, text, a source's transcribed pages, file store key                                                                    |
-| `source_sections`                    | per source track: each section of its sources (§4.6): its number, title, pages, text and summary                                                                                                                        |
+| `source_chapters`                    | per source track: each reading unit of its sources (§4.6): its number, title, part, pages and summary                                                                                                                   |
+| `source_passages`                    | per source track: each prompt-sized cut of a chapter (§4.6): its chapter, order, pages and text                                                                                                                         |
 | `terms`                              | per track: term, status (`planned`/`taught`/`confirmed`/`assumed`), topic, the term it is borrowed from                                                                                                                 |
 | `term_events`                        | evidence history: status change, quoted learner words, source (check, homework, aside, exam)                                                                                                                            |
 | `term_dependencies`                  | "rests on" edges — the map; source of every structure picture                                                                                                                                                           |
 | `fix_list_items`                     | the audit's misconceptions and their status                                                                                                                                                                             |
-| `learning_sessions`                  | track, kind (normal / final), its state, open/closed, what the opening review and the probe found (and the learner's verdict), teach-back breaks, older turns summarized, the source's sections its lesson teaches from |
+| `learning_sessions`                  | track, kind (normal / final), its state, open/closed, what the opening review and the probe found (and the learner's verdict), teach-back breaks, older turns summarized, the source chapter it probes and teaches from |
 | `session_messages`                   | the chat (opening review, probe, plan, homework, arc exam, the final's audit and teach-back, recap): the learner's text, the tutor's block trees, a plan's terms                                                        |
 | `session_events`                     | the session's ordered event log, replayed by SSE (§4.2)                                                                                                                                                                 |
 | `lessons`                            | per session: the outline, each step's block tree and markdown, failed steps, "after the check" notes, what the learner already held                                                                                     |
@@ -1913,7 +1965,8 @@ every other page usable (tried at 360–430px wide, in both themes).
   source to learn from" (§4.6): the sources added to a drop area, and the box becomes optional notes
   on why the learner is reading them. The track page then shows the reading: the pages, how many the
   learner's model will read and what it will cost ("Read it"), its progress, why it stopped (with
-  "Try again" where trying helps), and once it is read, the source's coverage section by section.
+  "Try again" where trying helps), and once it is read, the first chapter to read with what the book
+  expects its reader to know, then the reading progress chapter by chapter (§4.6).
 
 - **One box: "What do you want to learn?"** A composer that starts five lines tall and grows, for as
   many words as the learner likes (up to 4,000 characters): where they want to get to, where they
