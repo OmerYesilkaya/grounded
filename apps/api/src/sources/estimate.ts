@@ -16,8 +16,7 @@ export const TRANSCRIBED_PAGE_CHARACTERS = 3_000;
 const CALL_OVERHEAD_TOKENS = 300;
 /** A chapter's summary and what it assumes. */
 const SUMMARY_OUTPUT_TOKENS = 160;
-/** A long chapter divided by the model: its text read once more, and a few titles written. */
-const DIVISION_INPUT_CHARACTERS = 300_000;
+/** A long chapter divided by the model: its text read once more, and a few titles a window. */
 const DIVISION_OUTPUT_TOKENS = 200;
 
 export function readingEstimate(options: {
@@ -28,22 +27,24 @@ export function readingEstimate(options: {
   /** The source's text once read, in characters, which the summaries read whole. */
   characters: number;
   chapters: number;
-  /** Long chapters with no headings of their own, which the model divides into topics. */
+  /** The text of long chapters with no headings of their own, which the model divides, in characters. */
   divide: number;
+  divideWindowCharacters: number;
   summaryBatchCharacters: number;
 }): number | null {
+  const divisions = Math.ceil(options.divide / options.divideWindowCharacters);
   const calls =
     Math.ceil(options.transcribe / options.batch) +
     Math.ceil(options.characters / options.summaryBatchCharacters) +
-    options.divide;
+    divisions;
   const inputTokens =
     options.transcribe * PAGE_INPUT_TOKENS +
     Math.ceil(options.characters / 4) +
-    Math.ceil((options.divide * DIVISION_INPUT_CHARACTERS) / 4) +
+    Math.ceil(options.divide / 4) +
     calls * CALL_OVERHEAD_TOKENS;
   const outputTokens =
     options.transcribe * PAGE_OUTPUT_TOKENS +
     options.chapters * SUMMARY_OUTPUT_TOKENS +
-    options.divide * DIVISION_OUTPUT_TOKENS;
+    divisions * DIVISION_OUTPUT_TOKENS;
   return estimateCost(options.modelId, { inputTokens, cachedInputTokens: 0, outputTokens });
 }

@@ -79,6 +79,40 @@ describe("API key credentials", () => {
     });
   });
 
+  it("changes the model alone, keeping the key and the provider", async () => {
+    const cookie = await signedIn();
+    await put(cookie, { provider: "openai", model: "gpt-6-luna", apiKey: KEY });
+    const response = await t.request("/api/credentials", {
+      method: "PATCH",
+      cookie,
+      body: JSON.stringify({ model: "gpt-6.1-sol" }),
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      provider: "openai",
+      model: "gpt-6.1-sol",
+      keyHint: "3456",
+      source: "own_key",
+    });
+    const [row] = await t.db.select().from(credentials);
+    if (!row) throw new Error("expected a stored credential");
+    expect(row.model).toBe("gpt-6.1-sol");
+    expect(t.vault.open(row.sealedKey, row.userId)).toBe(KEY);
+  });
+
+  it("refuses a model of another provider, and a change with no key saved", async () => {
+    const cookie = await signedIn();
+    const patch = (model: string) =>
+      t.request("/api/credentials", { method: "PATCH", cookie, body: JSON.stringify({ model }) });
+    expect((await patch("gpt-6.1-sol")).status).toBe(404);
+    await put(cookie, { provider: "openai", model: "gpt-6-luna", apiKey: KEY });
+    const response = await patch("claude-opus-5-5");
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: { code: "model-unavailable" } });
+    const [row] = await t.db.select().from(credentials);
+    expect(row?.model).toBe("gpt-6-luna");
+  });
+
   it("deletes the key", async () => {
     const cookie = await signedIn();
     await put(cookie, { provider: "openai", model: "gpt-6-luna", apiKey: KEY });
@@ -102,6 +136,14 @@ describe("API key credentials", () => {
       401,
     );
     expect((await t.request("/api/credentials", { method: "DELETE" })).status).toBe(401);
+    expect(
+      (
+        await t.request("/api/credentials", {
+          method: "PATCH",
+          body: JSON.stringify({ model: "gpt-6.1-sol" }),
+        })
+      ).status,
+    ).toBe(401);
     expect((await t.request("/api/models")).status).toBe(401);
   });
 });

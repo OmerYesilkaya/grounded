@@ -39,7 +39,8 @@ export const account = defineMessages({
     key: {
       title: "Your AI key",
       intro:
-        "Lessons run on your own provider account. The key is encrypted and never shown again.",
+        "Lessons run on your own provider account. The key is encrypted and never shown again. Change the model here any time; the key stays and your next session runs on it.",
+      savedKey: "Your saved key",
       remove: "Remove",
       provider: "Provider",
       chooseProvider: "Choose a provider",
@@ -124,7 +125,8 @@ export const account = defineMessages({
     key: {
       title: "Yapay zekâ anahtarın",
       intro:
-        "Dersler kendi sağlayıcı hesabında çalışır. Anahtar şifrelenir ve bir daha gösterilmez.",
+        "Dersler kendi sağlayıcı hesabında çalışır. Anahtar şifrelenir ve bir daha gösterilmez. Modeli buradan istediğin zaman değiştirebilirsin; anahtar kalır, bir sonraki oturumun yeni modelde çalışır.",
+      savedKey: "Kayıtlı anahtarın",
       remove: "Kaldır",
       provider: "Sağlayıcı",
       chooseProvider: "Bir sağlayıcı seç",

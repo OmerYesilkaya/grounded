@@ -58,6 +58,9 @@ const credentialInput = z.object({
   apiKey: z.string().trim().min(8),
 });
 
+/** A change of model alone: the key and the provider stay. */
+const modelInput = z.object({ model: z.string().min(1) });
+
 export function createApp(deps: AppDependencies) {
   const { db, vault } = deps;
   const auth: AuthOptions = { db, ...deps.auth };
@@ -141,6 +144,29 @@ export function createApp(deps: AppDependencies) {
       .onConflictDoUpdate({ target: credentials.userId, set: { ...values, source: "own_key" } })
       .returning();
     if (!row) throw new Error("credential upsert returned nothing");
+    return c.json(publicCredential(row));
+  });
+
+  /** Switches the model under the stored key; the next model call runs on it. */
+  app.patch("/api/credentials", async (c) => {
+    const parsed = modelInput.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json(refuse("credential-incomplete"), 400);
+    const userId = c.get("user").id;
+    const [current] = await db
+      .select({ provider: credentials.provider })
+      .from(credentials)
+      .where(eq(credentials.userId, userId));
+    if (!current) return c.json(notFound, 404);
+    const offered = offeredModels(current.provider, { includeUngated: deps.includeUngatedModels });
+    if (!offered.some((m) => m.id === parsed.data.model)) {
+      return c.json(refuse("model-unavailable"), 400);
+    }
+    const [row] = await db
+      .update(credentials)
+      .set({ model: parsed.data.model })
+      .where(eq(credentials.userId, userId))
+      .returning();
+    if (!row) return c.json(notFound, 404);
     return c.json(publicCredential(row));
   });
 

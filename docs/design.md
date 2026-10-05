@@ -343,7 +343,9 @@ about, test and debug.
     provider, open sign-up) is a later decision, behind configuration.
 - **Keys:** envelope encryption — a per-row data key encrypts the API key; a master key (host secret
   now, a KMS later) encrypts the data keys. Decrypted only in the worker at call time; never sent to
-  the browser after entry, never logged. Learners can replace or delete their key.
+  the browser after entry, never logged. Learners can replace or delete their key, and switch the
+  model alone (`PATCH /api/credentials`, from the saved key's card): the key and the provider stay,
+  and the worker reads the credential at every call, so the next call runs on the new model.
 - **Credential source** is its own concept (`own_key` | `sponsored`), so sponsorship or paid plans
   later don't touch the core.
 
@@ -696,10 +698,14 @@ kept, so only the chapters' division and summaries are paid for: migration 0039.
     characters in a flowing source) is split at the book's own sub-headings into reading units of
     their own ("Routing: Routing tables"), never at a character count. A long chapter with no
     sub-headings, or a book with no structure at all, is divided once by the cheap model
-    (`sources/divide.ts`, purpose `source-divide`, a window of 400,000 characters a call) reading
-    its text in units (a PDF's pages, flowing text's paragraphs): where the topic changes, each
-    unit titled. The survey counts such chapters without the model, so the estimate allows for the
-    calls. Chapters are numbered across the track's sources in reading order ("Chapter 12",
+    (`sources/divide.ts`, purpose `source-divide`, a window of 100,000 characters a call, about
+    25,000 tokens: a 400,000-character window tripped OpenAI's per-minute token limit on a
+    705-page book with no bookmarks, 2026-10-05) reading its text in units (a PDF's pages,
+    flowing text's paragraphs): where the topic changes, each unit titled. The survey counts the
+    text of such chapters without the model, so the estimate allows for the calls. A reading
+    makes many calls back to back, so each of its calls waits a minute and tries again when the
+    provider limits requests, up to five times (`sources/paced.ts`), instead of stopping the
+    reading. Chapters are numbered across the track's sources in reading order ("Chapter 12",
     `source_chapters.n`), carry the book's part when it has one (a PDF's top-level bookmarks when
     they are few and have bookmarks under them; a heading level above the chapters' in flowing
     text), their pages as the book numbers them, their length in characters, and two sentences

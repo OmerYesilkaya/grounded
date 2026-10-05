@@ -17,10 +17,16 @@ import type { Task, TaskList } from "graphile-worker";
 import { v7 as uuidv7 } from "uuid";
 import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
-import { toChapters, type Divider, type DraftChapter } from "../sources/chapters.js";
+import {
+  DIVIDE_WINDOW_CHARACTERS,
+  toChapters,
+  type Divider,
+  type DraftChapter,
+} from "../sources/chapters.js";
 import { divideChapter } from "../sources/divide.js";
 import { readingEstimate, TRANSCRIBED_PAGE_CHARACTERS } from "../sources/estimate.js";
 import { extractSource, UnreadableSource, type Extracted } from "../sources/extract.js";
+import { pacedModel } from "../sources/paced.js";
 import {
   summarizeChapters,
   summaryBatches,
@@ -34,7 +40,9 @@ import { causeOf, type ModelAccess } from "./model-call.js";
  * model, counts the pages the model has to read and estimates the cost; the learner sees it and
  * says to read. The reading transcribes those pages, divides the sources into chapters (the units
  * the learner reads) and their passages, summarizes each chapter, and assigns the first to read,
- * keeping what it has done as it goes, so reading that stops starts again where it stopped.
+ * keeping what it has done as it goes, so reading that stops starts again where it stopped. A
+ * reading makes many calls back to back, so a provider limiting requests is waited out (paced.ts)
+ * rather than stopping it.
  */
 
 export interface SourceTaskDependencies {
@@ -236,6 +244,7 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
               characters,
               chapters,
               divide,
+              divideWindowCharacters: DIVIDE_WINDOW_CHARACTERS,
               summaryBatchCharacters: SUMMARY_BATCH_CHARACTERS,
             })
           : null,
@@ -245,8 +254,8 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
     "read-source": guarded(async ({ trackId }) => {
       const track = await loadTrack(trackId);
       if (track.source?.status !== "reading") return;
-      const model = (purpose: "source-transcribe" | "source-divide" | "source-summary") =>
-        models.model({ userId: track.userId, trackId, purpose, role: "cheap" });
+      const model = async (purpose: "source-transcribe" | "source-divide" | "source-summary") =>
+        pacedModel(await models.model({ userId: track.userId, trackId, purpose, role: "cheap" }));
 
       // Chapters are made once, after every page is read; reading that starts again after them
       // only summarizes what is left.

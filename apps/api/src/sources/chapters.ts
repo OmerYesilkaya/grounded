@@ -68,8 +68,8 @@ type Stretch = { title: string; part: string | null } & (
 
 /**
  * The source's chapters, each with its passages. Without a divider (the survey's count), a long
- * chapter with no headings is left whole and counted in `undivided`, so the estimate can allow
- * for the calls that divide them.
+ * chapter with no headings is left whole and its text counted in `undivided`, so the estimate can
+ * allow for the calls that divide it.
  */
 export async function toChapters(
   extracted: Extracted,
@@ -88,7 +88,7 @@ export async function toChapters(
       continue;
     }
     if (!divider) {
-      undivided++;
+      undivided += length(stretch);
       cut.push(stretch);
       continue;
     }
@@ -195,8 +195,11 @@ const headingDepth = (line: string): number | null => {
   return match ? (match[1]?.length ?? null) : null;
 };
 
-/** The most of a chapter one dividing call reads; a longer one is divided a window at a time. */
-export const DIVIDE_WINDOW_CHARACTERS = 400_000;
+/**
+ * The most of a chapter one dividing call reads (about 25,000 tokens, within a provider's
+ * per-minute allowance on an ordinary key); a longer one is divided a window at a time.
+ */
+export const DIVIDE_WINDOW_CHARACTERS = 100_000;
 
 /**
  * A long chapter with no headings, divided by the model where its topics change: a PDF's at page

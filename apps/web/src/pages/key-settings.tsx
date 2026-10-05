@@ -50,6 +50,13 @@ export function KeySettingsPage() {
       void navigate({ to: "/" });
     },
   });
+  const changeModel = useMutation({
+    mutationFn: (model: string) =>
+      api<Credential>("/api/credentials", { method: "PATCH", body: JSON.stringify({ model }) }),
+    onSuccess: (saved) => {
+      queryClient.setQueryData(["credential"], saved);
+    },
+  });
   const remove = useMutation({
     mutationFn: () => api<undefined>("/api/credentials", { method: "DELETE" }),
     onSuccess: () => {
@@ -68,10 +75,36 @@ export function KeySettingsPage() {
       <p className="mt-2 text-sm text-muted-foreground">{t.intro}</p>
 
       {credential.data && (
-        <div className="mt-5 flex items-center justify-between rounded-lg border bg-card px-3 py-2.5 text-sm">
-          <span>
-            {PROVIDER_LABELS[credential.data.provider]} · {credential.data.model} ·{" "}
-            <span className="text-muted-foreground">…{credential.data.keyHint}</span>
+        <form
+          className="mt-5 flex items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2.5 text-sm"
+          aria-label={t.savedKey}
+          onSubmit={(event) => {
+            event.preventDefault();
+          }}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <span>{PROVIDER_LABELS[credential.data.provider]}</span>
+            <span className="text-muted-foreground">·</span>
+            {/* The model switches on its own: the key stays, the next call runs on the new one. */}
+            <Select
+              value={credential.data.model}
+              onValueChange={(value) => {
+                if (value && value !== credential.data?.model) changeModel.mutate(value);
+              }}
+              disabled={changeModel.isPending}
+            >
+              <SelectTrigger size="sm" aria-label={t.model}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(models.data?.[credential.data.provider] ?? []).map((m) => (
+                  <SelectItem key={m.id} value={m.id}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground">· …{credential.data.keyHint}</span>
           </span>
           <Button
             variant="ghost"
@@ -83,7 +116,10 @@ export function KeySettingsPage() {
           >
             {t.remove}
           </Button>
-        </div>
+        </form>
+      )}
+      {changeModel.error && (
+        <p className="mt-2 text-sm text-destructive">{changeModel.error.message}</p>
       )}
 
       <form

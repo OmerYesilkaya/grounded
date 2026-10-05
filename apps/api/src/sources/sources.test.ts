@@ -1,4 +1,9 @@
+import type { LanguageModelV4GenerateResult } from "@ai-sdk/provider";
+import { generateText } from "ai";
+import { MockLanguageModelV4 } from "ai/test";
 import { describe, expect, it } from "vitest";
+import { ProviderCallError } from "../engine/model-call.js";
+import { pacedModel } from "./paced.js";
 import { bookPdf, DOCX, epub, prose, text } from "../test/files.js";
 import { extractSource, splitAtHeadings, textLayerUnusable, UnreadableSource } from "./extract.js";
 import {
@@ -197,7 +202,9 @@ describe("a source's chapters", () => {
       chapters: [{ title: "Everything", part: null, page: 1 }],
     };
     const counted = await toChapters(extracted, null);
-    expect(counted.undivided).toBe(1);
+    expect(counted.undivided).toBe(
+      pages.reduce((sum, p) => sum + `[p. ${p.label}]\n`.length + p.text.length, 0),
+    );
     expect(counted.chapters.map((c) => c.title)).toEqual(["Everything"]);
     const asked: { title: string; units: number }[] = [];
     const divider: Divider = (chapter) => {
@@ -240,6 +247,53 @@ describe("a source's chapters", () => {
 });
 
 describe("reading with the model", () => {
+  it("waits out a provider limiting requests, then goes on; anything else stops it", async () => {
+    const limited = new ProviderCallError("rate-limited", {
+      code: "provider-failed",
+      kind: "rate-limited",
+      provider: "OpenAI",
+    });
+    const waits: number[] = [];
+    const sleep = (ms: number) => {
+      waits.push(ms);
+      return Promise.resolve();
+    };
+    const reply = (text: string): LanguageModelV4GenerateResult => ({
+      content: [{ type: "text", text }],
+      finishReason: { unified: "stop", raw: "stop" },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 },
+      },
+      warnings: [],
+    });
+    let calls = 0;
+    const flaky = new MockLanguageModelV4({
+      doGenerate: () => {
+        calls++;
+        return calls < 3 ? Promise.reject(limited) : Promise.resolve(reply("done"));
+      },
+    });
+    const { text } = await generateText({
+      model: pacedModel(flaky, { waitMs: 7, sleep }),
+      prompt: "x",
+    });
+    expect(text).toBe("done");
+    expect(waits).toEqual([7, 7]);
+
+    const stuck = new MockLanguageModelV4({ doGenerate: () => Promise.reject(limited) });
+    await expect(
+      generateText({ model: pacedModel(stuck, { waitMs: 7, waits: 2, sleep }), prompt: "x" }),
+    ).rejects.toBe(limited);
+    expect(waits).toHaveLength(4);
+
+    const broken = new MockLanguageModelV4({ doGenerate: () => Promise.reject(new Error("no")) });
+    await expect(
+      generateText({ model: pacedModel(broken, { waitMs: 7, sleep }), prompt: "x" }),
+    ).rejects.toThrow("no");
+    expect(waits).toHaveLength(4);
+  });
+
   it("transcribes consecutive pages together, a few at a time", () => {
     expect(batches([9, 1, 2, 3, 4, 5, 6, 8])).toEqual([[1, 2, 3, 4, 5], [6], [8, 9]]);
   });
