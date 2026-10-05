@@ -43,7 +43,9 @@ describe("reading a source", () => {
     const user = userEvent.setup();
     wrap(<SourceReadingCard trackId="t1" reading={reading({})} />);
     const card = screen.getByRole("region", { name: "The source" });
-    expect(card).toHaveTextContent("340 pages · 40 for your model to read · about 28 chapters");
+    expect(card).toHaveTextContent(
+      "340 pages · 40 scanned pages for your model to read · about 28 chapters",
+    );
     expect(card).toHaveTextContent("Reading it costs about $0.42 on your key, once.");
     await user.click(screen.getByRole("button", { name: "Read it" }));
     expect(api).toHaveBeenCalledWith("/api/tracks/t1/source/read", { method: "POST" });
