@@ -45,6 +45,7 @@ const track = (importedLesson: TrackSummary["importedLesson"]): TrackSummary => 
   importedLesson,
   files: [],
   source: null,
+  reading: null,
 });
 
 function renderWithQueries(node: ReactNode) {

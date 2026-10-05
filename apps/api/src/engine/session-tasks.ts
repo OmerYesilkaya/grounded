@@ -1,4 +1,15 @@
-import { lessonPassages, mapSource, sourceOpening } from "./source-teaching.js";
+import {
+  assignNextReading,
+  CHAPTER_TEXT,
+  chaptersNamed,
+  nextReadingRecord,
+  recordReading,
+  sessionPassages,
+  SOURCE_PROBE_SUMMARY_PROMPT,
+  sourceOpening,
+  sourcePlanActionsSchema,
+  sourceProbeDecisionSchema,
+} from "./source-teaching.js";
 import {
   allowedBlocksLine,
   assembleSystemPrompt,
@@ -174,6 +185,14 @@ const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. A word the plan leans on that the learner already holds (plain everyday language in its everyday sense, a term they used themselves as the field does, or one the background they describe plainly covers, as React is for a senior front-end developer) is recorded assumed with set-term-status, with their words, their background or its everyday use as evidence, instead of planned; planned terms may rest on it. An idea the plan leans on that the learner holds in another track (under \"Held in the learner's other tracks\", with the same meaning here) is borrowed with borrow-term instead of planned; planned terms may rest on it. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, this is its first plan: record the whole route you presented, every arc in order with the terms it will plan (each planned, with what it rests on), this session's ground in the first. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const SWEEP_REQUEST =
   "settle every term's status from the whole session's evidence, and record any change to the plan or the fix-list. Change the plan's notes a section at a time with edit-plan-notes: the section's heading line as the notes write it, and its new text (null removes the section; a heading no section has adds one at the end). Fold what was \"Noted while planning\" into the sections it belongs to, then remove that section. Change the arcs with set-plan, notes null to keep the notes as they are.";
+/** The homework's request; on a source track whose chapter held, there was no lesson (§4.6). */
+const homeworkRequest = (lessonNeeded: boolean) =>
+  lessonNeeded
+    ? HOMEWORK_REQUEST
+    : HOMEWORK_REQUEST.replace(
+        "(The lesson's checks are done. Assign the homework:",
+        "(The chapter the learner read held, so there was no lesson this session. Assign the homework on what they read, to show a week on that it holds:",
+      );
 const HOMEWORK_REQUEST = `(The lesson's checks are done. Assign the homework: one task, of one kind: predict → verify, a derivation, a build, or explain it to a friend. Write the task itself, as the learner will read it on a page of its own: everything it needs restated in full, and for predict → verify what to predict and how to check it. The app gives the task the answer boxes of its kind (predict → verify: the prediction, locked before they check; what actually happened; reconcile. A derivation: its steps, each with its because. A build: what they made, and what surprised them. Explain it to a friend: one box), so don't write blanks or headings for the answers. What a good answer demonstrates is recorded next and shown with the task by the app; don't list it here. ${allowedBlocksLine("homework", "the homework", ["image", "audio"])} (Images and audio need the lesson's tools, which this call doesn't have.) A video or a link card only to a source from this session's research or lesson; the app checks each one opens and leaves out what doesn't.)`;
 const HOMEWORK_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the homework you just wrote: the kind of its task, a few words naming it, and what a good answer demonstrates.";
@@ -290,8 +309,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       phase === "probe" ? await openExamRecord(db, session.trackId, sessionId) : null;
     // The probe hears what the opening review found; the plan's call adds it itself.
     const found = phase === "probe" ? reviewFound(session) : [];
+    // On a source track, the probe asks about the chapter the learner read with its text in the
+    // prompt (design §4.6).
+    const chapter =
+      phase === "probe" && loaded.source ? (await sessionPassages(db, session)).text : "";
     const extra = [
       ...found,
+      ...(chapter ? [{ heading: CHAPTER_TEXT, body: chapter }] : []),
       ...(checks ? [{ heading: "What happened at the lesson's checks", body: checks }] : []),
       ...(asked ? [{ heading: ASKED_IN_THE_MARGIN, body: asked }] : []),
       ...(reviewed ? [{ heading: HOMEWORK_REVIEWED, body: reviewed }] : []),
@@ -335,9 +359,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // they want to learn (their words as typed) and any files they read here, so the first question
     // builds on them.
     if (messages[0]?.role !== "user") {
-      // A track from a source opens on the source, and the learner's notes on why they read it.
+      // A track from a source opens on the source, the chapter the learner was asked to read, and
+      // their notes on why they read it.
       const opening = track.source
-        ? sourceOpening(track.source.files, track.goal)
+        ? sourceOpening(
+            track.source.files,
+            track.goal,
+            (await chaptersNamed(db, session.trackId, session.sourceChapters.slice(0, 1)))[0] ??
+              null,
+          )
         : `(The learner started a session. They said they want to learn: ${track.goal})`;
       messages.unshift({
         role: "user",
@@ -375,12 +405,20 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
    */
   const closeContext = async (sessionId: string) => {
     const session = await loadSession(db, sessionId);
-    if (session.state.kind !== "final")
+    if (session.state.kind !== "final") {
+      // On a source track the close assigns the next chapter to read, and the recap names it
+      // (design §4.6). Assigning again (the recap written again) lands on the same chapter.
+      const reading = session.sourceChapters.length
+        ? [nextReadingRecord(await assignNextReading(db, session.trackId, session.sourceChapters))]
+        : [];
       return {
         final: false,
-        request: "(Close the session: the recap.)",
-        context: await contextFor(sessionId, "close"),
+        request: reading.length
+          ? "(Close the session: the recap, ending with the next reading.)"
+          : "(Close the session: the recap.)",
+        context: await contextFor(sessionId, "close", reading),
       };
+    }
     const found = { heading: FINAL_FOUND, body: finalRecord(await finalOutcome(db, session)) };
     return {
       final: true,
@@ -788,17 +826,37 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       if (answered) {
         // Its own purpose: a small structured record, made with little reasoning (call-options.ts).
         const decider = await modelFor("probe-decision");
+        // On a source track the decision also says how far the learner has read (design §4.6).
         const decided = await traced(() =>
           withActivity(db, sessionId, { code: "noting-answers" }, () =>
             generateText({
               model: decider,
               system: context.system,
-              output: Output.object({ schema: probeDecisionSchema }),
+              output: Output.object({
+                schema: context.track.source ? sourceProbeDecisionSchema : probeDecisionSchema,
+              }),
               messages: [...context.messages, { role: "user", content: PROBE_DECISION_PROMPT }],
             }),
           ),
         );
         const { output } = decided.value;
+        let refresh = false;
+        const readThrough = sourceProbeDecisionSchema.shape.readThrough.safeParse(
+          (output as { readThrough?: unknown }).readThrough,
+        );
+        if (context.track.source && readThrough.success && readThrough.data !== null) {
+          const [row] = await db
+            .select({ source: tracks.source })
+            .from(tracks)
+            .where(eq(tracks.id, session.trackId));
+          const chapters = await recordReading(
+            db,
+            { id: session.trackId, source: row?.source ?? null },
+            session,
+            readThrough.data,
+          );
+          refresh = chapters !== session.sourceChapters;
+        }
         if (output.actions.length) {
           await recordEdits(db, {
             sessionId,
@@ -822,9 +880,11 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
                 })
               ).output.actions,
           });
-          // The question is written with what was just recorded (the teaching language, the fix-list).
-          context = await contextFor(sessionId, "probe");
+          refresh = true;
         }
+        // The question is written with what was just recorded (the teaching language, the
+        // fix-list, how far they read).
+        if (refresh) context = await contextFor(sessionId, "probe");
         if (output.finished) {
           // What the plan is built on, so it thinks at the default effort: its own call, once.
           const summarizer = await modelFor("probe-summary");
@@ -836,7 +896,15 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               generateText({
                 model: summarizer,
                 system: context.system,
-                messages: [...context.messages, { role: "user", content: PROBE_SUMMARY_PROMPT }],
+                messages: [
+                  ...context.messages,
+                  {
+                    role: "user",
+                    content: context.track.source
+                      ? SOURCE_PROBE_SUMMARY_PROMPT
+                      : PROBE_SUMMARY_PROMPT,
+                  },
+                ],
               }),
           );
           await db
@@ -994,11 +1062,10 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         purpose: "lesson",
         role: "strong",
       });
-      // On a source track, the lesson carries the text of the sections it teaches from (design
-      // §4.6): the source is its ground, so the web is searched only for a lesson of groundwork.
-      const passages = track.source
-        ? await lessonPassages(db, session, track.plan.arcs.find((a) => a.current)?.title ?? null)
-        : { notes: "", cited: [] };
+      // On a source track, the lesson carries the text of the chapters the learner read, whose gaps
+      // it teaches (design §4.6): the source is its ground, so the web is searched only for a
+      // lesson of groundwork.
+      const passages = track.source ? await sessionPassages(db, session) : { notes: "", cited: [] };
       // Before an outline, what the lesson will state and the tutor isn't sure of is checked on the
       // web (design §7.2): a call of its own, which searches only where it needs to. It is
       // best-effort: without it, the lesson is written as it was before.
@@ -1043,7 +1110,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       let writing: Activity | undefined;
       let totalSteps = resume?.outline.steps.length ?? 0;
       try {
-        // The source's sections first, numbered as their passages are; then the pages found.
+        // The source's passages first, numbered as the lesson was given them; then the pages found.
         const sources = [
           ...passages.cited,
           ...(await citableSources(researched.sources, deps.media.web)),
@@ -1325,9 +1392,14 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // exam never holds the session.
     homework: guarded(async ({ sessionId }) => {
       // Tried again after it failed past a message or a record (retry.ts): what was written stands.
-      if (!(await assignmentOf(db, sessionId, "homework")))
-        await writeAssignment(sessionId, "homework", HOMEWORK_REQUEST, HOMEWORK_RECORD_PROMPT);
       const session = await loadSession(db, sessionId);
+      if (!(await assignmentOf(db, sessionId, "homework")))
+        await writeAssignment(
+          sessionId,
+          "homework",
+          homeworkRequest(session.lessonNeeded),
+          HOMEWORK_RECORD_PROMPT,
+        );
       const closing = await arcsClosing(db, session);
       if (closing.length > 0) {
         if (!(await assignmentOf(db, sessionId, "exam"))) {
@@ -1544,7 +1616,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               generateText({
                 model,
                 system,
-                output: Output.object({ schema: planActionsSchema }),
+                output: Output.object({
+                  schema: track.source ? sourcePlanActionsSchema : planActionsSchema,
+                }),
                 messages: [
                   ...conversation,
                   { role: "assistant", content: reply.text },
@@ -1601,23 +1675,16 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
               .update(sessionMessages)
               .set({ planTerms })
               .where(eq(sessionMessages.id, reply.messageId));
-            // A source track's plan is mapped onto the source (design §4.6). If the call fails,
-            // the map stays as it was and the lesson takes the current arc's sections.
+            // On a source track whose chapter held, the plan teaches nothing: approving it goes
+            // to the homework (design §4.6).
             if (track.source) {
-              try {
-                await withActivity(db, sessionId, { code: "recording-plan" }, () =>
-                  mapSource({
-                    db,
-                    model,
-                    system,
-                    messages: [...conversation, { role: "assistant", content: reply.text }],
-                    trackId: session.trackId,
-                    sessionId,
-                  }),
-                );
-              } catch (error) {
-                log.warn({ err: error }, "the plan couldn't be mapped onto the source");
-              }
+              const lessonNeeded = sourcePlanActionsSchema.shape.lessonNeeded.safeParse(
+                (output as { lessonNeeded?: unknown }).lessonNeeded,
+              );
+              await db
+                .update(learningSessions)
+                .set({ lessonNeeded: lessonNeeded.success ? lessonNeeded.data : true })
+                .where(eq(learningSessions.id, sessionId));
             }
             await applyEvent(db, sessionId, { type: "plan-proposed" });
             return;

@@ -271,21 +271,9 @@ export const tracks = pgTable("tracks", {
    * for a track started from the learner's words.
    */
   source: jsonb("source").$type<SourceReading>(),
-  /**
-   * Which of the source's sections (`source_sections.n`) each arc of the plan teaches from, and
-   * which the plan found the learner already holds; written after each plan (design §4.6). Null
-   * until the first plan, and for a track without a source.
-   */
-  sourceMap: jsonb("source_map").$type<SourceMap>(),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });
-
-export interface SourceMap {
-  /** In the plan's order. An arc with no sections is groundwork from outside the source. */
-  arcs: { title: string; sections: number[] }[];
-  known: number[];
-}
 
 /**
  * Files the learner attached when creating the track (design §4.5): a CV, a syllabus, a photo of a
@@ -303,7 +291,7 @@ export const trackFiles = pgTable(
     name: text("name").notNull(),
     /**
      * brought: about the learner, read by the first probe and plan and summarized as "what you
-     * brought" (§4.5) · source: what the track teaches, read into `source_sections` (§4.6).
+     * brought" (§4.5) · source: what the track teaches, read into chapters and passages (§4.6).
      */
     role: text("role").$type<"brought" | "source">().notNull().default("brought"),
     kind: text("kind").$type<AttachmentKind | SourceKind>().notNull(),
@@ -313,7 +301,7 @@ export const trackFiles = pgTable(
     pages: integer("pages"),
     /**
      * Text files and Word documents brought: the text taken out of them. Null for images, PDFs and
-     * sources (a source's text is in its sections).
+     * sources (a source's text is in its passages).
      */
     text: text("text"),
     /**
@@ -328,12 +316,13 @@ export const trackFiles = pgTable(
 );
 
 /**
- * A track's sources read into sections (design §4.6): a chapter, or a part of a long one. Calls
- * carry the list (titles, pages, summaries) and the lesson carries the text of the sections it
- * teaches from.
+ * A source's chapters (design §4.6): the units the learner is asked to read, one at a time. The
+ * author's chapter, or a part of a long one cut at its own sub-headings, or a stretch the model
+ * divided where no structure was. Calls carry the list (titles, pages, summaries); the text is in
+ * the chapter's passages.
  */
-export const sourceSections = pgTable(
-  "source_sections",
+export const sourceChapters = pgTable(
+  "source_chapters",
   {
     id: id(),
     trackId: uuid("track_id")
@@ -342,21 +331,53 @@ export const sourceSections = pgTable(
     fileId: uuid("file_id")
       .notNull()
       .references(() => trackFiles.id, { onDelete: "cascade" }),
-    /** The section's number across the track's sources, from 1, in reading order. */
+    /** The chapter's number across the track's sources, from 1, in reading order. */
     n: integer("n").notNull(),
     title: text("title").notNull(),
+    /** The part of the book it is in, as the book names it; null where the book has no parts. */
+    part: text("part"),
     /**
      * For a PDF: the file's page it starts on (from 1, for a link into the file), and the pages it
      * spans as the book numbers them ("pp. 112–131", "pp. xi–xiv"). Null for a source without pages.
      */
     pageStart: integer("page_start"),
     pages: text("pages"),
+    /** Its text's length, in characters: how long a read it is. */
+    characters: integer("characters").notNull(),
+    /** What it teaches, in a sentence or two, for the tutor; null until written. */
+    summary: text("summary"),
+    /** What it expects the reader to know already, in a sentence; null until written, "" if nothing. */
+    assumes: text("assumes"),
+  },
+  (table) => [uniqueIndex("source_chapters_n").on(table.trackId, table.n)],
+);
+
+/**
+ * A chapter's text in prompt-sized passages (design §4.6): what a probe or a lesson is given, and
+ * what a lesson cites.
+ */
+export const sourcePassages = pgTable(
+  "source_passages",
+  {
+    id: id(),
+    trackId: uuid("track_id")
+      .notNull()
+      .references(() => tracks.id, { onDelete: "cascade" }),
+    chapterId: uuid("chapter_id")
+      .notNull()
+      .references(() => sourceChapters.id, { onDelete: "cascade" }),
+    /** The passage's number across the track's sources, from 1, in reading order. */
+    n: integer("n").notNull(),
+    /** For a PDF: the file's page it starts on, and the pages it spans as the book numbers them. */
+    pageStart: integer("page_start"),
+    pages: text("pages"),
     /** Its text; a PDF's with a "[p. 112]" line where each page starts, so the tutor can cite it. */
     text: text("text").notNull(),
-    /** A sentence or two on what it covers, for the tutor; null until written. */
-    summary: text("summary"),
   },
-  (table) => [uniqueIndex("source_sections_n").on(table.trackId, table.n)],
+  (table) => [
+    uniqueIndex("source_passages_n").on(table.trackId, table.n),
+    index("source_passages_chapter").on(table.chapterId, table.n),
+  ],
 );
 
 export const terms = pgTable(
@@ -462,11 +483,17 @@ export const learningSessions = pgTable(
      */
     probeSummary: text("probe_summary"),
     /**
-     * On a track taught from a source (design §4.6): the sections this session's plan teaches
-     * from, which the lesson carries in place of web research. Null until the plan maps them, and
-     * for a session whose plan teaches only groundwork from outside the source.
+     * On a track taught from a source (design §4.6): the chapters (`source_chapters.n`) this
+     * session is about: the one the learner was asked to read, and those they read beyond it. The
+     * probe asks about them and the lesson teaches their gaps. Empty on any other track, and on a
+     * source track with nothing left to read.
      */
-    sourceSections: jsonb("source_sections").$type<number[]>(),
+    sourceChapters: jsonb("source_chapters").$type<number[]>().notNull().default([]),
+    /**
+     * Whether the session teaches a lesson (design §4.6): false when the plan found the chapter
+     * the learner read held, so the homework follows the plan. True until the plan says otherwise.
+     */
+    lessonNeeded: boolean("lesson_needed").notNull().default(true),
     /**
      * "See where you stand" after a track's first probe (design §7.1): the verdict the learner asked
      * for, written for them from the probe's records, once. The status is null until they ask,

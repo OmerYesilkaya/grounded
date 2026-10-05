@@ -71,7 +71,11 @@ export type SessionEvent =
   | { type: "probe-done" }
   | { type: "skip-to-plan" }
   | { type: "plan-proposed" }
-  | { type: "plan-approved" }
+  /**
+   * The learner approved the plan: the lesson follows; or, on a source track whose chapter held
+   * (design §4.6), nothing is taught and the homework follows (`lesson: false`).
+   */
+  | { type: "plan-approved"; lesson?: boolean }
   | { type: "lesson-ready"; steps: LessonStepInfo[] }
   | { type: "lesson-failed" }
   /**
@@ -205,6 +209,8 @@ export function transition(state: SessionState, event: SessionEvent): Transition
 
     case "plan-approved":
       if (state.phase !== "plan" || state.plan !== "proposed") return no("no-plan-to-approve");
+      if (event.lesson === false)
+        return ok({ phase: "homework", plan: "approved", homework: "writing" });
       return ok({ phase: "lesson", plan: "approved", lesson: { status: "generating", steps: [] } });
 
     case "lesson-ready": {

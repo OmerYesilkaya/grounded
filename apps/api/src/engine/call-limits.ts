@@ -30,8 +30,9 @@ const SECOND = 1000;
  *   and the whole lesson is written in one stream that can run for minutes; the model also plans
  *   the lesson before its first word. The idle limit stays short: a stream that has started
  *   writing and then goes quiet is stuck.
- * - source-transcribe, source-summary: reading a source (design §4.6): a batch of pages copied out
- *   in full, or the summaries of sections tens of thousands of characters long, in one output.
+ * - source-transcribe, source-divide, source-summary: reading a source (design §4.6): a batch of
+ *   pages copied out in full, a long chapter read to divide it, or the summaries of chapters tens
+ *   of thousands of characters long, in one output.
  */
 export const CALL_LIMITS = {
   default: {
@@ -61,7 +62,7 @@ export const CALL_LIMITS = {
 } as const satisfies Record<string, CallLimits>;
 
 export function callLimitsFor(purpose: string): CallLimits {
-  if (purpose === "source-transcribe" || purpose === "source-summary") return CALL_LIMITS.review;
+  if (purpose.startsWith("source-")) return CALL_LIMITS.review;
   return purpose === "plan" || purpose === "lesson" || purpose === "review"
     ? CALL_LIMITS[purpose]
     : CALL_LIMITS.default;

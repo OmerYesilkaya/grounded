@@ -806,10 +806,16 @@ export async function loadTrackContext(
     .from(trackFiles)
     .where(and(eq(trackFiles.trackId, trackId), eq(trackFiles.role, "brought")))
     .orderBy(trackFiles.createdAt, trackFiles.id);
-  // The source the track is taught from (design §4.6), its summaries all there or the current
-  // arc's.
-  const sourceFor = async (currentArc: string | null) => {
-    const source = await loadSourceContext(db, track, currentArc);
+  // The source the track is taught from (design §4.6), and the chapters this session is about.
+  const sourceFor = async () => {
+    const session = options.sessionId
+      ? await db
+          .select({ sourceChapters: learningSessions.sourceChapters })
+          .from(learningSessions)
+          .where(eq(learningSessions.id, options.sessionId))
+          .then((rows) => rows[0] ?? null)
+      : null;
+    const source = await loadSourceContext(db, track, session);
     return source ? { source } : {};
   };
   const whole = {
@@ -825,7 +831,7 @@ export async function loadTrackContext(
     // How this learner learns, across their tracks (design §8): in every call.
     teachingNotes: await loadTeachingNotes(db, track.userId),
   };
-  if (!options.sessionId) return { ...whole, ...(await sourceFor(null)) };
+  if (!options.sessionId) return { ...whole, ...(await sourceFor()) };
 
   const { phase } = options;
   const view = selectTrackView({
@@ -847,7 +853,7 @@ export async function loadTrackContext(
   const byTrack = Map.groupBy(elsewhere.slice(0, HELD_ELSEWHERE_LIMIT), (h) => h.track);
   return {
     ...whole,
-    ...(await sourceFor(view.arcs.find((a) => a.current)?.title ?? null)),
+    ...(await sourceFor()),
     terms: view.terms,
     termsNotListed: view.termsNotListed,
     plan: { arcs: view.arcs, ...notes },

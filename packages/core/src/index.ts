@@ -4,6 +4,7 @@ export {
   joinSystemPrompt,
   parseMethod,
   PHASES,
+  chapterList,
 } from "./prompt.js";
 export type {
   FixItem,
@@ -11,8 +12,8 @@ export type {
   Phase,
   PlanArc,
   PromptContext,
+  SourceChapter,
   SourceContext,
-  SourceSection,
   SystemPrompt,
   TermRow,
   TermStatus,
@@ -175,7 +176,13 @@ export {
   sourceProblem,
   sourcesProblem,
 } from "./sources.js";
-export type { SourceKind, SourceReading, SourceSectionView, SourceStatus } from "./sources.js";
+export type {
+  NextReading,
+  SourceChapterView,
+  SourceKind,
+  SourceReading,
+  SourceStatus,
+} from "./sources.js";
 export {
   dueTag,
   type DueTag,

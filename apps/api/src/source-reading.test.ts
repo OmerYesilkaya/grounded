@@ -1,13 +1,23 @@
-import type { SourceReading, SourceSectionView } from "@grounded/core";
-import { asc, credentials, eq, sourceSections, trackFiles, tracks, users } from "@grounded/db";
+import type { SourceReading } from "@grounded/core";
+import {
+  asc,
+  credentials,
+  eq,
+  sourceChapters,
+  sourcePassages,
+  trackFiles,
+  tracks,
+  users,
+} from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
 import { bookPdf, epub, prose, text } from "./test/files.js";
+import type { SourceProgress } from "./track-source.js";
 
 /*
  * A track taught from a source (design §4.6): reading it, from the upload through the estimate the
- * learner agrees to, to the sections the track is taught from.
+ * learner agrees to, to the chapters the learner reads and the passages the track is taught from.
  */
 
 const models = scriptedModels();
@@ -66,6 +76,18 @@ const until = (trackId: string, status: SourceReading["status"]) =>
 const read = (cookie: string, trackId: string) =>
   t.request(`/api/tracks/${trackId}/source/read`, { method: "POST", cookie });
 
+const progress = async (cookie: string, trackId: string) =>
+  (await (await t.request(`/api/tracks/${trackId}/source`, { cookie })).json()) as SourceProgress;
+
+const summaries = (n: number) =>
+  JSON.stringify({
+    summaries: Array.from({ length: n }, (_, i) => ({
+      n: i + 1,
+      summary: `Chapter ${String(i + 1)}.`,
+      assumes: "",
+    })),
+  });
+
 const BOOK = {
   title: "Networks from the Ground Up",
   pages: [
@@ -82,7 +104,7 @@ const BOOK = {
 };
 
 describe("a track from a source", () => {
-  it("is read once the learner has seen the estimate: scanned pages by the model, then sections and their summaries", async () => {
+  it("is read once the learner has seen the estimate: scanned pages by the model, then chapters with their passages and summaries, and the first chapter assigned", async () => {
     const cookie = await learner();
     const created = await create(
       cookie,
@@ -96,7 +118,7 @@ describe("a track from a source", () => {
     // The survey counts, with no model, and the book's own title names the track.
     await until(trackId, "awaiting");
     const surveyed = await reading(trackId);
-    expect(surveyed).toMatchObject({ status: "awaiting", pages: 5, transcribe: 1 });
+    expect(surveyed).toMatchObject({ status: "awaiting", pages: 5, transcribe: 1, chapters: 3 });
     expect(surveyed?.estimate).toBeGreaterThan(0);
     expect(models.used).toEqual([]);
     const [named] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
@@ -120,9 +142,9 @@ describe("a track from a source", () => {
     models.script("source-summary", {
       text: JSON.stringify({
         summaries: [
-          { n: 1, summary: "The preface." },
-          { n: 2, summary: "What a packet is." },
-          { n: 3, summary: "How routing finds a path." },
+          { n: 1, summary: "The preface.", assumes: "" },
+          { n: 2, summary: "What a packet is.", assumes: "Binary numbers." },
+          { n: 3, summary: "How routing finds a path.", assumes: "" },
         ],
       }),
     });
@@ -135,35 +157,57 @@ describe("a track from a source", () => {
     const sent = JSON.stringify(transcribing?.doGenerateCalls[0]?.prompt);
     expect(sent).toContain("application/pdf");
     expect(sent).toContain("pages 3 of the source");
+    const summarizing = models.used.find((u) => u.purpose === "source-summary")?.model;
+    expect(JSON.stringify(summarizing?.doGenerateCalls[0]?.prompt)).toContain(
+      "## Chapter 2: Packets",
+    );
 
-    const sections = await t.db
+    const chapters = await t.db
       .select()
-      .from(sourceSections)
-      .where(eq(sourceSections.trackId, trackId))
-      .orderBy(asc(sourceSections.n));
-    expect(sections.map((s) => [s.n, s.title, s.pages, s.summary])).toEqual([
-      [1, "Opening pages", "p. 1", "The preface."],
-      [2, "Packets", "pp. 2–3", "What a packet is."],
-      [3, "Routing", "pp. 4–5", "How routing finds a path."],
+      .from(sourceChapters)
+      .where(eq(sourceChapters.trackId, trackId))
+      .orderBy(asc(sourceChapters.n));
+    expect(chapters.map((c) => [c.n, c.title, c.pages, c.summary, c.assumes])).toEqual([
+      [1, "Opening pages", "p. 1", "The preface.", ""],
+      [2, "Packets", "pp. 2–3", "What a packet is.", "Binary numbers."],
+      [3, "Routing", "pp. 4–5", "How routing finds a path.", ""],
     ]);
-    expect(sections[1]?.text).toContain("[p. 3]\n# A diagram page");
+    const passages = await t.db
+      .select()
+      .from(sourcePassages)
+      .where(eq(sourcePassages.trackId, trackId))
+      .orderBy(asc(sourcePassages.n));
+    expect(passages.map((p) => [p.n, p.chapterId, p.pages])).toEqual([
+      [1, chapters[0]?.id, "p. 1"],
+      [2, chapters[1]?.id, "pp. 2–3"],
+      [3, chapters[2]?.id, "pp. 4–5"],
+    ]);
+    expect(passages[1]?.text).toContain("[p. 3]\n# A diagram page");
+    expect(chapters[1]?.characters).toBe(passages[1]?.text.length);
     expect(await reading(trackId)).toMatchObject({
       status: "ready",
       transcribed: 1,
-      sections: 3,
+      chapters: 3,
       summarized: 3,
+      assigned: 1,
+      readThrough: 0,
     });
 
-    const coverage = (await (
-      await t.request(`/api/tracks/${trackId}/source`, { cookie })
-    ).json()) as {
-      sections: SourceSectionView[];
-    };
-    expect(coverage.sections.map((s) => [s.n, s.source, s.status])).toEqual([
-      [1, "networks.pdf", "ahead"],
+    // The first chapter is the one to read first; the rest lie ahead.
+    const shown = await progress(cookie, trackId);
+    expect(shown.chapters.map((c) => [c.n, c.source, c.status])).toEqual([
+      [1, "networks.pdf", "assigned"],
       [2, "networks.pdf", "ahead"],
       [3, "networks.pdf", "ahead"],
     ]);
+    expect(shown.next).toMatchObject({
+      n: 1,
+      source: "networks.pdf",
+      title: "Opening pages",
+      pages: "p. 1",
+      assumes: "",
+      first: true,
+    });
   });
 
   it("keeps what was read when reading stops, and goes on from there when asked again", async () => {
@@ -182,11 +226,7 @@ describe("a track from a source", () => {
       failure: { code: "source-reading-stopped", cause: { code: "our-side" } },
     });
 
-    models.script("source-summary", {
-      text: JSON.stringify({
-        summaries: [1, 2, 3].map((n) => ({ n, summary: `Section ${String(n)}.` })),
-      }),
-    });
+    models.script("source-summary", { text: summaries(3) });
     expect((await read(cookie, trackId)).status).toBe(202);
     await until(trackId, "ready");
     // The page was transcribed once.
@@ -205,7 +245,7 @@ describe("a track from a source", () => {
     });
   });
 
-  it("reads an EPUB and a text file with no model calls but the summaries, numbering sections across them", async () => {
+  it("reads an EPUB and a text file with no model calls but the summaries, numbering chapters across them", async () => {
     const cookie = await learner();
     const long = (topic: string) => Array.from({ length: 20 }, () => prose(topic, 2)).join("\n\n");
     const created = await create(
@@ -223,25 +263,26 @@ describe("a track from a source", () => {
     );
     const trackId = created.body.id;
     await until(trackId, "awaiting");
-    expect(await reading(trackId)).toMatchObject({ pages: 0, transcribe: 0 });
-    models.script("source-summary", {
-      text: JSON.stringify({
-        summaries: [1, 2, 3, 4].map((n) => ({ n, summary: `Section ${String(n)}.` })),
-      }),
-    });
+    expect(await reading(trackId)).toMatchObject({ pages: 0, transcribe: 0, chapters: 4 });
+    models.script("source-summary", { text: summaries(4) });
     await read(cookie, trackId);
     await until(trackId, "ready");
-    const sections = await t.db
-      .select({ n: sourceSections.n, title: sourceSections.title, pages: sourceSections.pages })
-      .from(sourceSections)
-      .where(eq(sourceSections.trackId, trackId))
-      .orderBy(asc(sourceSections.n));
-    expect(sections).toEqual([
+    const chapters = await t.db
+      .select({ n: sourceChapters.n, title: sourceChapters.title, pages: sourceChapters.pages })
+      .from(sourceChapters)
+      .where(eq(sourceChapters.trackId, trackId))
+      .orderBy(asc(sourceChapters.n));
+    expect(chapters).toEqual([
       { n: 1, title: "Beginnings", pages: null },
       { n: 2, title: "Middles", pages: null },
       { n: 3, title: "One", pages: null },
       { n: 4, title: "Two", pages: null },
     ]);
+    expect((await progress(cookie, trackId)).next).toMatchObject({
+      n: 1,
+      source: "history.epub",
+      pages: null,
+    });
   });
 
   it("refuses what can't be a source", async () => {

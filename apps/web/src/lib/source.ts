@@ -1,19 +1,21 @@
-import type { SourceReading, SourceSectionView } from "@grounded/core/sources";
+import type { NextReading, SourceChapterView, SourceReading } from "@grounded/core/sources";
 import { queryOptions } from "@tanstack/react-query";
 import { api } from "./api";
 
-/** A source track's reading and coverage (api: track-source.ts, design §4.6). */
-export interface SourceCoverage {
+/** A source track's reading progress (api: track-source.ts, design §4.6). */
+export interface SourceProgress {
   reading: SourceReading;
-  /** Each section of the source and where the track stands with it; none until it is read. */
-  sections: SourceSectionView[];
+  /** Each chapter of the source and where the learner stands with it; none until it is read. */
+  chapters: SourceChapterView[];
+  /** The chapter to read next; null before the source is read and once every chapter is read. */
+  next: NextReading | null;
 }
 
-/** Fresh each time the page opens: sessions move the coverage on elsewhere. */
+/** Fresh each time the page opens: sessions move the reading on elsewhere. */
 export const sourceQuery = (trackId: string) =>
   queryOptions({
     queryKey: ["source", trackId],
-    queryFn: () => api<SourceCoverage>(`/api/tracks/${trackId}/source`),
+    queryFn: () => api<SourceProgress>(`/api/tracks/${trackId}/source`),
     staleTime: 0,
   });
 

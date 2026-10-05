@@ -643,7 +643,7 @@ about, test and debug.
   finishes and is paid for; it is recorded in `usage_events` like any other, and its content is
   not stored, having no track left to belong to.
 
-### 4.6 Tracks taught from a source (decided 2026-10-03, #63; reworked 2026-10-04, #66)
+### 4.6 Tracks taught from a source (decided 2026-10-03, #63; reworked 2026-10-04, built 2026-10-05, #66)
 
 A track can start from a source the learner brings (a book, a long PDF, an EPUB, lecture notes)
 instead of from their words. The learner reads it themselves, a chapter at a time, in their own
@@ -652,9 +652,9 @@ on it, with the same session loop as any track (checks, homework, arc exams, the
 source, not the web, is the reference. (#66 reversed the first design, in which the tutor taught the
 source whole from its text and the learner never read it: the probe opened on the whole source, the
 plan covered it in dependency order and each lesson taught up to three sections from their text.
-What is built is that design's reading pipeline and prompt plumbing, named with its files below;
-the loop is owed to #66, and a learner who doesn't read still gets the first design, see "Not
-reading".)
+A learner who doesn't read still gets the first design, see "Not reading". A source read into
+sections before chapters existed is read again when its learner says to, its transcribed pages
+kept, so only the chapters' division and summaries are paid for: migration 0039.)
 
 - **Creating one** (§9.5): "Learn from a source" beside "What do you want to learn?". The learner
   adds 1–5 sources (`@grounded/core/sources`: PDF, EPUB, Word, text and Markdown; 100 MB in all,
@@ -692,20 +692,24 @@ reading".)
 - **Chapters are the reading units, passages the prompt units** (decided 2026-10-04, #66: a reader
   stops where the author ends a topic, never where a prompt-sized cut lands).
   - A **chapter** (`source_chapters`) is a stretch the learner is asked to read in one go: the
-    author's chapter by default. A chapter too long for one sitting (over about 40 pages, or
-    100,000 characters in a flowing source) is split at the book's own sub-headings into reading
-    units of their own, never at a character count. A long chapter with no sub-headings, or a book
-    with no structure at all, is divided once by the cheap model (`sources/chapters.ts`) reading its
-    text: where the topic changes, each unit titled. Chapters are numbered across the track's
-    sources in reading order ("Chapter 12", `source_chapters.n`), carry the book's part when it has
-    one, their pages as the book numbers them, and a sentence or two (`sources/summarize.ts`, the
-    cheap model): what the chapter teaches, the terms it introduces, and what it expects the reader
-    to know already.
+    author's chapter by default. A chapter too long for one sitting (over 40 pages, or 100,000
+    characters in a flowing source) is split at the book's own sub-headings into reading units of
+    their own ("Routing: Routing tables"), never at a character count. A long chapter with no
+    sub-headings, or a book with no structure at all, is divided once by the cheap model
+    (`sources/divide.ts`, purpose `source-divide`, a window of 400,000 characters a call) reading
+    its text in units (a PDF's pages, flowing text's paragraphs): where the topic changes, each
+    unit titled. The survey counts such chapters without the model, so the estimate allows for the
+    calls. Chapters are numbered across the track's sources in reading order ("Chapter 12",
+    `source_chapters.n`), carry the book's part when it has one (a PDF's top-level bookmarks when
+    they are few and have bookmarks under them; a heading level above the chapters' in flowing
+    text), their pages as the book numbers them, their length in characters, and two sentences
+    apiece (`sources/summarize.ts`, the cheap model): `summary`, what the chapter teaches and the
+    terms it introduces; `assumes`, what it expects the reader to know already.
   - A **passage** (`source_passages`, the first design's `source_sections`) is a prompt-sized cut of
     a chapter: at most 24,000 characters, split at page or paragraph breaks, a stretch under 1,500
-    joined to its neighbour (`sources/sections.ts`); a PDF passage's text has a `[p. 112]` line where
-    each page starts. Passages carry no summary of their own: the prompt lists chapters, and a
-    lesson or a probe is given the passages of the chapter at hand.
+    joined to its neighbour (`sources/chapters.ts` makes both); a PDF passage's text has a
+    `[p. 112]` line where each page starts. Passages carry no summary of their own: the prompt
+    lists chapters, and a lesson or a probe is given the passages of the chapters at hand.
   - The book's **parts are the arcs**, so an arc exam lands where the author put a break; a book
     without parts has its chapters grouped into arcs by the plan.
 - **The loop, a chapter at a time** (decided 2026-10-04, #66). Reading happens between sessions,
@@ -715,30 +719,42 @@ reading".)
     ("Read first: Chapter 1, pp. 1–28"), with what the book expects its reader to know already in a
     sentence, from the chapters' summaries, so the learner can decide whether they are ready. There is
     no probe before the first reading: the first chapter's probe is the first probe.
-  - **Every later reading is assigned at the close**, as homework is: the close's recap names the next
-    chapter and its pages ("Next: Chapter 5, pp. 132–160"), and the assignment is kept on the track
-    (`tracks.source.assigned`: the chapter, and when) so the track page and the next session's calls
-    know it. "Where you left off" carries it too.
+  - **Every later reading is assigned at the close**, as homework is (`assignNextReading`): the
+    chapter after the last the learner finished, or the session's own chapter again when they
+    didn't finish it, worked out from the session's chapters so a close run again lands on the
+    same one; null once every chapter is read. It is kept on the track (`tracks.source.assigned`,
+    beside `readThrough`, the last chapter finished) so the track page, the closed session's chat
+    and the next session's calls know it, and the close's calls carry it under "The next reading",
+    so the recap names it ("Next: Chapter 5, pp. 132–160") and, where the learner may lack it, what
+    the chapter assumes. "Where you left off" carries it too.
   - **The next session opens with the review (§7.1), then the probe on the chapter read.** The
     probe's first question asks how far they got: a learner who read further is probed on that
     much; one who stopped mid-chapter is probed on what they read and the rest is the next reading;
-    one who didn't read is probed as any learner would be, see "Not reading". The probe's calls are
-    given the chapter's text (its passages, under the lesson's 60,000-character budget), not its
+    one who didn't read is probed as any learner would be, see "Not reading". The session's
+    chapters are kept on it (`learning_sessions.source_chapters`: the one assigned when it started,
+    then those read beyond it). The probe's calls are given the chapters' text (their passages,
+    under a 60,000-character budget, under "The chapter the learner was asked to read"), not the
     summary alone, so the questions are about what the book actually says. It probes, in the
     learner's own words, whether they understood what the chapter teaches, strand by strand, and
     below that whether they hold what it assumed from outside the book; and, before the next
     chapter is read, whether they hold what that one assumes from outside the book. The probe's
-    structured decision records term evidence per idea as on any track; shaky talk is shaky
-    understanding (Omer, #66), so there is no separate verdict to override, and the learner steers
-    as always, in the chat ("teach it anyway", "move on").
+    structured decision (`sourceProbeDecisionSchema`) records term evidence per idea as on any
+    track, and the last chapter the learner said they had finished (`readThrough`), which moves the
+    track's reading on and widens the session to the chapters read; a chapter started but not
+    finished moves nothing. Its summary for the plan (`SOURCE_PROBE_SUMMARY_PROMPT`) says how far
+    they read, what held and what lies below. Shaky talk is shaky understanding (Omer, #66), so
+    there is no separate verdict to override, and the learner steers as always, in the chat ("teach
+    it anyway", "move on").
   - **The plan follows the book.** Its arcs are the parts and its sessions the chapters, in the
     author's order; the plan does not reorder the book. Groundwork the book assumes and the learner
     lacks, found by the probe, is an arc of its own placed before the chapter that needs it, from the
     tutor's own knowledge and research (`SOURCE_PLAN_RESEARCH_PROMPT`, the only research a source
     track's plan does; the source itself is never checked against the web), and said to come from
-    outside the source. Each session's plan names the gaps this session teaches. The learner approves
-    it at the gate as always. The first design's map of the plan onto the source (`mapSource`,
-    `tracks.source_map`, `learning_sessions.source_sections`) goes: a session is about its chapter.
+    outside the source. Each session's plan names the gaps this session teaches, and its record
+    (`sourcePlanActionsSchema`) says whether a lesson is needed (`learning_sessions.lesson_needed`).
+    The learner approves it at the gate as always. The first design's map of the plan onto the
+    source (`mapSource`, `tracks.source_map`, `learning_sessions.source_sections`) is gone: a
+    session is about its chapters.
   - **The lesson teaches only the gaps**: the ideas the probe found shaky, from the chapter's
     passages (`lessonPassages`, in place of the lesson's web research, which still runs for a lesson
     of groundwork only), groundwork first and said to come from outside the source; never the
@@ -746,13 +762,19 @@ reading".)
     `:cite[1]` is the first passage, shown in the lesson's Sources as the file, the chapter and its
     pages, linked to the file. The lesson teaches what the source says as what it says, without
     judging or correcting it (Omer, #63: the learner chose the source). A chapter the probe found
-    held gets no lesson: the session goes from the plan to homework.
+    held gets no lesson: approving the plan goes to the homework (`plan-approved` with
+    `lesson: false`, §7.1), whose request says there was no lesson and asks for homework on what
+    the learner read.
   - **Homework follows every chapter**, lighter when the chapter held (enough to show it still holds
     a week on), as it is the evidence that moves a term from taught to settled (§7.4). The arc exam
     closes a part; the final closes the book.
   - **Reading progress** (`GET /api/tracks/:id/source`, `track-source.ts`, the first design's
-    coverage): each chapter assigned, read (the probe heard it was), probed (and how it went),
-    taught (a lesson taught its gaps) or held (its terms settled), shown on the track page (§9.2).
+    coverage): each chapter ahead, assigned (the one to read next), read (the learner finished it,
+    no session has probed it yet), taught (a session's lesson taught what they missed in it) or
+    held (a session probed it and found nothing to teach); and the next reading, with the chapter's
+    pages (or its length), its file among several and what it assumes. Shown on the track page
+    (§9.2, "Read first" before the track's first session, "Read next" after) and under a closed
+    session's recap in its chat; the track list carries the next reading too (`reading`).
 - **Every call knows the source** (`PromptContext.source`, the track part of the prompt, after "what
   you brought"; `engine/source-teaching.ts`): its chapters by file with their pages and summaries
   (on a source of more than 40 chapters only the current arc's keep their summaries, the titles

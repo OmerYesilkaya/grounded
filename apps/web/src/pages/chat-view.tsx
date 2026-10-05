@@ -12,6 +12,7 @@ import { ChatRule, ReviewDone, ReviewHeading } from "@/components/opening-review
 import { VerdictSeam } from "@/components/probe-verdict";
 import { PlanPicture } from "@/components/session-pictures";
 import { StreamedText, useRevealedText } from "@/components/streamed-text";
+import { NextReadingCard } from "@/components/track-source";
 import { Button } from "@/components/ui/button";
 import { Blocks } from "@/content/blocks";
 import { useT, type Messages } from "@/i18n";
@@ -211,7 +212,15 @@ export function ChatView({
           />
         )}
         {phase === "closed" && !final && track && !track.openSession && (
-          <div className="border-t pt-5">
+          <div className="space-y-4 border-t pt-5">
+            {/* On a source track, the chapter to read before the next session (design §4.6). */}
+            {track.reading && (
+              <NextReadingCard
+                reading={track.reading}
+                several={track.files.filter((f) => f.role === "source").length > 1}
+                compact
+              />
+            )}
             <NextSession track={track} lead={t.sessionDone} label={t.startNext} />
           </div>
         )}

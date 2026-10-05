@@ -18,7 +18,7 @@ import { readSources } from "../files/sources.js";
 import { FileNotFound, type FileStore } from "../files/store.js";
 import { createTrack, deleteTrack } from "../files/track-files.js";
 import { SURVEYING } from "../engine/source-tasks.js";
-import { sourceCoverage } from "../track-source.js";
+import { sourceProgress } from "../track-source.js";
 import { addLogContext } from "../log.js";
 import { trackList } from "../track-list.js";
 import { notFound, refuse } from "../refusals.js";
@@ -185,16 +185,16 @@ export function registerTrackRoutes(
   });
 
   /**
-   * A source track's reading and coverage (design §4.6): where reading stands, and each section
-   * with what the plan and the lessons have done with it.
+   * A source track's reading progress (design §4.6): where reading stands, each chapter and where
+   * the learner stands with it, and the chapter to read next.
    */
   app.get("/api/tracks/:id/source", async (c) => {
     const trackId = c.req.param("id");
     if (!z.uuid().safeParse(trackId).success) return c.json(notFound, 404);
     addLogContext({ trackId });
-    const coverage = await sourceCoverage(db, { userId: c.get("user").id, trackId });
-    if (!coverage) return c.json(notFound, 404);
-    return c.json(coverage);
+    const progress = await sourceProgress(db, { userId: c.get("user").id, trackId });
+    if (!progress) return c.json(notFound, 404);
+    return c.json(progress);
   });
 
   /**

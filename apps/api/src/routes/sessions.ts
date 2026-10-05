@@ -113,6 +113,8 @@ export function registerSessionRoutes(
     // the probe (design §7.1). Either way it takes up the reviews of work handed in since: the next
     // session's review won't go over them again.
     const since = await sinceLastSession(db, trackId);
+    // A source track's session is about the chapter the learner was asked to read (design §4.6).
+    const assigned = track.source?.assigned;
     const [session] = await db
       .insert(learningSessions)
       .values({
@@ -122,6 +124,7 @@ export function registerSessionRoutes(
         state: final
           ? initialFinal(since.waiting)
           : initialSession(since.waiting ? "review" : "probe"),
+        sourceChapters: !final && assigned !== null && assigned !== undefined ? [assigned] : [],
       })
       .returning();
     if (!session) throw new Error("session insert returned nothing");
@@ -295,9 +298,11 @@ export function registerSessionRoutes(
   app.post("/api/sessions/:id/approve-plan", async (c) => {
     const session = await ownSession(c.get("user").id, c.req.param("id"));
     if (!session) return c.json(notFound, 404);
-    const applied = await apply(session.id, { type: "plan-approved" });
+    // On a source track whose chapter held, the plan teaches nothing: the homework follows (§4.6).
+    const lesson = session.lessonNeeded;
+    const applied = await apply(session.id, { type: "plan-approved", lesson });
     if (!applied.ok) return c.json({ error: applied.reason }, 409);
-    await queue.enqueue("lesson", { sessionId: session.id });
+    await queue.enqueue(lesson ? "lesson" : "homework", { sessionId: session.id });
     return c.json({ state: applied.state });
   });
 

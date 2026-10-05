@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { bookPdf, DOCX, epub, prose, text } from "../test/files.js";
 import { extractSource, splitAtHeadings, textLayerUnusable, UnreadableSource } from "./extract.js";
-import { SECTION_MAX, SECTION_MIN, splitText, toSections } from "./sections.js";
+import {
+  LONG_CHAPTER_CHARACTERS,
+  LONG_CHAPTER_PAGES,
+  PASSAGE_MAX,
+  PASSAGE_MIN,
+  splitText,
+  toChapters,
+  type Divider,
+} from "./chapters.js";
 import { summaryBatches } from "./summarize.js";
 import { batches, splitTranscript } from "./transcribe.js";
 
@@ -23,8 +31,8 @@ describe("taking a source's text out", () => {
     expect(extracted.pages[1]?.text).toContain("Sentence 1 about packets");
     expect(extracted.pages[1]?.label).toBe("2");
     expect(extracted.chapters).toEqual([
-      { title: "Packets", page: 2 },
-      { title: "Routing", page: 4 },
+      { title: "Packets", part: null, page: 2, headings: [] },
+      { title: "Routing", part: null, page: 4, headings: [] },
     ]);
   });
 
@@ -38,8 +46,12 @@ describe("taking a source's text out", () => {
       form: "flowing",
       title: "A Short History",
       chapters: [
-        { title: "Beginnings", text: "# Beginnings\n\nThe first paragraph.\n\nThe second." },
-        { title: "Middles", text: "# Middles\n\nThen this happened." },
+        {
+          title: "Beginnings",
+          part: null,
+          text: "# Beginnings\n\nThe first paragraph.\n\nThe second.",
+        },
+        { title: "Middles", part: null, text: "# Middles\n\nThen this happened." },
       ],
     });
   });
@@ -73,61 +85,150 @@ describe("taking a source's text out", () => {
     expect(textLayerUnusable("�".repeat(20) + "x".repeat(100))).toBe(true);
   });
 
-  it("splits markdown at its highest repeated heading", () => {
-    expect(splitAtHeadings("plain text only")).toEqual([{ title: "", text: "plain text only" }]);
+  it("splits markdown at its highest repeated heading, and keeps a few top headings as the parts", () => {
+    expect(splitAtHeadings("plain text only")).toEqual([
+      { title: "", part: null, text: "plain text only" },
+    ]);
     expect(splitAtHeadings("# A\n\nx\n\n# B\n\ny").map((c) => c.title)).toEqual(["A", "B"]);
+    const parted = splitAtHeadings(
+      "# Part I\n\n## One\n\nx\n\n## Two\n\ny\n\n# Part II\n\n## Three\n\nz",
+    );
+    expect(parted.map((c) => [c.title, c.part])).toEqual([
+      ["One", "Part I"],
+      ["Two", "Part I"],
+      ["Three", "Part II"],
+    ]);
   });
 });
 
-describe("a source's sections", () => {
+describe("a source's chapters", () => {
   const page = (n: number, words: string) => ({
     page: n,
     label: String(n),
     text: words,
     needsModel: false,
   });
+  const noDivider: Divider = () => Promise.reject(new Error("not asked"));
 
-  it("are its chapters, with the pages each spans and a line where each page starts", () => {
-    const long = "x".repeat(SECTION_MIN);
-    const sections = toSections({
-      form: "paged",
-      title: null,
-      pages: [page(1, long), page(2, long), page(3, long), page(4, long)],
-      chapters: [
-        { title: "One", page: 1 },
-        { title: "Two", page: 3 },
-      ],
-    });
-    expect(sections.map((s) => [s.title, s.pageStart, s.pages])).toEqual([
-      ["One", 1, "pp. 1–2"],
-      ["Two", 3, "pp. 3–4"],
+  it("are the author's chapters, with the pages each spans, their part, and passages with a line where each page starts", async () => {
+    const long = "x".repeat(PASSAGE_MIN);
+    const { chapters } = await toChapters(
+      {
+        form: "paged",
+        title: null,
+        pages: [page(1, long), page(2, long), page(3, long), page(4, long)],
+        chapters: [
+          { title: "One", part: "Part I", page: 1 },
+          { title: "Two", part: "Part I", page: 3 },
+        ],
+      },
+      noDivider,
+    );
+    expect(chapters.map((c) => [c.title, c.part, c.pageStart, c.pages])).toEqual([
+      ["One", "Part I", 1, "pp. 1–2"],
+      ["Two", "Part I", 3, "pp. 3–4"],
     ]);
-    expect(sections[0]?.text.startsWith("[p. 1]\n")).toBe(true);
+    expect(chapters[0]?.passages[0]?.text.startsWith("[p. 1]\n")).toBe(true);
+    expect(chapters[0]?.characters).toBe(chapters[0]?.passages[0]?.text.length);
   });
 
-  it("split a chapter too long for a lesson into parts, and join one too short to its neighbour", () => {
-    const pages = Array.from({ length: 6 }, (_, i) => page(i + 1, "y".repeat(SECTION_MAX / 2)));
-    const sections = toSections({
-      form: "paged",
-      title: null,
-      pages: [page(0, "Part One"), ...pages].map((p, i) => ({
-        ...p,
-        page: i + 1,
-        label: String(i + 1),
-      })),
-      chapters: [{ title: "Long chapter", page: 2 }],
-    });
-    expect(sections.map((s) => s.title)).toEqual([
-      "Long chapter (part 1 of 6)",
-      "Long chapter (part 2 of 6)",
-      "Long chapter (part 3 of 6)",
-      "Long chapter (part 4 of 6)",
-      "Long chapter (part 5 of 6)",
-      "Long chapter (part 6 of 6)",
+  it("cut a chapter's text into passages of at most a prompt's share, and join a stretch too short to its neighbour", async () => {
+    const pages = Array.from({ length: 6 }, (_, i) => page(i + 1, "y".repeat(PASSAGE_MAX / 2)));
+    const { chapters } = await toChapters(
+      {
+        form: "paged",
+        title: null,
+        pages: [page(0, "Part One"), ...pages].map((p, i) => ({
+          ...p,
+          page: i + 1,
+          label: String(i + 1),
+        })),
+        chapters: [{ title: "Long chapter", part: null, page: 2 }],
+      },
+      noDivider,
+    );
+    // The part title page joined the chapter; the chapter is one reading in six passages.
+    expect(chapters.map((c) => [c.title, c.pages, c.passages.length])).toEqual([
+      ["Long chapter", "pp. 1–7", 6],
     ]);
-    // The part title page joined the chapter's first part.
-    expect(sections[0]?.pages).toBe("pp. 1–2");
-    for (const s of sections) expect(s.text.length).toBeLessThanOrEqual(SECTION_MAX + 20);
+    for (const p of chapters[0]?.passages ?? [])
+      expect(p.text.length).toBeLessThanOrEqual(PASSAGE_MAX + 20);
+  });
+
+  it("cut a chapter too long for a sitting at its own headings, never at a count of pages", async () => {
+    const pages = Array.from({ length: LONG_CHAPTER_PAGES + 10 }, (_, i) =>
+      page(i + 1, "z".repeat(PASSAGE_MIN)),
+    );
+    const { chapters, undivided } = await toChapters(
+      {
+        form: "paged",
+        title: null,
+        pages,
+        chapters: [
+          {
+            title: "Routing",
+            part: null,
+            page: 1,
+            headings: [
+              { title: "Routing tables", page: 20 },
+              { title: "Finding a path", page: 35 },
+            ],
+          },
+        ],
+      },
+      noDivider,
+    );
+    expect(undivided).toBe(0);
+    expect(chapters.map((c) => [c.title, c.pages])).toEqual([
+      ["Routing", "pp. 1–19"],
+      ["Routing: Routing tables", "pp. 20–34"],
+      ["Routing: Finding a path", "pp. 35–50"],
+    ]);
+  });
+
+  it("have the model divide a long chapter with no headings where its topics change, and count such chapters for the estimate", async () => {
+    const pages = Array.from({ length: LONG_CHAPTER_PAGES + 10 }, (_, i) =>
+      page(i + 1, "w".repeat(PASSAGE_MIN)),
+    );
+    const extracted = {
+      form: "paged" as const,
+      title: null,
+      pages,
+      chapters: [{ title: "Everything", part: null, page: 1 }],
+    };
+    const counted = await toChapters(extracted, null);
+    expect(counted.undivided).toBe(1);
+    expect(counted.chapters.map((c) => c.title)).toEqual(["Everything"]);
+    const asked: { title: string; units: number }[] = [];
+    const divider: Divider = (chapter) => {
+      asked.push({ title: chapter.title, units: chapter.units.length });
+      return Promise.resolve([
+        { at: 0, title: "Beginnings" },
+        { at: 25, title: "Middles" },
+        { at: 99, title: "Out of range" },
+      ]);
+    };
+    const { chapters } = await toChapters(extracted, divider);
+    expect(asked).toEqual([{ title: "Everything", units: 50 }]);
+    expect(chapters.map((c) => [c.title, c.pages])).toEqual([
+      ["Everything: Beginnings", "pp. 1–25"],
+      ["Everything: Middles", "pp. 26–50"],
+    ]);
+  });
+
+  it("cut long flowing text at the heading level below the chapter's own", async () => {
+    const body = (topic: string) => Array.from({ length: 30 }, () => prose(topic, 20)).join("\n\n");
+    const text = `# Networks\n\n${body("intro")}\n\n## Packets\n\n${body("packets")}\n\n## Routing\n\n${body("routing")}`;
+    expect(text.length).toBeGreaterThan(LONG_CHAPTER_CHARACTERS);
+    const { chapters } = await toChapters(
+      { form: "flowing", title: null, chapters: [{ title: "Networks", part: null, text }] },
+      noDivider,
+    );
+    expect(chapters.map((c) => c.title)).toEqual([
+      "Networks",
+      "Networks: Packets",
+      "Networks: Routing",
+    ]);
   });
 
   it("split flowing text between paragraphs", () => {
@@ -151,9 +252,9 @@ describe("reading with the model", () => {
     ]);
   });
 
-  it("summarizes sections in batches that stay within a call's reading", () => {
-    const sections = [3000, 3000, 5000, 1000].map((n, i) => ({ n: i, text: "s".repeat(n) }));
-    expect(summaryBatches(sections, 6000).map((b) => b.map((s) => s.n))).toEqual([
+  it("summarizes chapters in batches that stay within a call's reading", () => {
+    const chapters = [3000, 3000, 5000, 1000].map((n, i) => ({ n: i, text: "s".repeat(n) }));
+    expect(summaryBatches(chapters, 6000).map((b) => b.map((s) => s.n))).toEqual([
       [0, 1],
       [2, 3],
     ]);

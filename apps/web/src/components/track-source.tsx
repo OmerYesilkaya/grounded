@@ -1,4 +1,4 @@
-import type { SourceReading, SourceSectionView } from "@grounded/core/sources";
+import type { NextReading, SourceChapterView, SourceReading } from "@grounded/core/sources";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -60,7 +60,7 @@ export function SourceReadingCard({
               reading.transcribe > 0 ? t.toTranscribe(n(reading.transcribe)) : t.allText,
             ]
           : []),
-        t.sections(n(reading.sections)),
+        t.chapters(n(reading.chapters)),
       ];
       return card(
         t.awaitingTitle,
@@ -85,7 +85,7 @@ export function SourceReadingCard({
       const [done, of] =
         reading.transcribe > 0 && !summarizing
           ? [reading.transcribed, reading.transcribe]
-          : [reading.summarized, reading.sections];
+          : [reading.summarized, reading.chapters];
       const line =
         reading.transcribe > 0 && !summarizing
           ? t.transcribing(n(done), n(of))
@@ -143,51 +143,122 @@ export function SourceReadingCard({
   }
 }
 
-const STATUSES: readonly SourceSectionView["status"][] = ["taught", "known", "planned", "ahead"];
+/** About how many characters a printed page holds, for a source without pages. */
+const PAGE_CHARACTERS = 3_000;
+/** About how many characters a word is, for a short source without pages. */
+const WORD_CHARACTERS = 6;
 
-/** Above this many sections, the list opens on request. */
+/**
+ * The chapter the learner is asked to read before the next session (design §4.6): named with its
+ * pages and what it expects its reader to know, read in their own copy. `compact` is the form a
+ * closed session's chat shows under its recap.
+ */
+export function NextReadingCard({
+  reading,
+  several,
+  compact,
+}: {
+  reading: NextReading;
+  /** Whether the track has several sources, so the chapter's file is named. */
+  several: boolean;
+  compact?: boolean;
+}) {
+  const t = useT().track.source;
+  const format = useFormat();
+  const length =
+    reading.pages ??
+    (reading.characters >= PAGE_CHARACTERS * 4
+      ? t.aboutPages(format.number(Math.round(reading.characters / PAGE_CHARACTERS)))
+      : t.aboutWords(format.number(Math.round(reading.characters / WORD_CHARACTERS / 10) * 10)));
+  const facts = [several ? reading.source : null, length].filter(Boolean).join(" · ");
+  const eyebrow = reading.first ? t.readFirst : t.readNext;
+  return (
+    <section
+      aria-label={eyebrow}
+      className={cn(
+        "rounded-xl border bg-card text-[14.5px] leading-relaxed",
+        compact ? "px-4 py-3.5" : "px-5 py-4.5 sm:px-6",
+      )}
+    >
+      <p className="text-[11px] font-semibold tracking-[0.14em] text-primary uppercase">
+        {eyebrow}
+      </p>
+      <h2
+        className={cn(
+          "mt-1 font-serif leading-snug font-semibold",
+          compact ? "text-[17px]" : "text-[19px]",
+        )}
+      >
+        {t.chapter(format.number(reading.n))}
+        {reading.title && (
+          <>
+            <span className="text-muted-foreground"> · </span>
+            {reading.title}
+          </>
+        )}
+      </h2>
+      {facts && <p className="mt-1 text-muted-foreground">{facts}</p>}
+      {reading.assumes && <p className="mt-2">{t.expects(reading.assumes)}</p>}
+      {!compact && <p className="mt-2 text-muted-foreground">{t.inYourCopy}</p>}
+    </section>
+  );
+}
+
+const STATUSES: readonly SourceChapterView["status"][] = [
+  "held",
+  "taught",
+  "read",
+  "assigned",
+  "ahead",
+];
+
+/** Above this many chapters, the list opens on request. */
 const OPEN_UP_TO = 12;
 
 /**
- * How much of the source the track has covered (design §4.6): a count by status, then each
- * section with its pages and where the track stands with it.
+ * The learner's reading of the source (design §4.6): a count by where they stand, then each
+ * chapter with its pages and where they stand with it.
  */
-export function SourceCoverageView({ trackId }: { trackId: string }) {
-  const coverage = useQuery(sourceQuery(trackId));
+export function SourceProgressView({ trackId }: { trackId: string }) {
+  const progress = useQuery(sourceQuery(trackId));
   const t = useT().track.source;
   const format = useFormat();
-  const sections = coverage.data?.sections ?? [];
-  if (sections.length === 0) return null;
+  const chapters = progress.data?.chapters ?? [];
+  if (chapters.length === 0) return null;
   const counts = STATUSES.map((status) => ({
     status,
-    count: sections.filter((s) => s.status === status).length,
+    count: chapters.filter((c) => c.status === status).length,
   })).filter((c) => c.count > 0);
-  const several = new Set(sections.map((s) => s.source)).size > 1;
+  const several = new Set(chapters.map((c) => c.source)).size > 1;
+  const parts = new Set(chapters.map((c) => c.part)).size > 1;
   const list = (
     <ol className="mt-3 divide-y border-y text-[14px]">
-      {sections.map((section) => (
-        <li key={section.n} className="flex items-baseline gap-3 py-2">
+      {chapters.map((chapter) => (
+        <li key={chapter.n} className="flex items-baseline gap-3 py-2">
           <span className="w-7 shrink-0 text-right text-xs text-subtle-foreground tabular-nums">
-            {section.n}
+            {chapter.n}
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block truncate">{section.title}</span>
-            {(section.pages !== null || several) && (
+            <span className="block truncate">{chapter.title}</span>
+            {(chapter.pages !== null || several || (parts && chapter.part)) && (
               <span className="block truncate text-xs text-subtle-foreground">
-                {[several ? section.source : null, section.pages].filter(Boolean).join(" · ")}
+                {[several ? chapter.source : null, parts ? chapter.part : null, chapter.pages]
+                  .filter(Boolean)
+                  .join(" · ")}
               </span>
             )}
           </span>
           <span
             className={cn(
               "shrink-0 text-xs",
-              section.status === "taught" && "font-medium text-primary",
-              section.status === "known" && "text-foreground",
-              (section.status === "planned" || section.status === "ahead") &&
-                "text-subtle-foreground",
+              (chapter.status === "taught" || chapter.status === "held") &&
+                "font-medium text-primary",
+              chapter.status === "assigned" && "font-medium text-foreground",
+              chapter.status === "read" && "text-foreground",
+              chapter.status === "ahead" && "text-subtle-foreground",
             )}
           >
-            {t.status[section.status]}
+            {t.status[chapter.status]}
           </span>
         </li>
       ))}
@@ -195,15 +266,15 @@ export function SourceCoverageView({ trackId }: { trackId: string }) {
   );
   return (
     <section className="mt-12">
-      <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">{t.coverage}</h2>
-      <p className="mt-1.5 text-[13px] text-muted-foreground">{t.coverageNote}</p>
+      <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">{t.progress}</h2>
+      <p className="mt-1.5 text-[13px] text-muted-foreground">{t.progressNote}</p>
       <p className="mt-3 text-sm">
         {counts.map((c) => `${format.number(c.count)} ${t.counts[c.status]}`).join(" · ")}
       </p>
-      {sections.length > OPEN_UP_TO ? (
+      {chapters.length > OPEN_UP_TO ? (
         <details className="mt-2">
           <summary className="cursor-pointer text-sm text-primary">
-            {t.showSections(format.number(sections.length))}
+            {t.showChapters(format.number(chapters.length))}
           </summary>
           {list}
         </details>

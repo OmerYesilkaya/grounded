@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assemblePrompt,
   assembleSystemPrompt,
+  chapterList,
   joinSystemPrompt,
   parseMethod,
   PHASES,
@@ -46,51 +47,73 @@ const context: PromptContext = {
 
 const SOURCE: NonNullable<PromptContext["source"]> = {
   files: ["networks.pdf", "lecture-notes.md"],
-  sections: [
+  chapters: [
     {
       n: 1,
       file: "networks.pdf",
       title: "Packets",
+      part: "Part I: Moving bytes",
       pages: "pp. 2–30",
       summary: "What a packet is.",
+      assumes: "Binary numbers.",
     },
-    { n: 2, file: "networks.pdf", title: "Routing", pages: "pp. 31–60", summary: null },
-    { n: 3, file: "lecture-notes.md", title: "Week 1", pages: null, summary: "Sockets." },
+    {
+      n: 2,
+      file: "networks.pdf",
+      title: "Routing",
+      part: "Part I: Moving bytes",
+      pages: "pp. 31–60",
+      summary: null,
+      assumes: null,
+    },
+    {
+      n: 3,
+      file: "lecture-notes.md",
+      title: "Week 1",
+      part: null,
+      pages: null,
+      summary: "Sockets.",
+      assumes: "",
+    },
   ],
-  map: {
-    arcs: [
-      { title: "Binary and bytes", sections: [] },
-      { title: "Packets and routes", sections: [1, 2] },
-    ],
-    known: [3],
-  },
+  readThrough: 1,
+  assigned: 2,
+  session: [2],
 };
 
 describe("a source track's prompt", () => {
-  it("carries the source's sections by file, and what the plan teaches from where", () => {
+  it("carries the source's chapters by file and part, how far the learner has read, and the session's chapter", () => {
     const prompt = assembleSystemPrompt(parseMethod(FIXTURE), "plan", { source: SOURCE });
     expect(prompt.track).toContain(
       [
         "## The source",
         "",
-        "The learner chose to learn from these sources: networks.pdf, lecture-notes.md. Its sections, numbered across them:",
+        "The learner chose to learn from these sources: networks.pdf, lecture-notes.md. They read it themselves, a chapter at a time, in their own copy. Its chapters, numbered across them:",
         "",
         "### networks.pdf",
         "",
-        "- §1 Packets (pp. 2–30): What a packet is.",
-        "- §2 Routing (pp. 31–60)",
+        "Part I: Moving bytes:",
+        "- Chapter 1 Packets (pp. 2–30): What a packet is. Expects the reader to know: Binary numbers.",
+        "- Chapter 2 Routing (pp. 31–60)",
         "",
         "### lecture-notes.md",
         "",
-        "- §3 Week 1: Sockets.",
+        "- Chapter 3 Week 1: Sockets.",
         "",
-        "What the plan teaches from where:",
+        "Reading:",
         "",
-        "- Binary and bytes: groundwork from outside the source",
-        "- Packets and routes: §1, §2",
-        "- Already held by the learner: §3",
+        "- They have finished reading through Chapter 1.",
+        "- Asked to read next: Chapter 2.",
+        "- This session is about Chapter 2: the probe asks about it, and a lesson teaches only what the learner missed there.",
       ].join("\n"),
     );
+  });
+
+  it("names a run of chapters as one", () => {
+    expect(chapterList([])).toBe("");
+    expect(chapterList([4])).toBe("Chapter 4");
+    expect(chapterList([4, 5, 6])).toBe("Chapters 4–6");
+    expect(chapterList([4, 6])).toBe("Chapters 4, 6");
   });
 
   it("rejects a section for tracks the method doesn't know", () => {

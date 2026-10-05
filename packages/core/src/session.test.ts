@@ -71,6 +71,15 @@ describe("session phases", () => {
     expect(approved.lesson).toEqual({ status: "generating", steps: [] });
   });
 
+  it("goes from the plan to the homework when the plan teaches nothing (a source's chapter held)", () => {
+    const proposed = run(initialSession(), { type: "probe-done" }, { type: "plan-proposed" });
+    const approved = run(proposed, { type: "plan-approved", lesson: false });
+    expect(approved.phase).toBe("homework");
+    expect(approved.homework).toBe("writing");
+    expect(approved.plan).toBe("approved");
+    expect(run(approved, { type: "homework-assigned" }).homework).toBe("assigned");
+  });
+
   it("sends the plan back for changes when the learner replies to it", () => {
     const proposed = run(initialSession(), { type: "probe-done" }, { type: "plan-proposed" });
     const revising = run(proposed, { type: "learner-message" });

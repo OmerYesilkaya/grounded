@@ -1,67 +1,156 @@
-import type { SourceReading, SourceSectionView } from "@grounded/core";
+import type { NextReading, SourceChapterView, SourceReading } from "@grounded/core";
 import {
   and,
   asc,
   eq,
-  isNotNull,
+  inArray,
   learningSessions,
-  sourceSections,
+  sourceChapters,
   trackFiles,
   tracks,
   type Db,
 } from "@grounded/db";
 
-export interface SourceCoverage {
+export interface SourceProgress {
   reading: SourceReading;
-  sections: SourceSectionView[];
+  chapters: SourceChapterView[];
+  /** The chapter to read next; null before the source is read and once every chapter is read. */
+  next: NextReading | null;
 }
 
 /**
- * A source track's coverage (design §4.6): each section of its sources, and what the track has done
- * with it. Taught where a session's lesson taught from it, known where the plan found the learner
- * already holds it, planned where an arc of the plan covers it. Null for a track that isn't the
+ * A source track's reading progress (design §4.6): each chapter of its sources, and where the
+ * learner stands with it. Assigned where it is the one to read next, read where they have finished
+ * it and no session has probed it yet, taught where a session's lesson taught what they missed in
+ * it, held where a session probed it and found nothing to teach. Null for a track that isn't the
  * learner's or has no source.
  */
-export async function sourceCoverage(
+export async function sourceProgress(
   db: Db,
   { userId, trackId }: { userId: string; trackId: string },
-): Promise<SourceCoverage | null> {
+): Promise<SourceProgress | null> {
   const [track] = await db
-    .select({ source: tracks.source, map: tracks.sourceMap })
+    .select({ source: tracks.source })
     .from(tracks)
     .where(and(eq(tracks.id, trackId), eq(tracks.userId, userId)));
   if (!track?.source) return null;
-  const sections = await db
+  const chapters = await db
     .select({
-      n: sourceSections.n,
-      title: sourceSections.title,
-      pages: sourceSections.pages,
+      n: sourceChapters.n,
+      title: sourceChapters.title,
+      part: sourceChapters.part,
+      pages: sourceChapters.pages,
       source: trackFiles.name,
     })
-    .from(sourceSections)
-    .innerJoin(trackFiles, eq(trackFiles.id, sourceSections.fileId))
-    .where(eq(sourceSections.trackId, trackId))
-    .orderBy(asc(sourceSections.n));
+    .from(sourceChapters)
+    .innerJoin(trackFiles, eq(trackFiles.id, sourceChapters.fileId))
+    .where(eq(sourceChapters.trackId, trackId))
+    .orderBy(asc(sourceChapters.n));
   const sessions = await db
-    .select({ sections: learningSessions.sourceSections, state: learningSessions.state })
+    .select({
+      chapters: learningSessions.sourceChapters,
+      state: learningSessions.state,
+      lessonNeeded: learningSessions.lessonNeeded,
+    })
     .from(learningSessions)
-    .where(and(eq(learningSessions.trackId, trackId), isNotNull(learningSessions.sourceSections)));
-  const taught = new Set(
-    sessions.filter((s) => s.state.lesson.status === "ready").flatMap((s) => s.sections ?? []),
-  );
-  const known = new Set(track.map?.known ?? []);
-  const planned = new Set(track.map?.arcs.flatMap((a) => a.sections) ?? []);
+    .where(eq(learningSessions.trackId, trackId));
+  // A session's chapters are probed once its plan is in; taught once its lesson is, held when its
+  // plan found nothing to teach.
+  const taught = new Set<number>();
+  const held = new Set<number>();
+  for (const s of sessions) {
+    if (s.state.plan === "none") continue;
+    for (const n of s.chapters) {
+      if (s.lessonNeeded) {
+        if (
+          s.state.lesson.status === "ready" ||
+          s.state.phase === "homework" ||
+          s.state.phase === "close" ||
+          s.state.phase === "closed"
+        )
+          taught.add(n);
+      } else held.add(n);
+    }
+  }
+  const readThrough = track.source.readThrough ?? 0;
+  const assigned = track.source.assigned ?? null;
+  const first = sessions.length === 0;
   return {
     reading: track.source,
-    sections: sections.map((s) => ({
-      ...s,
-      status: taught.has(s.n)
+    chapters: chapters.map((c) => ({
+      ...c,
+      status: taught.has(c.n)
         ? "taught"
-        : known.has(s.n)
-          ? "known"
-          : planned.has(s.n)
-            ? "planned"
-            : "ahead",
+        : held.has(c.n)
+          ? "held"
+          : c.n <= readThrough
+            ? "read"
+            : c.n === assigned
+              ? "assigned"
+              : "ahead",
     })),
+    next: await nextReading(db, { trackId, source: track.source }, first),
   };
+}
+
+/** The chapter a learner is asked to read next, as the track shows it; null when there is none. */
+export async function nextReading(
+  db: Db,
+  track: { trackId: string; source: SourceReading | null },
+  first: boolean,
+): Promise<NextReading | null> {
+  const assigned = track.source?.assigned;
+  if (track.source?.status !== "ready" || assigned === null || assigned === undefined) return null;
+  const [found] = await nextReadings(
+    db,
+    [{ ...track, assigned }],
+    first ? new Set([track.trackId]) : new Set(),
+  );
+  return found?.next ?? null;
+}
+
+/** The next readings of several tracks at once (the track list). */
+export async function nextReadings(
+  db: Db,
+  assigned: readonly { trackId: string; assigned: number }[],
+  firsts: ReadonlySet<string>,
+): Promise<{ trackId: string; next: NextReading }[]> {
+  if (assigned.length === 0) return [];
+  const rows = await db
+    .select({
+      trackId: sourceChapters.trackId,
+      n: sourceChapters.n,
+      title: sourceChapters.title,
+      pages: sourceChapters.pages,
+      characters: sourceChapters.characters,
+      assumes: sourceChapters.assumes,
+      source: trackFiles.name,
+    })
+    .from(sourceChapters)
+    .innerJoin(trackFiles, eq(trackFiles.id, sourceChapters.fileId))
+    .where(
+      inArray(
+        sourceChapters.trackId,
+        assigned.map((a) => a.trackId),
+      ),
+    );
+  return assigned.flatMap(({ trackId, assigned: n }) => {
+    const row = rows.find((r) => r.trackId === trackId && r.n === n);
+    return row
+      ? [
+          {
+            trackId,
+            next: {
+              n: row.n,
+              source: row.source,
+              title: row.title,
+              pages: row.pages,
+              characters: row.characters,
+              assumes: row.assumes ?? "",
+              first: firsts.has(trackId),
+            },
+          },
+        ]
+      : [];
+  });
 }

@@ -5,7 +5,8 @@ import {
   credentials,
   eq,
   isNull,
-  sourceSections,
+  sourceChapters,
+  sourcePassages,
   sql,
   trackFiles,
   tracks,
@@ -13,13 +14,15 @@ import {
 } from "@grounded/db";
 import { cheapModelFor, findModel, modelReads } from "@grounded/providers";
 import type { Task, TaskList } from "graphile-worker";
+import { v7 as uuidv7 } from "uuid";
 import type { FileStore } from "../files/store.js";
 import { addLogContext, log } from "../log.js";
+import { toChapters, type Divider, type DraftChapter } from "../sources/chapters.js";
+import { divideChapter } from "../sources/divide.js";
 import { readingEstimate, TRANSCRIBED_PAGE_CHARACTERS } from "../sources/estimate.js";
 import { extractSource, UnreadableSource, type Extracted } from "../sources/extract.js";
-import { SECTION_MAX, toSections } from "../sources/sections.js";
 import {
-  summarizeSections,
+  summarizeChapters,
   summaryBatches,
   SUMMARY_BATCH_CHARACTERS,
 } from "../sources/summarize.js";
@@ -29,9 +32,9 @@ import { causeOf, type ModelAccess } from "./model-call.js";
 /*
  * Reading a track's sources (design §4.6), in two jobs. The survey takes the text out with no
  * model, counts the pages the model has to read and estimates the cost; the learner sees it and
- * says to read. The reading transcribes those pages, splits the sources into sections and
- * summarizes each, keeping what it has done as it goes, so reading that stops starts again where
- * it stopped.
+ * says to read. The reading transcribes those pages, divides the sources into chapters (the units
+ * the learner reads) and their passages, summarizes each chapter, and assigns the first to read,
+ * keeping what it has done as it goes, so reading that stops starts again where it stopped.
  */
 
 export interface SourceTaskDependencies {
@@ -50,10 +53,12 @@ export const SURVEYING: SourceReading = {
   pages: 0,
   transcribe: 0,
   transcribed: 0,
-  sections: 0,
+  chapters: 0,
   summarized: 0,
   estimate: null,
   failure: null,
+  assigned: null,
+  readThrough: 0,
 };
 
 /** Merges a change into a track's reading. */
@@ -131,6 +136,20 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
           .map((p) => p.page)
       : [];
 
+  /** A source's text with the pages the model has read in place of their empty text layers. */
+  const withTranscripts = (source: OpenedSource): Extracted => {
+    const { extracted } = source;
+    return extracted.form === "paged"
+      ? {
+          ...extracted,
+          pages: extracted.pages.map((p) => ({
+            ...p,
+            text: source.file.transcripts[String(p.page)] ?? p.text,
+          })),
+        }
+      : extracted;
+  };
+
   const fail = (trackId: string, failure: SourceFailure) =>
     updateReading(db, trackId, { status: "failed", failure });
 
@@ -147,7 +166,10 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
           code: "source-reading-stopped",
           cause: cause ?? { code: "our-side" },
         });
-        if (!cause) throw error;
+        if (!cause) {
+          log.error({ err: error }, "reading a source failed on our side");
+          throw error;
+        }
         log.warn({ err: error }, "reading a source stopped at a model call");
       }
     };
@@ -161,6 +183,8 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
       let pages = 0;
       let transcribe = 0;
       let characters = 0;
+      let chapters = 0;
+      let divide = 0;
       for (const source of opened) {
         const { extracted } = source;
         if (extracted.form === "paged") {
@@ -172,6 +196,11 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
               ? TRANSCRIBED_PAGE_CHARACTERS
               : (source.file.transcripts[String(page.page)] ?? page.text).length;
         } else characters += extracted.chapters.reduce((sum, c) => sum + c.text.length, 0);
+        // The chapters as the structure gives them; a long one with no headings is divided by the
+        // model once the pages are read, so it counts as one here and its division is paid for.
+        const counted = await toChapters(withTranscripts(source), null);
+        chapters += counted.chapters.length;
+        divide += counted.undivided;
       }
       if (characters > SOURCE_LIMITS.characters)
         return fail(trackId, {
@@ -193,20 +222,20 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
           .update(tracks)
           .set({ title: cleanTitle(title) ?? undefined })
           .where(eq(tracks.id, trackId));
-      const sections = Math.max(opened.length, Math.ceil(characters / (SECTION_MAX * 0.6)));
       await updateReading(db, trackId, {
         status: "awaiting",
         pages,
         transcribe,
         transcribed: 0,
-        sections,
+        chapters,
         estimate: reader
           ? readingEstimate({
               modelId: reader.id,
               transcribe,
               batch: TRANSCRIBE_BATCH,
               characters,
-              sections,
+              chapters,
+              divide,
               summaryBatchCharacters: SUMMARY_BATCH_CHARACTERS,
             })
           : null,
@@ -216,20 +245,15 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
     "read-source": guarded(async ({ trackId }) => {
       const track = await loadTrack(trackId);
       if (track.source?.status !== "reading") return;
-      const model = () =>
-        models.model({
-          userId: track.userId,
-          trackId,
-          purpose: "source-transcribe",
-          role: "cheap",
-        });
+      const model = (purpose: "source-transcribe" | "source-divide" | "source-summary") =>
+        models.model({ userId: track.userId, trackId, purpose, role: "cheap" });
 
-      // Sections are made once, after every page is read; reading that starts again after them
+      // Chapters are made once, after every page is read; reading that starts again after them
       // only summarizes what is left.
       const [made] = await db
-        .select({ n: sourceSections.n })
-        .from(sourceSections)
-        .where(eq(sourceSections.trackId, trackId))
+        .select({ n: sourceChapters.n })
+        .from(sourceChapters)
+        .where(eq(sourceChapters.trackId, trackId))
         .limit(1);
       if (!made) {
         const opened = await openSources(trackId);
@@ -241,7 +265,7 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
           await transcribePages({
             pdf: source.bytes,
             pages,
-            model,
+            model: () => model("source-transcribe"),
             onBatch: async (read) => {
               const added = Object.fromEntries([...read].map(([p, text]) => [String(p), text]));
               source.file.transcripts = { ...source.file.transcripts, ...added };
@@ -256,63 +280,86 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
             },
           });
         }
-        // Each file's sections, numbered across the track in the order the files came.
-        const rows = opened.flatMap((source) => {
-          const { extracted } = source;
-          const withTranscripts: Extracted =
-            extracted.form === "paged"
-              ? {
-                  ...extracted,
-                  pages: extracted.pages.map((p) => ({
-                    ...p,
-                    text: source.file.transcripts[String(p.page)] ?? p.text,
-                  })),
-                }
-              : extracted;
-          return toSections(withTranscripts).map((s) => ({ ...s, fileId: source.file.id }));
-        });
+        // Each file's chapters, numbered across the track in the order the files came; a long
+        // chapter with no headings is divided by the model.
+        const divider: Divider = async (chapter) =>
+          divideChapter(await model("source-divide"), chapter);
+        const drafts: (DraftChapter & { fileId: string })[] = [];
+        for (const source of opened) {
+          const { chapters } = await toChapters(withTranscripts(source), divider);
+          drafts.push(...chapters.map((c) => ({ ...c, fileId: source.file.id })));
+        }
         await db.transaction(async (tx) => {
-          await tx.delete(sourceSections).where(eq(sourceSections.trackId, trackId));
-          if (rows.length)
-            await tx
-              .insert(sourceSections)
-              .values(rows.map((row, i) => ({ ...row, trackId, n: i + 1 })));
+          await tx.delete(sourceChapters).where(eq(sourceChapters.trackId, trackId));
+          let passage = 0;
+          for (const [i, draft] of drafts.entries()) {
+            const id = uuidv7();
+            await tx.insert(sourceChapters).values({
+              id,
+              trackId,
+              fileId: draft.fileId,
+              n: i + 1,
+              title: draft.title,
+              part: draft.part,
+              pageStart: draft.pageStart,
+              pages: draft.pages,
+              characters: draft.characters,
+            });
+            await tx.insert(sourcePassages).values(
+              draft.passages.map((p) => ({
+                trackId,
+                chapterId: id,
+                n: ++passage,
+                pageStart: p.pageStart,
+                pages: p.pages,
+                text: p.text,
+              })),
+            );
+          }
         });
-        await updateReading(db, trackId, { sections: rows.length, summarized: 0 });
+        await updateReading(db, trackId, { chapters: drafts.length, summarized: 0 });
       }
 
-      const unsummarized = await db
-        .select({ n: sourceSections.n, title: sourceSections.title, text: sourceSections.text })
-        .from(sourceSections)
-        .where(and(eq(sourceSections.trackId, trackId), isNull(sourceSections.summary)))
-        .orderBy(asc(sourceSections.n));
+      const left = await db
+        .select({ id: sourceChapters.id, n: sourceChapters.n, title: sourceChapters.title })
+        .from(sourceChapters)
+        .where(and(eq(sourceChapters.trackId, trackId), isNull(sourceChapters.summary)))
+        .orderBy(asc(sourceChapters.n));
+      const passages = await db
+        .select({ chapterId: sourcePassages.chapterId, text: sourcePassages.text })
+        .from(sourcePassages)
+        .where(eq(sourcePassages.trackId, trackId))
+        .orderBy(asc(sourcePassages.n));
+      const unsummarized = left.map((chapter) => ({
+        ...chapter,
+        text: passages
+          .filter((p) => p.chapterId === chapter.id)
+          .map((p) => p.text)
+          .join("\n\n"),
+      }));
       const [{ total } = { total: 0 }] = await db
         .select({ total: sql<number>`count(*)::int` })
-        .from(sourceSections)
-        .where(eq(sourceSections.trackId, trackId));
+        .from(sourceChapters)
+        .where(eq(sourceChapters.trackId, trackId));
       let summarized = total - unsummarized.length;
       for (const batch of summaryBatches(unsummarized)) {
-        const found = await summarizeSections(
-          await models.model({
-            userId: track.userId,
-            trackId,
-            purpose: "source-summary",
-            role: "cheap",
-          }),
-          batch,
-        );
-        for (const section of batch) {
-          // A section the reply left out keeps its title alone; the map still lists it.
-          const summary = found.get(section.n) ?? "";
-          await db
-            .update(sourceSections)
-            .set({ summary })
-            .where(and(eq(sourceSections.trackId, trackId), eq(sourceSections.n, section.n)));
+        const found = await summarizeChapters(await model("source-summary"), batch);
+        for (const chapter of batch) {
+          // A chapter the reply left out keeps its title alone; the map still lists it.
+          const written = found.get(chapter.n) ?? { summary: "", assumes: "" };
+          await db.update(sourceChapters).set(written).where(eq(sourceChapters.id, chapter.id));
         }
         summarized += batch.length;
         await updateReading(db, trackId, { summarized });
       }
-      await updateReading(db, trackId, { status: "ready", sections: total, failure: null });
+      // Read: the first chapter is the one to read first (design §4.6).
+      await updateReading(db, trackId, {
+        status: "ready",
+        chapters: total,
+        failure: null,
+        assigned: total > 0 ? 1 : null,
+        readThrough: 0,
+      });
     }),
   };
 }

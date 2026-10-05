@@ -4,7 +4,7 @@ import { AttachmentChip } from "@/components/attachment-chip";
 import { FinalOutcomeCard } from "@/components/final-outcome";
 import { NextSession } from "@/components/next-session";
 import { OpenWork, TrackProgressView } from "@/components/track-progress";
-import { SourceCoverageView, SourceReadingCard } from "@/components/track-source";
+import { NextReadingCard, SourceProgressView, SourceReadingCard } from "@/components/track-source";
 import { useT } from "@/i18n";
 import { useTracks } from "@/lib/tracks";
 
@@ -48,10 +48,19 @@ export function TrackPage({ trackId }: { trackId: string }) {
             </section>
           )}
           {track.source && unread && <SourceReadingCard trackId={trackId} reading={track.source} />}
+          {/* The chapter to read before the next session (design §4.6). */}
+          {track.reading && !track.openSession && (
+            <div className="mb-6">
+              <NextReadingCard reading={track.reading} several={sources.length > 1} />
+            </div>
+          )}
+          {track.source?.status === "ready" && !track.reading && !track.openSession && (
+            <p className="mb-6 text-[14px] text-muted-foreground">{tSource.allRead}</p>
+          )}
           {!track.openSession && !track.finishedIn && !unread && <NextSession track={track} />}
         </div>
         <TrackProgressView trackId={trackId} items={track.items} />
-        {track.source?.status === "ready" && <SourceCoverageView trackId={trackId} />}
+        {track.source?.status === "ready" && <SourceProgressView trackId={trackId} />}
         {[
           { files: sources, heading: tSource.title },
           { files: brought, heading: t.brought },

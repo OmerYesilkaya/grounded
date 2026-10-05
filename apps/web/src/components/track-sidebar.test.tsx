@@ -77,6 +77,7 @@ const track = (id: string, title: string, items: SessionItem[] = []): TrackSumma
     importedLesson: null,
     files: [],
     source: null,
+    reading: null,
   };
 };
 

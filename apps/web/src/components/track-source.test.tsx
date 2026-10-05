@@ -1,4 +1,4 @@
-import type { SourceReading, SourceSectionView } from "@grounded/core/sources";
+import type { NextReading, SourceChapterView, SourceReading } from "@grounded/core/sources";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -6,7 +6,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLanguage } from "@/i18n";
 import { api } from "@/lib/api";
-import { SourceCoverageView, SourceReadingCard } from "./track-source";
+import { NextReadingCard, SourceProgressView, SourceReadingCard } from "./track-source";
 
 vi.mock("@/lib/api", () => ({ api: vi.fn() }));
 
@@ -15,10 +15,12 @@ const reading = (fields: Partial<SourceReading>): SourceReading => ({
   pages: 340,
   transcribe: 40,
   transcribed: 0,
-  sections: 28,
+  chapters: 28,
   summarized: 0,
   estimate: 0.42,
   failure: null,
+  assigned: null,
+  readThrough: 0,
   ...fields,
 });
 
@@ -41,7 +43,7 @@ describe("reading a source", () => {
     const user = userEvent.setup();
     wrap(<SourceReadingCard trackId="t1" reading={reading({})} />);
     const card = screen.getByRole("region", { name: "The source" });
-    expect(card).toHaveTextContent("340 pages · 40 for your model to read · about 28 sections");
+    expect(card).toHaveTextContent("340 pages · 40 for your model to read · about 28 chapters");
     expect(card).toHaveTextContent("Reading it costs about $0.42 on your key, once.");
     await user.click(screen.getByRole("button", { name: "Read it" }));
     expect(api).toHaveBeenCalledWith("/api/tracks/t1/source/read", { method: "POST" });
@@ -51,11 +53,11 @@ describe("reading a source", () => {
     wrap(
       <SourceReadingCard
         trackId="t1"
-        reading={reading({ estimate: null, pages: 0, transcribe: 0, sections: 4 })}
+        reading={reading({ estimate: null, pages: 0, transcribe: 0, chapters: 4 })}
       />,
     );
     const card = screen.getByRole("region", { name: "The source" });
-    expect(card).toHaveTextContent("about 4 sections");
+    expect(card).toHaveTextContent("about 4 chapters");
     expect(card).not.toHaveTextContent("for your model to read");
     expect(card).toHaveTextContent("there is no estimate");
   });
@@ -76,7 +78,7 @@ describe("reading a source", () => {
       </QueryClientProvider>,
     );
     expect(
-      screen.getByRole("progressbar", { name: "Mapping sections: 7 of 28" }),
+      screen.getByRole("progressbar", { name: "Mapping chapters: 7 of 28" }),
     ).toBeInTheDocument();
   });
 
@@ -120,49 +122,96 @@ describe("reading a source", () => {
   });
 });
 
-describe("how much of the source is covered", () => {
-  const section = (n: number, status: SourceSectionView["status"], source = "networks.pdf") => ({
+describe("the next chapter to read", () => {
+  const next = (fields: Partial<NextReading> = {}): NextReading => ({
+    n: 4,
+    source: "networks.pdf",
+    title: "Routing",
+    pages: "pp. 112–131",
+    characters: 60_000,
+    assumes: "Binary numbers.",
+    first: false,
+    ...fields,
+  });
+
+  it("names the chapter, its pages and what it expects, read in the learner's own copy", () => {
+    wrap(<NextReadingCard reading={next()} several={false} />);
+    const card = screen.getByRole("region", { name: "Read next" });
+    expect(card).toHaveTextContent("Chapter 4 · Routing");
+    expect(card).toHaveTextContent("pp. 112–131");
+    expect(card).not.toHaveTextContent("networks.pdf");
+    expect(card).toHaveTextContent("It expects you to know already: Binary numbers.");
+    expect(card).toHaveTextContent("In your own copy; the next session starts by asking about it.");
+  });
+
+  it("says to read first before the track's first session, names the file among several, and sizes a source without pages", () => {
+    wrap(
+      <NextReadingCard
+        reading={next({ first: true, pages: null, characters: 30_000, assumes: "" })}
+        several
+      />,
+    );
+    const card = screen.getByRole("region", { name: "Read first" });
+    expect(card).toHaveTextContent("networks.pdf · about 10 pages");
+    expect(card).not.toHaveTextContent("It expects");
+  });
+});
+
+describe("the learner's reading of the source", () => {
+  const chapter = (
+    n: number,
+    status: SourceChapterView["status"],
+    source = "networks.pdf",
+    part: string | null = null,
+  ) => ({
     n,
     source,
     title: `Chapter ${String(n)}`,
+    part,
     pages: `pp. ${String(n * 10)}–${String(n * 10 + 9)}`,
     status,
   });
 
-  it("counts the sections by where the track stands with them, and lists each", async () => {
+  it("counts the chapters by where the learner stands with them, and lists each", async () => {
     vi.mocked(api).mockResolvedValue({
       reading: reading({ status: "ready" }),
-      sections: [
-        section(1, "known"),
-        section(2, "taught"),
-        section(3, "planned"),
-        section(4, "ahead"),
+      chapters: [
+        chapter(1, "held"),
+        chapter(2, "taught"),
+        chapter(3, "read"),
+        chapter(4, "assigned"),
+        chapter(5, "ahead"),
       ],
+      next: null,
     });
-    wrap(<SourceCoverageView trackId="t1" />);
+    wrap(<SourceProgressView trackId="t1" />);
     expect(
-      await screen.findByText("1 taught · 1 you knew · 1 planned · 1 ahead"),
+      await screen.findByText("1 held · 1 taught · 1 read · 1 to read · 1 ahead"),
     ).toBeInTheDocument();
     const rows = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(rows.map((r) => r.textContent)).toEqual([
-      "1Chapter 1pp. 10–19you knew this",
+      "1Chapter 1pp. 10–19held",
       "2Chapter 2pp. 20–29taught",
-      "3Chapter 3pp. 30–39planned",
-      "4Chapter 4pp. 40–49ahead",
+      "3Chapter 3pp. 30–39read",
+      "4Chapter 4pp. 40–49read next",
+      "5Chapter 5pp. 50–59ahead",
     ]);
     expect(api).toHaveBeenCalledWith("/api/tracks/t1/source");
   });
 
-  it("names each section's file when there are several, and folds a long list away", async () => {
+  it("names each chapter's file and part when there are several, and folds a long list away", async () => {
     vi.mocked(api).mockResolvedValue({
       reading: reading({ status: "ready" }),
-      sections: Array.from({ length: 20 }, (_, i) =>
-        section(i + 1, "ahead", i < 10 ? "book.pdf" : "notes.md"),
+      chapters: Array.from({ length: 20 }, (_, i) =>
+        chapter(i + 1, "ahead", i < 10 ? "book.pdf" : "notes.md", i < 5 ? "Part I" : "Part II"),
       ),
+      next: null,
     });
-    wrap(<SourceCoverageView trackId="t1" />);
-    const fold = await screen.findByText("Show all 20 sections");
+    wrap(<SourceProgressView trackId="t1" />);
+    const fold = await screen.findByText("Show all 20 chapters");
     expect(fold.closest("details")).not.toHaveAttribute("open");
-    expect(screen.getByText("notes.md · pp. 200–209", { exact: true })).toBeInTheDocument();
+    expect(
+      screen.getByText("notes.md · Part II · pp. 200–209", { exact: true }),
+    ).toBeInTheDocument();
   });
 });

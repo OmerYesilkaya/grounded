@@ -6,9 +6,10 @@ import { getDocumentProxy, getResolvedPDFJS } from "unpdf";
 
 /*
  * Taking the text out of a source (design §4.6), with no model: a PDF's text layer page by page,
- * with its bookmarks for chapters; an EPUB's chapters in reading order; a Word document's or a text
- * file's text, split at its headings. Pages whose text layer is missing or garbled are marked for
- * the learner's model to read (transcribe.ts).
+ * with its bookmarks for its structure; an EPUB's chapters in reading order; a Word document's or a
+ * text file's text, split at its headings. The structure is kept as the book has it: its parts,
+ * its chapters, and the headings inside a chapter, which chapters.ts cuts a long chapter at. Pages
+ * whose text layer is missing or garbled are marked for the learner's model to read (transcribe.ts).
  */
 
 /** A PDF page: its text layer, and whether the model has to read it instead. */
@@ -24,9 +25,13 @@ export interface SourcePage {
 /** A chapter the source names: a PDF bookmark at a page, or a heading in flowing text. */
 export interface Chapter {
   title: string;
+  /** The part of the book it is in, where the book has parts. */
+  part: string | null;
   /** A PDF chapter's first page. */
   page?: number;
-  /** A flowing source's chapter text. */
+  /** A PDF chapter's own headings (the bookmarks under it), each at the page it opens. */
+  headings?: { title: string; page: number }[];
+  /** A flowing source's chapter text, its headings as markdown headings. */
   text?: string;
 }
 
@@ -119,7 +124,8 @@ type PdfDocument = Awaited<ReturnType<typeof getDocumentProxy>>;
 
 /**
  * The PDF's chapters from its bookmarks: the top level, or the level below where the top holds
- * only a few entries (a book whose bookmarks are its parts). Each at the page it opens.
+ * only a few entries that have entries of their own (a book whose bookmarks are its parts; the
+ * parts are then kept as the chapters' parts). Each at the page it opens, with its own headings.
  */
 async function pdfChapters(pdf: PdfDocument): Promise<Chapter[]> {
   const outline = (await pdf.getOutline().catch(() => null)) ?? [];
@@ -135,15 +141,25 @@ async function pdfChapters(pdf: PdfDocument): Promise<Chapter[]> {
     }
   };
   type Entry = (typeof outline)[number];
-  const level = (entries: readonly Entry[]): readonly Entry[] => {
-    const below = entries.flatMap((e): Entry[] => e.items as Entry[]);
-    return entries.length < 4 && below.length > entries.length ? below : entries;
-  };
+  const below = outline.flatMap((e): Entry[] => e.items as Entry[]);
+  const parted = outline.length < PARTS_AT_MOST && below.length > outline.length;
+  const entries: { entry: Entry; part: string | null }[] = parted
+    ? outline.flatMap((p) =>
+        (p.items as Entry[]).map((entry) => ({ entry, part: p.title.trim() || null })),
+      )
+    : outline.map((entry) => ({ entry, part: null }));
   const chapters: Chapter[] = [];
-  for (const entry of level(outline)) {
+  for (const { entry, part } of entries) {
     const page = await pageOf(entry.dest);
     const title = entry.title.trim();
-    if (page !== null && title) chapters.push({ title, page });
+    if (page === null || !title) continue;
+    const headings: { title: string; page: number }[] = [];
+    for (const h of entry.items as Entry[]) {
+      const at = await pageOf(h.dest);
+      const name = h.title.trim();
+      if (at !== null && name) headings.push({ title: name, page: at });
+    }
+    chapters.push({ title, part, page, headings: headings.sort((a, b) => a.page - b.page) });
   }
   // In page order, one chapter per page (the last named wins).
   const byPage = new Map<number, Chapter>();
@@ -151,6 +167,9 @@ async function pdfChapters(pdf: PdfDocument): Promise<Chapter[]> {
     byPage.set(c.page ?? 0, c);
   return [...byPage.values()];
 }
+
+/** Fewer top-level bookmarks than this, with bookmarks under them, are a book's parts. */
+const PARTS_AT_MOST = 4;
 
 /** An EPUB's chapters, in its spine's reading order, each from its XHTML. */
 function extractEpub(bytes: Uint8Array): Extracted {
@@ -202,7 +221,7 @@ function extractEpub(bytes: Uint8Array): Extracted {
     if (!html) continue;
     const { text, headings } = htmlToText(html);
     if (!text.trim()) continue;
-    chapters.push({ title: headings[0] ?? "", text });
+    chapters.push({ title: headings[0] ?? "", part: null, text });
   }
   if (chapters.length === 0) throw new UnreadableSource("no chapters with text");
   const named = (title as string | null)?.trim();
@@ -226,28 +245,34 @@ function extractText(bytes: Uint8Array): Extracted {
 
 /**
  * Markdown-like text split into chapters at its highest heading level that occurs more than once
- * (a document's single title heading doesn't make one chapter of the whole). Text before the first
- * heading is a chapter of its own, untitled.
+ * (a document's single title heading doesn't make one chapter of the whole). Where that level holds
+ * only a few headings and the level below holds more, those are the book's parts and the level
+ * below its chapters. Text before the first heading is a chapter of its own, untitled.
  */
 export function splitAtHeadings(text: string): (Chapter & { text: string })[] {
   const lines = text.split("\n");
-  const levels = [1, 2, 3].map((depth) => ({
-    depth,
-    count: lines.filter((l) => headingDepth(l) === depth).length,
-  }));
-  const depth = levels.find((l) => l.count > 1)?.depth ?? null;
-  if (depth === null) return text.trim() ? [{ title: "", text: text.trim() }] : [];
+  const count = (depth: number) => lines.filter((l) => headingDepth(l) === depth).length;
+  const top = [1, 2, 3].find((depth) => count(depth) > 1) ?? null;
+  if (top === null) return text.trim() ? [{ title: "", part: null, text: text.trim() }] : [];
+  const parted = count(top) < PARTS_AT_MOST && count(top + 1) > count(top);
+  const depth = parted ? top + 1 : top;
   const chapters: (Chapter & { text: string })[] = [];
+  let part: string | null = null;
   let current: { title: string; lines: string[] } = { title: "", lines: [] };
   const flush = () => {
     const body = current.lines.join("\n").trim();
-    if (body) chapters.push({ title: current.title, text: body });
+    if (body) chapters.push({ title: current.title, part, text: body });
   };
   for (const line of lines) {
     const d = headingDepth(line);
     if (d !== null && d <= depth) {
       flush();
-      current = { title: line.replace(/^#+\s*/, "").trim(), lines: [line] };
+      const title = line.replace(/^#+\s*/, "").trim();
+      if (parted && d < depth) {
+        // A part's heading: what follows before its first chapter is a chapter named after it.
+        part = title;
+        current = { title, lines: [] };
+      } else current = { title, lines: [line] };
     } else current.lines.push(line);
   }
   flush();

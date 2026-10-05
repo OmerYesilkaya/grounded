@@ -1,5 +1,5 @@
 import type { AttachmentKind } from "@grounded/core/attachments";
-import type { SourceKind, SourceReading } from "@grounded/core/sources";
+import type { NextReading, SourceKind, SourceReading } from "@grounded/core/sources";
 import type { FinalStanding, SessionPhase, TaskForm } from "@grounded/core";
 import { queryOptions, useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api";
@@ -26,6 +26,8 @@ export interface TrackSummary {
   files: TrackFile[];
   /** A track taught from a source (design §4.6): where reading it stands; null for any other. */
   source: SourceReading | null;
+  /** On a source track: the chapter to read next, once the source is read; null when none. */
+  reading: NextReading | null;
 }
 
 /**

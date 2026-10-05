@@ -70,26 +70,33 @@ export interface FixItem {
   status: "open" | "closed";
 }
 
-export interface SourceSection {
-  /** Its number across the track's sources: "§12". */
+export interface SourceChapter {
+  /** Its number across the track's sources: "Chapter 12". */
   n: number;
   title: string;
+  /** The part of the book it is in; null where the book has no parts. */
+  part: string | null;
   /** "pp. 112–131"; null for a source without pages. */
   pages: string | null;
-  /** What it covers, in a sentence or two; null where left out (a long source, away from the arc). */
+  /**
+   * What it teaches and what it expects the reader to know, in a sentence or two each; null where
+   * left out (a long source, away from the chapters at hand).
+   */
   summary: string | null;
+  assumes: string | null;
 }
 
 export interface SourceContext {
-  /** The sources' file names, in the order the sections number them. */
+  /** The sources' file names, in the order the chapters number them. */
   files: readonly string[];
-  /** Each file's sections, under its name, in order. */
-  sections: readonly (SourceSection & { file: string })[];
-  /** Which sections each arc of the plan teaches from (none: groundwork), and those already held. */
-  map: {
-    arcs: readonly { title: string; sections: readonly number[] }[];
-    known: readonly number[];
-  } | null;
+  /** Each file's chapters, under its name, in reading order. */
+  chapters: readonly (SourceChapter & { file: string })[];
+  /** The last chapter the learner has finished reading; 0 before any. */
+  readThrough: number;
+  /** The chapter they are asked to read next; null once every chapter is read. */
+  assigned: number | null;
+  /** The chapters this session is about (design §4.6); empty outside a session. */
+  session: readonly number[];
 }
 
 export interface PlanArc {
@@ -113,8 +120,8 @@ export interface PromptContext {
    */
   brought?: { files: readonly string[]; summary: string | null };
   /**
-   * A track taught from a source the learner brought (design §4.6): the source's sections, the
-   * map of what the tutor is taught from, and which arcs of the plan teach which sections.
+   * A track taught from a source the learner brought (design §4.6): the source's chapters, how
+   * far the learner has read, and the chapters this session is about.
    */
   source?: SourceContext;
   terms?: readonly TermRow[];
@@ -333,36 +340,61 @@ function renderChanges({ changes }: PromptContext): string[] {
   return [lines.join("\n")];
 }
 
-/** "§2, §5"; "none" for an empty list. */
-const sectionList = (ns: readonly number[]) =>
-  ns.length ? ns.map((n) => `§${String(n)}`).join(", ") : "none";
+/** "Chapter 2"; "Chapters 2–4" for a run of them; "" for none. */
+export const chapterList = (ns: readonly number[]): string => {
+  if (ns.length === 0) return "";
+  const first = ns[0] ?? 0;
+  const last = ns[ns.length - 1] ?? first;
+  if (ns.length === 1) return `Chapter ${String(first)}`;
+  const run = ns.every((n, i) => n === first + i);
+  return run
+    ? `Chapters ${String(first)}–${String(last)}`
+    : `Chapters ${ns.map((n) => String(n)).join(", ")}`;
+};
 
 /**
- * The source (design §4.6): what the learner chose to learn from, section by section, so every call
- * knows what is where without carrying the source; and what the plan has made of it.
+ * The source (design §4.6): what the learner chose to learn from, chapter by chapter, so every
+ * call knows what is where without carrying the source; how far they have read; and the chapters
+ * this session is about.
  */
 function renderSource(source: SourceContext): string {
   const lines = [
     "## The source",
     "",
-    `The learner chose to learn from ${source.files.length === 1 ? "this source" : "these sources"}: ${source.files.join(", ")}. Its sections, numbered across ${source.files.length === 1 ? "it" : "them"}:`,
+    `The learner chose to learn from ${source.files.length === 1 ? "this source" : "these sources"}: ${source.files.join(", ")}. They read it themselves, a chapter at a time, in their own copy. Its chapters, numbered across ${source.files.length === 1 ? "it" : "them"}:`,
   ];
   for (const file of source.files) {
-    const sections = source.sections.filter((s) => s.file === file);
+    const chapters = source.chapters.filter((c) => c.file === file);
     if (source.files.length > 1) lines.push("", `### ${file}`);
-    lines.push("");
-    for (const s of sections) {
-      const pages = s.pages ? ` (${s.pages})` : "";
-      lines.push(`- §${String(s.n)} ${s.title}${pages}${s.summary ? `: ${s.summary}` : ""}`);
+    let part: string | null = null;
+    let started = false;
+    for (const c of chapters) {
+      if (c.part !== part || !started) {
+        part = c.part;
+        started = true;
+        lines.push("");
+        if (part) lines.push(`${part}:`);
+      }
+      const pages = c.pages ? ` (${c.pages})` : "";
+      const about = c.summary ? `: ${c.summary}` : "";
+      const assumes = c.assumes ? ` Expects the reader to know: ${c.assumes}` : "";
+      lines.push(`- Chapter ${String(c.n)} ${c.title}${pages}${about}${assumes}`);
     }
   }
-  if (source.map) {
-    lines.push("", "What the plan teaches from where:", "");
-    for (const arc of source.map.arcs)
-      lines.push(
-        `- ${arc.title}: ${arc.sections.length ? sectionList(arc.sections) : "groundwork from outside the source"}`,
-      );
-    lines.push(`- Already held by the learner: ${sectionList(source.map.known)}`);
-  }
+  lines.push("", "Reading:", "");
+  lines.push(
+    source.readThrough > 0
+      ? `- They have finished reading through Chapter ${String(source.readThrough)}.`
+      : "- They haven't finished a chapter yet.",
+  );
+  lines.push(
+    source.assigned === null
+      ? "- Every chapter has been read; nothing is left to assign."
+      : `- Asked to read next: Chapter ${String(source.assigned)}.`,
+  );
+  if (source.session.length)
+    lines.push(
+      `- This session is about ${chapterList(source.session)}: the probe asks about ${source.session.length === 1 ? "it" : "them"}, and a lesson teaches only what the learner missed there.`,
+    );
   return lines.join("\n");
 }

@@ -1,6 +1,7 @@
 import {
   finalStanding,
   type FinalStanding,
+  type NextReading,
   type SessionPhase,
   type SourceReading,
   type TaskForm,
@@ -20,6 +21,7 @@ import {
   type Db,
 } from "@grounded/db";
 import { filesOf } from "./files/track-files.js";
+import { nextReadings } from "./track-source.js";
 
 /**
  * Something inside a track, listed under it in the track list (design §9.2). Every kind shares
@@ -109,6 +111,8 @@ export interface TrackSummary {
   }[];
   /** A track taught from a source (design §4.6): where reading it stands; null for any other. */
   source: SourceReading | null;
+  /** On a source track: the chapter to read next, once the source is read; null when none. */
+  reading: NextReading | null;
 }
 
 /** When something last happened on an assignment: changed, or its answers written. */
@@ -119,6 +123,16 @@ const lastActive = (a: { updatedAt: Date; answeredAt: Date | null }) =>
 export async function trackList(db: Db, userId: string): Promise<TrackSummary[]> {
   const rows = await db.select().from(tracks).where(eq(tracks.userId, userId));
   const ids = rows.map((t) => t.id);
+  // The chapter each source track's learner is asked to read next (design §4.6).
+  const readings = await nextReadings(
+    db,
+    rows.flatMap((t) =>
+      t.source?.status === "ready" && t.source.assigned !== null && t.source.assigned !== undefined
+        ? [{ trackId: t.id, assigned: t.source.assigned }]
+        : [],
+    ),
+    new Set(),
+  );
   const sessions = await db
     .select({
       id: learningSessions.id,
@@ -247,6 +261,7 @@ export async function trackList(db: Db, userId: string): Promise<TrackSummary[]>
       importedLesson: lesson ? { title: lesson.title } : null,
       files: attached.get(track.id) ?? [],
       source: track.source,
+      reading: readings.find((r) => r.trackId === track.id)?.next ?? null,
     };
   });
   return list.sort((a, b) => b.activeAt.localeCompare(a.activeAt));
