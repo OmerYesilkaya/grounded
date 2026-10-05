@@ -28,3 +28,13 @@ export function placeCards(
     tops[i] = Math.min(top(i), top(i + 1) - height(i) - CARD_GAP);
   return new Map(sorted.map((slot, i) => [slot.id, top(i)]));
 }
+
+/** How far down the lowest card reaches, once placed: the room the page must leave for the cards. */
+export function cardsBottom(slots: readonly CardSlot[], tops: ReadonlyMap<string, number>): number {
+  return Math.max(0, ...slots.map((slot) => (tops.get(slot.id) ?? slot.want) + slot.height));
+}
+
+/** The padding a grid keeps below its content, to keep below its lowest card too. */
+export function roomBelow(grid: HTMLElement): number {
+  return Number.parseFloat(getComputedStyle(grid).paddingBottom) || 0;
+}

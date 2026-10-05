@@ -1,7 +1,7 @@
 import type { ChecklistItem } from "@grounded/core/assignment";
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import { useT } from "@/i18n";
-import { placeCards } from "@/lesson/aside-layout";
+import { cardsBottom, placeCards, roomBelow } from "@/lesson/aside-layout";
 import { Connector, MarginCard } from "@/lesson/aside-layer";
 import { ASIDE_UI, AsideSheet } from "@/lesson/aside-sheet";
 import { findPassage, firstLine, highlightPassages, pointAt } from "@/lesson/passages";
@@ -19,6 +19,8 @@ interface Layout {
   margin: { left: number; width: number };
   tops: Record<string, number>;
   connector: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** How tall the grid must be to hold the lowest card, its own bottom padding below it. */
+  room: number;
 }
 
 /** The words of the answer a comment is about, found again on the page; null for a whole field. */
@@ -42,6 +44,12 @@ export interface ReviewLayerProps {
    * open one in a sheet from the bottom.
    */
   wide: boolean;
+  /**
+   * The height the grid needs to hold the comments' margin cards (undefined: none needed), for its
+   * min-height. The cards are laid over the page and take no room in it, so a long card by the end
+   * of the page would otherwise hang past its foot, the page scrolling on into nothing beside it.
+   */
+  onRoom: (height: number | undefined) => void;
   /** The label of the field a comment is on, for the sheet when it quotes nothing. */
   fieldLabel: (comment: LiveComment) => string;
 }
@@ -53,7 +61,7 @@ export interface ReviewLayerProps {
  * field as a whole sits level with the field. Clicking a marked passage opens its comment.
  */
 export function ReviewLayer(props: ReviewLayerProps) {
-  const { comments, active, onActivate, wide, grid, answer, margin } = props;
+  const { comments, active, onActivate, wide, grid, answer, margin, onRoom } = props;
   const [layout, setLayout] = useState<Layout | null>(null);
   const t = useT().homework;
 
@@ -122,6 +130,12 @@ export function ReviewLayer(props: ReviewLayerProps) {
       window.removeEventListener("resize", again);
     };
   }, [grid, cardIds, wide]);
+  useLayoutEffect(() => {
+    onRoom(wide ? layout?.room : undefined);
+    return () => {
+      onRoom(undefined);
+    };
+  }, [onRoom, wide, layout?.room]);
 
   if (!wide) {
     const open = comments.find((c) => c.id === active);
@@ -201,23 +215,22 @@ function measureCards(
     ]),
   );
   const lines = new Map(passages.map((p) => [p.comment.id, p.range ? firstLine(p.range) : null]));
-  const tops = placeCards(
-    passages.map(({ comment }) => {
-      const line = lines.get(comment.id);
-      return {
-        id: comment.id,
-        want: line ? line.top - origin.top - CARD_LIFT : fieldTop(comment),
-        height: heights.get(comment.id) ?? 0,
-      };
-    }),
-    active,
-  );
+  const slots = passages.map(({ comment }) => {
+    const line = lines.get(comment.id);
+    return {
+      id: comment.id,
+      want: line ? line.top - origin.top - CARD_LIFT : fieldTop(comment),
+      height: heights.get(comment.id) ?? 0,
+    };
+  });
+  const tops = placeCards(slots, active);
   const marginLeft = (marginRect?.left ?? column.right) - origin.left;
   const line = active ? lines.get(active) : null;
   const top = active ? tops.get(active) : undefined;
   return {
     margin: { left: marginLeft, width: marginRect?.width ?? 300 },
     tops: Object.fromEntries(tops),
+    room: cardsBottom(slots, tops) + roomBelow(grid),
     connector:
       line && top !== undefined
         ? {

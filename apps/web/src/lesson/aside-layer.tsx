@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 import { AskDraft, AsideThread, QuotedPassage, Thinking } from "./aside-card";
 import { ASIDE_UI, AskButton, AsideSheet } from "./aside-sheet";
 import { HintCard } from "./aside-hint";
-import { placeCards, type CardSlot } from "./aside-layout";
+import { cardsBottom, placeCards, roomBelow, type CardSlot } from "./aside-layout";
 import {
   anchorOf,
   findPassage,
@@ -44,6 +44,8 @@ interface Layout {
   ask: number | null;
   /** The dashed line from the active passage to its card. */
   connector: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** How tall the grid must be to hold the lowest card, its own bottom padding below it. */
+  room: number;
 }
 
 const DRAFT = "draft";
@@ -58,6 +60,12 @@ export interface AsideLayerProps extends LessonAsides {
   margin: RefObject<HTMLElement | null>;
   /** Cards in the margin beside their passages; otherwise a sheet from the bottom (phones). */
   wide: boolean;
+  /**
+   * The height the grid needs to hold the margin cards (undefined: none needed), for its
+   * min-height. The cards are laid over the page and take no room in it, so a long card by the end
+   * of the page would otherwise hang past its foot, the page scrolling on into nothing beside it.
+   */
+  onRoom: (height: number | undefined) => void;
 }
 
 /**
@@ -68,7 +76,7 @@ export interface AsideLayerProps extends LessonAsides {
  * its card by a dashed line.
  */
 export function AsideLayer(props: AsideLayerProps) {
-  const { items, canAsk, wide, lesson, grid, margin } = props;
+  const { items, canAsk, wide, lesson, grid, margin, onRoom } = props;
   const t = useT().lesson.asides;
   const [active, setActive] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -191,6 +199,12 @@ export function AsideLayer(props: AsideLayerProps) {
       window.removeEventListener("resize", again);
     };
   }, [grid, cardIds]);
+  useLayoutEffect(() => {
+    onRoom(wide ? layout?.room : undefined);
+    return () => {
+      onRoom(undefined);
+    };
+  }, [onRoom, wide, layout?.room]);
 
   const threadProps = (aside: Aside, expanded: boolean) => ({
     aside,
@@ -366,6 +380,7 @@ function measureLayout(input: {
       margin: { left: marginLeft, width: marginRect?.width ?? 300 },
       column: { left: column.left - origin.left, width: column.width },
       tops: Object.fromEntries(tops),
+      room: cardsBottom(slots, tops) + roomBelow(grid),
       detached: passages.filter((p) => !p.range).map((p) => p.id),
       // Where the browser lays out no lines (tests), at the top.
       ask: selected ? (askLine ? askLine.top - origin.top - 4 : 0) : null,

@@ -67,6 +67,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
   const [active, setActive] = useState<string | null>(null);
   const wide = useMediaQuery(WIDE, true);
   const grid = useRef<HTMLDivElement>(null);
+  const [cardsRoom, setCardsRoom] = useState<number>();
   const answer = useRef<HTMLElement>(null);
   const margin = useRef<HTMLElement>(null);
   const cards = {
@@ -168,6 +169,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
       <TopBar assignment={assignment} status={closed ? null : status} />
       <div
         ref={grid}
+        style={{ minHeight: cardsRoom }}
         className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(340px,1fr)] pt-12 pb-28 max-[1100px]:grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)]"
       >
         <main className="col-start-2 min-w-0">
@@ -271,6 +273,7 @@ export function HomeworkPage({ assignment }: { assignment: Assignment }) {
             answer={answer}
             margin={margin}
             wide={wide}
+            onRoom={setCardsRoom}
             fieldLabel={(comment) => {
               const on = assignment.tasks.find((of) => of.id === comment.anchor.taskId) ?? task;
               const label = fieldLabelOf(comment.anchor.field, t);

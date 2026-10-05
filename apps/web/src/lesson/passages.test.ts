@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { placeCards } from "./aside-layout";
+import { cardsBottom, placeCards } from "./aside-layout";
 import { anchorOf, bestMatch, findPassage } from "./passages";
 
 let lesson: HTMLElement;
@@ -125,5 +125,15 @@ describe("placing cards in the margin", () => {
       "b",
     );
     expect(Object.fromEntries(tops)).toEqual({ a: 60, b: 120, c: 210 });
+  });
+
+  it("knows how far down the lowest card reaches, which need not be the last passage's", () => {
+    const slots = [
+      { id: "a", want: 100, height: 300 },
+      { id: "b", want: 120, height: 40 },
+    ];
+    expect(cardsBottom(slots, placeCards(slots, null))).toBe(450);
+    expect(cardsBottom(slots, placeCards(slots, "b"))).toBe(160);
+    expect(cardsBottom([], new Map())).toBe(0);
   });
 });

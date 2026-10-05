@@ -1,5 +1,5 @@
 import { citedSources, type LessonStep } from "@grounded/content";
-import { useMemo, useRef, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Blocks } from "@/content/blocks";
 import { CitationsProvider, LessonSources } from "@/content/citations";
 import { Inlines } from "@/content/inlines";
@@ -55,6 +55,7 @@ export function LessonView(props: LessonViewProps) {
   // Numbered across the steps shown, so a step that opens adds to the list without renumbering it.
   const sources = useMemo(() => citedSources(shown), [shown]);
   const grid = useRef<HTMLDivElement>(null);
+  const [cardsRoom, setCardsRoom] = useState<number>();
   const article = useRef<HTMLElement>(null);
   const margin = useRef<HTMLElement>(null);
   // Where the browser can't tell (tests), the margin is there.
@@ -63,6 +64,7 @@ export function LessonView(props: LessonViewProps) {
   return (
     <div
       ref={grid}
+      style={{ minHeight: cardsRoom }}
       className="relative grid grid-cols-[minmax(0,1fr)_minmax(0,68ch)_minmax(340px,1fr)] pt-10 pb-24 max-[1100px]:grid-cols-[minmax(16px,1fr)_minmax(0,68ch)_minmax(16px,1fr)]"
     >
       <div className="flex justify-end pr-10 max-[1100px]:hidden">
@@ -155,7 +157,14 @@ export function LessonView(props: LessonViewProps) {
         className="col-start-3 ml-10 max-w-[300px] max-[1100px]:hidden"
       />
       {asides && (
-        <AsideLayer {...asides} grid={grid} lesson={article} margin={margin} wide={wide} />
+        <AsideLayer
+          {...asides}
+          grid={grid}
+          lesson={article}
+          margin={margin}
+          wide={wide}
+          onRoom={setCardsRoom}
+        />
       )}
     </div>
   );
