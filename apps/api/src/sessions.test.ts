@@ -39,6 +39,13 @@ beforeEach(() => {
 
 const { snapshot, until, learner, startedSession, planned, activities } = createFlows(t, models);
 
+/** The last turn of a purpose's nth streamed call, as text: what the call is asked to write. */
+const lastTurnOf = (purpose: string, n = 0) =>
+  JSON.stringify(
+    models.used.filter((u) => u.purpose === purpose)[n]?.model.doStreamCalls[0]?.prompt.at(-1) ??
+      null,
+  );
+
 describe("starting a session", () => {
   it("opens with the tutor's first probe question, streamed", async () => {
     const { cookie, sessionId } = await startedSession();
@@ -222,6 +229,8 @@ describe("probe and plan", () => {
       arcs: [{ title: "Concurrency", terms: ["working copy", "lost update"] }],
       notes: "",
     });
+    // The plan is asked for in the last turn, not left to follow the learner's answer.
+    expect(lastTurnOf("plan")).toContain("The probe is over");
   });
 
   it("opens the probe from what the learner said they want to learn", async () => {
@@ -345,6 +354,7 @@ describe("probe and plan", () => {
         .status,
     ).toBe(200);
     await until(cookie, sessionId, (s) => s.state.plan === "proposed");
+    expect(lastTurnOf("plan")).toContain("The probe is over");
   });
 
   it("retracts a plan whose terms can't be recorded, and asks again with the reasons", async () => {
@@ -388,6 +398,8 @@ describe("probe and plan", () => {
       (s) =>
         s.state.plan === "proposed" && s.messages.filter((m) => m.kind === "plan").length === 2,
     );
+    // The revision is asked for after the learner's reply.
+    expect(lastTurnOf("plan", 1)).toContain("The learner replied to the plan");
 
     const approved = await t.request(`/api/sessions/${sessionId}/approve-plan`, {
       method: "POST",

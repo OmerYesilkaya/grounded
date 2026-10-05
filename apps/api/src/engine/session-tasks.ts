@@ -181,6 +181,16 @@ const REVIEW_SUMMARY_PROMPT =
 const REVIEW_HANDOVER_PROMPT = `(For the app; the learner doesn't see this.) The review is over; what it found is under "${REVIEW_FOUND}". Now the probe: acknowledge their last answer in a few neutral words, then ask the first probe question.`;
 /** The most answers a review takes: a few questions, not a quiz (method.md, "Review"). */
 const REVIEW_ANSWERS = 5;
+/**
+ * The plan message's request, the conversation's last turn: without it the last turn is the
+ * learner's answer to a probe question, or their reply to the plan, and a model that follows the
+ * turn over the system prompt asks another probe question or starts teaching.
+ */
+const PLAN_REQUEST =
+  "(For the app; the learner doesn't see this.) The probe is over: ask no more probe questions. Present the plan now, as the method's plan says, then stop: the learner approves it or asks for changes.";
+/** The plan's request when the learner has replied to the plan presented. */
+const PLAN_REVISION_REQUEST =
+  "(For the app; the learner doesn't see this.) The learner replied to the plan. Present it again, revised for what they asked and in the same form, as the method's plan says, answering in a sentence anything they asked about it; if they asked for no change (\"go ahead\"), present it as it stands and say they can approve it. Don't start teaching: the lesson comes once they approve the plan.";
 const PLAN_RECORD_PROMPT =
   "(For the app; the learner doesn't see this.) Record the plan you just presented: every planned term with what it rests on (a term already in the term list, shown here or not, keeps its status; planning it again only adds what it rests on), and any misconceptions found in the probe as fix-list items. A word the plan leans on that the learner already holds (plain everyday language in its everyday sense, a term they used themselves as the field does, or one the background they describe plainly covers, as React is for a senior front-end developer) is recorded assumed with set-term-status, with their words, their background or its everyday use as evidence, instead of planned; planned terms may rest on it. An idea the plan leans on that the learner holds in another track (under \"Held in the learner's other tracks\", with the same meaning here) is borrowed with borrow-term instead of planned; planned terms may rest on it. Then place this session's new planned terms in the plan's arcs with add-to-arc: each in the existing arc it belongs to, named by that arc's exact title as the plan shows it; a new arc (added at the end) only for terms no existing arc fits. This doesn't change the rest of the plan: its other arcs and terms stay as they are. If the track has no arcs yet, this is its first plan: record the whole route you presented, every arc in order with the terms it will plan (each planned, with what it rests on), this session's ground in the first. Record anything you noted for later sessions (a reorder, a detour, what to come back to) with add-plan-notes.";
 const SWEEP_REQUEST =
@@ -1592,13 +1602,17 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         ],
       });
 
+      const request: ModelMessage = {
+        role: "user",
+        content: session.state.plan === "revising" ? PLAN_REVISION_REQUEST : PLAN_REQUEST,
+      };
       let feedback: ModelMessage[] = [];
       let revising: Activity | undefined;
       try {
         for (let attempt = 0; attempt < PLAN_ATTEMPTS; attempt++) {
           // Each attempt is its own call, with the key decrypted for it.
           const model = await modelFor();
-          const conversation = [...messages, ...feedback];
+          const conversation: ModelMessage[] = [...messages, request, ...feedback];
           const reply = await writeChatMessage({
             db,
             media: deps.media,
