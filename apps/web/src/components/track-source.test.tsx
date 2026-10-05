@@ -183,12 +183,16 @@ describe("the learner's reading of the source", () => {
         chapter(3, "read"),
         chapter(4, "assigned"),
         chapter(5, "ahead"),
+        chapter(6, "skipped"),
       ],
       next: null,
     });
     wrap(<SourceProgressView trackId="t1" />);
     expect(
-      await screen.findByText("1 held · 1 taught · 1 read · 1 to read · 1 ahead"),
+      await screen.findByText("1 held · 1 taught · 1 read · 1 to read · 1 ahead · 1 not assigned"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Title pages, the contents and the index are listed but never assigned/),
     ).toBeInTheDocument();
     const rows = within(screen.getByRole("list")).getAllByRole("listitem");
     expect(rows.map((r) => r.textContent)).toEqual([
@@ -197,6 +201,7 @@ describe("the learner's reading of the source", () => {
       "3Chapter 3pp. 30–39read",
       "4Chapter 4pp. 40–49read next",
       "5Chapter 5pp. 50–59ahead",
+      "6Chapter 6pp. 60–69not assigned",
     ]);
     expect(api).toHaveBeenCalledWith("/api/tracks/t1/source");
   });

@@ -12,8 +12,13 @@ import type { Extracted, SourcePage } from "./extract.js";
 
 /** The most text a passage holds: about 6,000 tokens, so a prompt can carry a chapter's worth. */
 export const PASSAGE_MAX = 24_000;
-/** A stretch shorter than this (a dedication, a one-page part title) joins its neighbour. */
+/** A passage shorter than this joins its neighbour. */
 export const PASSAGE_MIN = 1_500;
+/**
+ * A chapter shorter than this (a dedication, a part's title page, a one-page opening of a part)
+ * joins its neighbour: about three pages, less than a sitting's reading.
+ */
+export const CHAPTER_MIN = 8_000;
 /** A chapter over this many pages is more than one sitting, and is cut at its own headings. */
 export const LONG_CHAPTER_PAGES = 40;
 /** The same for a source without pages, in characters. */
@@ -60,8 +65,12 @@ export const OPENING_PAGES = "Opening pages";
 /** A PDF page's text in a passage: a line naming the page, so a lesson can cite it. */
 const pageText = (page: SourcePage) => `[p. ${page.label}]\n${page.text}`;
 
-/** A stretch of a source on its way to being a chapter: pages of a PDF, or flowing text. */
-type Stretch = { title: string; part: string | null } & (
+/**
+ * A stretch of a source on its way to being a chapter: pages of a PDF, or flowing text. `named`
+ * says the title is the author's (a bookmark, a heading); a piece cut from an unnamed stretch (a
+ * book with no bookmarks at all) takes its own title alone.
+ */
+type Stretch = { title: string; named: boolean; part: string | null } & (
   | { form: "paged"; pages: SourcePage[]; headings: readonly { title: string; page: number }[] }
   | { form: "flowing"; text: string }
 );
@@ -116,22 +125,27 @@ function stretches(extracted: Extracted): Stretch[] {
     return extracted.chapters.map((c) => ({
       form: "flowing",
       title: c.title,
+      named: c.title.trim() !== "",
       part: c.part,
       text: c.text,
     }));
   const { pages } = extracted;
   if (pages.length === 0) return [];
-  // Chapter boundaries from the bookmarks; a stretch before the first is a chapter of its own.
+  // Chapter boundaries from the bookmarks; a stretch before the first is a chapter of its own. A
+  // book with no bookmarks is one unnamed stretch, which the model divides into named pieces.
   const starts = extracted.chapters
     .filter((c) => c.page !== undefined && c.page >= 1 && c.page <= pages.length)
-    .map((c) => ({ ...c, page: c.page ?? 1 }));
-  if (starts[0]?.page !== 1)
-    starts.unshift({ title: OPENING_PAGES, part: null, page: 1, headings: [] });
+    .map((c) => ({ ...c, named: true, page: c.page ?? 1 }));
+  if (starts.length === 0)
+    starts.push({ title: extracted.title ?? "", named: false, part: null, page: 1, headings: [] });
+  else if (starts[0]?.page !== 1)
+    starts.unshift({ title: OPENING_PAGES, named: true, part: null, page: 1, headings: [] });
   return starts.map((start, i) => {
     const end = (starts[i + 1]?.page ?? pages.length + 1) - 1;
     return {
       form: "paged",
       title: start.title,
+      named: start.named,
       part: start.part,
       pages: pages.slice(start.page - 1, end),
       headings: (start.headings ?? []).filter((h) => h.page > start.page && h.page <= end),
@@ -144,9 +158,15 @@ const isLong = (stretch: Stretch) =>
     ? stretch.pages.length > LONG_CHAPTER_PAGES
     : stretch.text.length > LONG_CHAPTER_CHARACTERS;
 
-/** A piece of a chapter cut at one of its headings: "Routing: Routing tables". */
-const pieceTitle = (chapter: string, heading: string) =>
-  heading.trim() ? `${chapter.trim() || "Untitled"}: ${heading.trim()}` : chapter;
+/**
+ * A piece of a chapter cut at one of its headings: "Routing: Routing tables"; of an unnamed
+ * stretch, the heading alone.
+ */
+const pieceTitle = (chapter: Pick<Stretch, "title" | "named">, heading: string) => {
+  const own = heading.trim();
+  if (!own) return chapter.title;
+  return chapter.named ? `${chapter.title.trim() || "Untitled"}: ${own}` : own;
+};
 
 /**
  * A long chapter cut at its own headings: a PDF's at the bookmarks under it, flowing text at the
@@ -159,13 +179,22 @@ function splitAtOwnHeadings(stretch: Stretch): Stretch[] {
     if (!first || stretch.headings.length === 0) return [stretch];
     const starts = [
       { title: stretch.title, page: first.page },
-      ...stretch.headings.map((h) => ({ title: pieceTitle(stretch.title, h.title), page: h.page })),
+      ...stretch.headings.map((h) => ({ title: pieceTitle(stretch, h.title), page: h.page })),
     ];
     return starts.flatMap((start, i): Stretch[] => {
       const end = starts[i + 1]?.page ?? first.page + stretch.pages.length;
       const pages = stretch.pages.filter((p) => p.page >= start.page && p.page < end);
       return pages.length
-        ? [{ form: "paged", title: start.title, part: stretch.part, pages, headings: [] }]
+        ? [
+            {
+              form: "paged",
+              title: start.title,
+              named: true,
+              part: stretch.part,
+              pages,
+              headings: [],
+            },
+          ]
         : [];
     });
   }
@@ -178,12 +207,13 @@ function splitAtOwnHeadings(stretch: Stretch): Stretch[] {
   let current = { title: stretch.title, lines: [] as string[] };
   const flush = () => {
     const text = current.lines.join("\n").trim();
-    if (text) pieces.push({ form: "flowing", title: current.title, part: stretch.part, text });
+    if (text)
+      pieces.push({ form: "flowing", title: current.title, named: true, part: stretch.part, text });
   };
   for (const line of lines) {
     if (headingDepth(line) === depth) {
       flush();
-      current = { title: pieceTitle(stretch.title, line.replace(/^#+\s*/, "")), lines: [line] };
+      current = { title: pieceTitle(stretch, line.replace(/^#+\s*/, "")), lines: [line] };
     } else current.lines.push(line);
   }
   flush();
@@ -242,11 +272,12 @@ async function divide(stretch: Stretch, divider: Divider): Promise<Stretch[]> {
   return ordered.map(([at, title], i): Stretch => {
     const end = ordered[i + 1]?.[0] ?? units.length;
     const piece = units.slice(at, end);
-    const named = pieceTitle(stretch.title, title);
+    const named = pieceTitle(stretch, title);
     return stretch.form === "paged"
       ? {
           form: "paged",
           title: named,
+          named: true,
           part: stretch.part,
           pages: piece.flatMap((u) => (u.page ? [u.page] : [])),
           headings: [],
@@ -254,6 +285,7 @@ async function divide(stretch: Stretch, divider: Divider): Promise<Stretch[]> {
       : {
           form: "flowing",
           title: named,
+          named: true,
           part: stretch.part,
           text: piece.map((u) => u.text).join("\n\n"),
         };
@@ -277,7 +309,7 @@ function merged(stretches: Stretch[]): Stretch[] {
     const next: Stretch = carry ? (join(carry, stretch) ?? stretch) : stretch;
     if (carry && next === stretch) out.push(carry);
     carry = null;
-    if (length(next) < PASSAGE_MIN) carry = next;
+    if (length(next) < CHAPTER_MIN) carry = next;
     else out.push(next);
   }
   if (carry) {
@@ -294,12 +326,13 @@ function merged(stretches: Stretch[]): Stretch[] {
 
 /** Two stretches as one; null where they are of different forms. */
 function join(a: Stretch, b: Stretch): Stretch | null {
-  const title = length(a) >= length(b) ? a.title : b.title;
+  const longer = length(a) >= length(b) ? a : b;
+  const { title, named } = longer;
   const part = a.part ?? b.part;
   if (a.form === "paged" && b.form === "paged")
-    return { form: "paged", title, part, pages: [...a.pages, ...b.pages], headings: [] };
+    return { form: "paged", title, named, part, pages: [...a.pages, ...b.pages], headings: [] };
   if (a.form === "flowing" && b.form === "flowing")
-    return { form: "flowing", title, part, text: `${a.text}\n\n${b.text}` };
+    return { form: "flowing", title, named, part, text: `${a.text}\n\n${b.text}` };
   return null;
 }
 

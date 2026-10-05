@@ -85,21 +85,32 @@ const summaries = (n: number) =>
       n: i + 1,
       summary: `Chapter ${String(i + 1)}.`,
       assumes: "",
+      kind: "text",
     })),
   });
+
+/** A full page of text; two of them are more than a sitting's minimum, so a chapter of their own. */
+const pageOf = (topic: string) =>
+  Array.from(
+    { length: 80 },
+    (_, i) =>
+      `Sentence ${String(i + 1)} about ${topic}, written out at a length that fills the line and then some, as a book's page does.`,
+  ).join("\n");
 
 const BOOK = {
   title: "Networks from the Ground Up",
   pages: [
-    prose("the preface", 30),
-    prose("packets", 30),
+    pageOf("the preface"),
+    pageOf("the contents"),
+    pageOf("packets"),
+    pageOf("headers"),
     "scan",
-    prose("routing", 30),
-    prose("routes", 30),
+    pageOf("routing"),
+    pageOf("routes"),
   ],
   chapters: [
-    { title: "Packets", page: 2 },
-    { title: "Routing", page: 4 },
+    { title: "Packets", page: 3 },
+    { title: "Routing", page: 6 },
   ],
 };
 
@@ -113,12 +124,12 @@ describe("a track from a source", () => {
     expect(created.status).toBe(201);
     const trackId = created.body.id;
     const [file] = await t.db.select().from(trackFiles).where(eq(trackFiles.trackId, trackId));
-    expect(file).toMatchObject({ role: "source", kind: "pdf", pages: 5 });
+    expect(file).toMatchObject({ role: "source", kind: "pdf", pages: 7 });
 
     // The survey counts, with no model, and the book's own title names the track.
     await until(trackId, "awaiting");
     const surveyed = await reading(trackId);
-    expect(surveyed).toMatchObject({ status: "awaiting", pages: 5, transcribe: 1, chapters: 3 });
+    expect(surveyed).toMatchObject({ status: "awaiting", pages: 7, transcribe: 1, chapters: 3 });
     expect(surveyed?.estimate).toBeGreaterThan(0);
     expect(models.used).toEqual([]);
     const [named] = await t.db.select().from(tracks).where(eq(tracks.id, trackId));
@@ -137,14 +148,14 @@ describe("a track from a source", () => {
     expect(await early.json()).toMatchObject({ error: { code: "source-not-ready" } });
 
     models.script("source-transcribe", {
-      text: "=== page 3 ===\n# A diagram page\n\nA scanned page about packets crossing a router.",
+      text: "=== page 5 ===\n# A diagram page\n\nA scanned page about packets crossing a router.",
     });
     models.script("source-summary", {
       text: JSON.stringify({
         summaries: [
-          { n: 1, summary: "The preface.", assumes: "" },
-          { n: 2, summary: "What a packet is.", assumes: "Binary numbers." },
-          { n: 3, summary: "How routing finds a path.", assumes: "" },
+          { n: 1, summary: "The title page and the contents.", assumes: "", kind: "apparatus" },
+          { n: 2, summary: "What a packet is.", assumes: "Binary numbers.", kind: "text" },
+          { n: 3, summary: "How routing finds a path.", assumes: "", kind: "text" },
         ],
       }),
     });
@@ -156,7 +167,7 @@ describe("a track from a source", () => {
     const transcribing = models.used.find((u) => u.purpose === "source-transcribe")?.model;
     const sent = JSON.stringify(transcribing?.doGenerateCalls[0]?.prompt);
     expect(sent).toContain("application/pdf");
-    expect(sent).toContain("pages 3 of the source");
+    expect(sent).toContain("pages 5 of the source");
     const summarizing = models.used.find((u) => u.purpose === "source-summary")?.model;
     expect(JSON.stringify(summarizing?.doGenerateCalls[0]?.prompt)).toContain(
       "## Chapter 2: Packets",
@@ -167,10 +178,10 @@ describe("a track from a source", () => {
       .from(sourceChapters)
       .where(eq(sourceChapters.trackId, trackId))
       .orderBy(asc(sourceChapters.n));
-    expect(chapters.map((c) => [c.n, c.title, c.pages, c.summary, c.assumes])).toEqual([
-      [1, "Opening pages", "p. 1", "The preface.", ""],
-      [2, "Packets", "pp. 2–3", "What a packet is.", "Binary numbers."],
-      [3, "Routing", "pp. 4–5", "How routing finds a path.", ""],
+    expect(chapters.map((c) => [c.n, c.title, c.pages, c.summary, c.assumes, c.kind])).toEqual([
+      [1, "Opening pages", "pp. 1–2", "The title page and the contents.", "", "apparatus"],
+      [2, "Packets", "pp. 3–5", "What a packet is.", "Binary numbers.", "text"],
+      [3, "Routing", "pp. 6–7", "How routing finds a path.", "", "text"],
     ]);
     const passages = await t.db
       .select()
@@ -178,34 +189,35 @@ describe("a track from a source", () => {
       .where(eq(sourcePassages.trackId, trackId))
       .orderBy(asc(sourcePassages.n));
     expect(passages.map((p) => [p.n, p.chapterId, p.pages])).toEqual([
-      [1, chapters[0]?.id, "p. 1"],
-      [2, chapters[1]?.id, "pp. 2–3"],
-      [3, chapters[2]?.id, "pp. 4–5"],
+      [1, chapters[0]?.id, "pp. 1–2"],
+      [2, chapters[1]?.id, "pp. 3–5"],
+      [3, chapters[2]?.id, "pp. 6–7"],
     ]);
-    expect(passages[1]?.text).toContain("[p. 3]\n# A diagram page");
+    expect(passages[1]?.text).toContain("[p. 5]\n# A diagram page");
     expect(chapters[1]?.characters).toBe(passages[1]?.text.length);
     expect(await reading(trackId)).toMatchObject({
       status: "ready",
       transcribed: 1,
       chapters: 3,
       summarized: 3,
-      assigned: 1,
+      assigned: 2,
       readThrough: 0,
     });
 
-    // The first chapter is the one to read first; the rest lie ahead.
+    // The first chapter of the book's text is the one to read first; the title page is never
+    // assigned; the rest lie ahead.
     const shown = await progress(cookie, trackId);
     expect(shown.chapters.map((c) => [c.n, c.source, c.status])).toEqual([
-      [1, "networks.pdf", "assigned"],
-      [2, "networks.pdf", "ahead"],
+      [1, "networks.pdf", "skipped"],
+      [2, "networks.pdf", "assigned"],
       [3, "networks.pdf", "ahead"],
     ]);
     expect(shown.next).toMatchObject({
-      n: 1,
+      n: 2,
       source: "networks.pdf",
-      title: "Opening pages",
-      pages: "p. 1",
-      assumes: "",
+      title: "Packets",
+      pages: "pp. 3–5",
+      assumes: "Binary numbers.",
       first: true,
     });
   });
@@ -218,7 +230,7 @@ describe("a track from a source", () => {
     );
     const trackId = created.body.id;
     await until(trackId, "awaiting");
-    models.script("source-transcribe", { text: "=== page 3 ===\nThe scanned page." });
+    models.script("source-transcribe", { text: "=== page 5 ===\nThe scanned page." });
     // The summary call fails: no script for it.
     expect((await read(cookie, trackId)).status).toBe(202);
     await until(trackId, "failed");
@@ -247,7 +259,7 @@ describe("a track from a source", () => {
 
   it("reads an EPUB and a text file with no model calls but the summaries, numbering chapters across them", async () => {
     const cookie = await learner();
-    const long = (topic: string) => Array.from({ length: 20 }, () => prose(topic, 2)).join("\n\n");
+    const long = (topic: string) => Array.from({ length: 70 }, () => prose(topic, 2)).join("\n\n");
     const created = await create(
       cookie,
       form("", [

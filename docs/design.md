@@ -710,7 +710,17 @@ kept, so only the chapters' division and summaries are paid for: migration 0039.
     they are few and have bookmarks under them; a heading level above the chapters' in flowing
     text), their pages as the book numbers them, their length in characters, and two sentences
     apiece (`sources/summarize.ts`, the cheap model): `summary`, what the chapter teaches and the
-    terms it introduces; `assumes`, what it expects the reader to know already.
+    terms it introduces; `assumes`, what it expects the reader to know already. A chapter under
+    8,000 characters (about three pages: a dedication, a part's title page) joins the one after
+    it; a book with no bookmarks at all is one unnamed stretch whose pieces take the model's
+    titles alone. The same call says what **kind** of chapter it is (`source_chapters.kind`):
+    the book's `text`, or its `apparatus` (a title or copyright page, the contents, a list of
+    figures, an index, a bibliography, a glossary, acknowledgements; a preface or introduction is
+    text). That is a category the model recognises, not a judgment of worth (Omer, 2026-10-05:
+    the first chapter of a 705-page scan was its title page, and asking a model what is worth
+    keeping is too much to ask): nothing is deleted, an apparatus chapter stays in the list and
+    the tutor's map, marked, and is only never assigned as a reading; the progress shows it as
+    "not assigned", so a wrong call is seen.
   - A **passage** (`source_passages`, the first design's `source_sections`) is a prompt-sized cut of
     a chapter: at most 24,000 characters, split at page or paragraph breaks, a stretch under 1,500
     joined to its neighbour (`sources/chapters.ts` makes both); a PDF passage's text has a
@@ -721,12 +731,13 @@ kept, so only the chapters' division and summaries are paid for: migration 0039.
 - **The loop, a chapter at a time** (decided 2026-10-04, #66). Reading happens between sessions,
   in the learner's own copy: the app names the chapter and its pages and does not show the book
   (the learner finds their own way to read it; opening a citation at its page stays "later").
-  - **The first reading is assigned when the source is read**, before any session, on the track page
+  - **The first reading is assigned when the source is read** (the first chapter of the book's
+    text, `firstTextChapter`), before any session, on the track page
     ("Read first: Chapter 1, pp. 1–28"), with what the book expects its reader to know already in a
     sentence, from the chapters' summaries, so the learner can decide whether they are ready. There is
     no probe before the first reading: the first chapter's probe is the first probe.
   - **Every later reading is assigned at the close**, as homework is (`assignNextReading`): the
-    chapter after the last the learner finished, or the session's own chapter again when they
+    first text chapter after the last the learner finished, or the session's own chapter again when they
     didn't finish it, worked out from the session's chapters so a close run again lands on the
     same one; null once every chapter is read. It is kept on the track (`tracks.source.assigned`,
     beside `readThrough`, the last chapter finished) so the track page, the closed session's chat
@@ -777,7 +788,8 @@ kept, so only the chapters' division and summaries are paid for: migration 0039.
   - **Reading progress** (`GET /api/tracks/:id/source`, `track-source.ts`, the first design's
     coverage): each chapter ahead, assigned (the one to read next), read (the learner finished it,
     no session has probed it yet), taught (a session's lesson taught what they missed in it) or
-    held (a session probed it and found nothing to teach); and the next reading, with the chapter's
+    held (a session probed it and found nothing to teach) or skipped (apparatus); and the next
+    reading, with the chapter's
     pages (or its length), its file among several and what it assumes. Shown on the track page
     (§9.2, "Read first" before the track's first session, "Read next" after) and under a closed
     session's recap in its chat; the track list carries the next reading too (`reading`).

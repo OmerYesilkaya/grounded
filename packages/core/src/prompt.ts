@@ -84,6 +84,8 @@ export interface SourceChapter {
    */
   summary: string | null;
   assumes: string | null;
+  /** The book's apparatus (a title page, the contents, an index): listed, never assigned. */
+  apparatus?: boolean;
 }
 
 export interface SourceContext {
@@ -378,7 +380,8 @@ function renderSource(source: SourceContext): string {
       const pages = c.pages ? ` (${c.pages})` : "";
       const about = c.summary ? `: ${c.summary}` : "";
       const assumes = c.assumes ? ` Expects the reader to know: ${c.assumes}` : "";
-      lines.push(`- Chapter ${String(c.n)} ${c.title}${pages}${about}${assumes}`);
+      const apparatus = c.apparatus ? " (the book's apparatus, not assigned as reading)" : "";
+      lines.push(`- Chapter ${String(c.n)} ${c.title}${pages}${apparatus}${about}${assumes}`);
     }
   }
   lines.push("", "Reading:", "");

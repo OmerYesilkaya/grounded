@@ -57,6 +57,7 @@ export const track = defineMessages({
         read: "read",
         taught: "taught",
         held: "held",
+        skipped: "not assigned",
       },
       counts: {
         ahead: "ahead",
@@ -64,7 +65,10 @@ export const track = defineMessages({
         read: "read",
         taught: "taught",
         held: "held",
+        skipped: "not assigned",
       },
+      skippedNote:
+        "Title pages, the contents and the index are listed but never assigned as reading.",
       marker: "From a source",
     },
     progress: {
@@ -216,6 +220,7 @@ export const track = defineMessages({
         read: "okundu",
         taught: "öğretildi",
         held: "oturmuş",
+        skipped: "verilmez",
       },
       counts: {
         ahead: "sırada",
@@ -223,7 +228,9 @@ export const track = defineMessages({
         read: "okundu",
         taught: "öğretildi",
         held: "oturmuş",
+        skipped: "verilmez",
       },
+      skippedNote: "Kapak sayfaları, içindekiler ve dizin listelenir ama okuma olarak verilmez.",
       marker: "Bir kaynaktan",
     },
     progress: {

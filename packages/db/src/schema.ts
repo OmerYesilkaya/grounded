@@ -348,6 +348,11 @@ export const sourceChapters = pgTable(
     summary: text("summary"),
     /** What it expects the reader to know already, in a sentence; null until written, "" if nothing. */
     assumes: text("assumes"),
+    /**
+     * text: the book's own words · apparatus: a title page, the contents, an index and the like,
+     * listed but never assigned as a reading (design §4.6). Text until the summary says otherwise.
+     */
+    kind: text("kind").$type<"text" | "apparatus">().notNull().default("text"),
   },
   (table) => [uniqueIndex("source_chapters_n").on(table.trackId, table.n)],
 );

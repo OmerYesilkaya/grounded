@@ -7,6 +7,7 @@ import { pacedModel } from "./paced.js";
 import { bookPdf, DOCX, epub, prose, text } from "../test/files.js";
 import { extractSource, splitAtHeadings, textLayerUnusable, UnreadableSource } from "./extract.js";
 import {
+  CHAPTER_MIN,
   LONG_CHAPTER_CHARACTERS,
   LONG_CHAPTER_PAGES,
   PASSAGE_MAX,
@@ -116,7 +117,7 @@ describe("a source's chapters", () => {
   const noDivider: Divider = () => Promise.reject(new Error("not asked"));
 
   it("are the author's chapters, with the pages each spans, their part, and passages with a line where each page starts", async () => {
-    const long = "x".repeat(PASSAGE_MIN);
+    const long = "x".repeat(CHAPTER_MIN);
     const { chapters } = await toChapters(
       {
         form: "paged",
@@ -155,6 +156,30 @@ describe("a source's chapters", () => {
     // The part title page joined the chapter; the chapter is one reading in six passages.
     expect(chapters.map((c) => [c.title, c.pages, c.passages.length])).toEqual([
       ["Long chapter", "pp. 1–7", 6],
+    ]);
+  });
+
+  it("join a chapter too short for a sitting to the one after it", async () => {
+    const { chapters } = await toChapters(
+      {
+        form: "paged",
+        title: null,
+        pages: [
+          page(1, "a".repeat(CHAPTER_MIN)),
+          page(2, "short"),
+          page(3, "b".repeat(CHAPTER_MIN)),
+        ],
+        chapters: [
+          { title: "One", part: null, page: 1 },
+          { title: "Book Two", part: null, page: 2 },
+          { title: "Two", part: null, page: 3 },
+        ],
+      },
+      noDivider,
+    );
+    expect(chapters.map((c) => [c.title, c.pages])).toEqual([
+      ["One", "p. 1"],
+      ["Two", "pp. 2–3"],
     ]);
     for (const p of chapters[0]?.passages ?? [])
       expect(p.text.length).toBeLessThanOrEqual(PASSAGE_MAX + 20);
@@ -220,6 +245,30 @@ describe("a source's chapters", () => {
     expect(chapters.map((c) => [c.title, c.pages])).toEqual([
       ["Everything: Beginnings", "pp. 1–25"],
       ["Everything: Middles", "pp. 26–50"],
+    ]);
+  });
+
+  it("give a book with no bookmarks at all the model's titles alone", async () => {
+    const pages = Array.from({ length: LONG_CHAPTER_PAGES + 10 }, (_, i) =>
+      page(i + 1, "w".repeat(CHAPTER_MIN / 2)),
+    );
+    // The book is divided a window at a time; only the first window's cuts are scripted.
+    const divider: Divider = (chapter) =>
+      Promise.resolve(
+        chapter.units[0]?.label === "p. 1"
+          ? [
+              { at: 0, title: "Title and Publication Information" },
+              { at: 4, title: "Prelude" },
+            ]
+          : [],
+      );
+    const { chapters } = await toChapters(
+      { form: "paged", title: "Revival", pages, chapters: [] },
+      divider,
+    );
+    expect(chapters.map((c) => [c.title, c.pages])).toEqual([
+      ["Title and Publication Information", "pp. 1–4"],
+      ["Prelude", "pp. 5–50"],
     ]);
   });
 

@@ -10,6 +10,7 @@ import {
   and,
   asc,
   eq,
+  gte,
   inArray,
   learningSessions,
   sourceChapters,
@@ -54,6 +55,7 @@ export async function loadSourceContext(
       pages: sourceChapters.pages,
       summary: sourceChapters.summary,
       assumes: sourceChapters.assumes,
+      kind: sourceChapters.kind,
       file: trackFiles.name,
     })
     .from(sourceChapters)
@@ -68,10 +70,11 @@ export async function loadSourceContext(
   const near = (n: number) => at.some((c) => Math.abs(c - n) <= NEARBY);
   return {
     files: [...new Set(rows.map((r) => r.file))],
-    chapters: rows.map((r) => ({
+    chapters: rows.map(({ kind, ...r }) => ({
       ...r,
       summary: (all || near(r.n)) && r.summary ? r.summary : null,
       assumes: (all || near(r.n)) && r.assumes ? r.assumes : null,
+      ...(kind === "apparatus" ? { apparatus: true } : {}),
     })),
     readThrough,
     assigned,
@@ -267,10 +270,35 @@ export const SOURCE_PROBE_SUMMARY_PROMPT =
 export const NEXT_READING = "The next reading";
 
 /**
- * At the close, the next chapter to read (design §4.6): the one after the last the learner
- * finished, or the session's own chapter again when they didn't finish it. Null once every chapter
- * is read. Recorded on the track, and said for the recap to name. Worked out from the session's
- * chapters, not the track's assignment, so a close run again lands on the same chapter.
+ * The first chapter of the book's text (not its apparatus: a title page, the contents, an index)
+ * from `from` on; null when none is left (design §4.6).
+ */
+export async function firstTextChapter(
+  db: Db,
+  trackId: string,
+  from: number,
+): Promise<number | null> {
+  const [row] = await db
+    .select({ n: sourceChapters.n })
+    .from(sourceChapters)
+    .where(
+      and(
+        eq(sourceChapters.trackId, trackId),
+        eq(sourceChapters.kind, "text"),
+        gte(sourceChapters.n, from),
+      ),
+    )
+    .orderBy(asc(sourceChapters.n))
+    .limit(1);
+  return row?.n ?? null;
+}
+
+/**
+ * At the close, the next chapter to read (design §4.6): the first of the book's text after the
+ * last the learner finished, or the session's own chapter again when they didn't finish it. Null
+ * once every chapter is read. Recorded on the track, and said for the recap to name. Worked out
+ * from the session's chapters, not the track's assignment, so a close run again lands on the same
+ * chapter.
  */
 export async function assignNextReading(
   db: Db,
@@ -284,14 +312,9 @@ export async function assignNextReading(
   const reading = track?.source;
   const first = sessionChapters[0];
   if (!reading || first === undefined) return null;
-  const [{ total } = { total: 0 }] = await db
-    .select({ total: sql<number>`count(*)::int` })
-    .from(sourceChapters)
-    .where(eq(sourceChapters.trackId, trackId));
   const readThrough = reading.readThrough ?? 0;
   const again = readThrough < first;
-  const next = again ? first : readThrough + 1;
-  const assigned = next <= total ? next : null;
+  const assigned = again ? first : await firstTextChapter(db, trackId, readThrough + 1);
   await db
     .update(tracks)
     .set({ source: { ...reading, assigned } })

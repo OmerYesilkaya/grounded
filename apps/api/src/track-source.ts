@@ -22,8 +22,8 @@ export interface SourceProgress {
  * A source track's reading progress (design §4.6): each chapter of its sources, and where the
  * learner stands with it. Assigned where it is the one to read next, read where they have finished
  * it and no session has probed it yet, taught where a session's lesson taught what they missed in
- * it, held where a session probed it and found nothing to teach. Null for a track that isn't the
- * learner's or has no source.
+ * it, held where a session probed it and found nothing to teach, skipped where it is the book's
+ * apparatus. Null for a track that isn't the learner's or has no source.
  */
 export async function sourceProgress(
   db: Db,
@@ -40,6 +40,7 @@ export async function sourceProgress(
       title: sourceChapters.title,
       part: sourceChapters.part,
       pages: sourceChapters.pages,
+      kind: sourceChapters.kind,
       source: trackFiles.name,
     })
     .from(sourceChapters)
@@ -77,17 +78,20 @@ export async function sourceProgress(
   const first = sessions.length === 0;
   return {
     reading: track.source,
-    chapters: chapters.map((c) => ({
+    chapters: chapters.map(({ kind, ...c }) => ({
       ...c,
-      status: taught.has(c.n)
-        ? "taught"
-        : held.has(c.n)
-          ? "held"
-          : c.n <= readThrough
-            ? "read"
-            : c.n === assigned
-              ? "assigned"
-              : "ahead",
+      status:
+        kind === "apparatus"
+          ? "skipped"
+          : taught.has(c.n)
+            ? "taught"
+            : held.has(c.n)
+              ? "held"
+              : c.n <= readThrough
+                ? "read"
+                : c.n === assigned
+                  ? "assigned"
+                  : "ahead",
     })),
     next: await nextReading(db, { trackId, source: track.source }, first),
   };

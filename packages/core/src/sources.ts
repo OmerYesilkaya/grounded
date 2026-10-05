@@ -115,9 +115,10 @@ export interface SourceChapterView {
   /**
    * ahead: not yet asked to read · assigned: the one to read next · read: read, not yet probed on
    * · taught: probed, and a lesson taught what the learner missed · held: probed and found held,
-   * nothing to teach.
+   * nothing to teach · skipped: the book's apparatus (a title page, the contents, an index), never
+   * assigned.
    */
-  status: "ahead" | "assigned" | "read" | "taught" | "held";
+  status: "ahead" | "assigned" | "read" | "taught" | "held" | "skipped";
 }
 
 /** The chapter a learner is asked to read next, shown on the track and after a session's close. */

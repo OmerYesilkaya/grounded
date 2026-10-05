@@ -34,6 +34,7 @@ import {
 } from "../sources/summarize.js";
 import { TRANSCRIBE_BATCH, transcribePages } from "../sources/transcribe.js";
 import { causeOf, type ModelAccess } from "./model-call.js";
+import { firstTextChapter } from "./source-teaching.js";
 
 /*
  * Reading a track's sources (design §4.6), in two jobs. The survey takes the text out with no
@@ -355,18 +356,18 @@ export function createSourceTasks(deps: SourceTaskDependencies): TaskList {
         const found = await summarizeChapters(await model("source-summary"), batch);
         for (const chapter of batch) {
           // A chapter the reply left out keeps its title alone; the map still lists it.
-          const written = found.get(chapter.n) ?? { summary: "", assumes: "" };
+          const written = found.get(chapter.n) ?? { summary: "", assumes: "", kind: "text" };
           await db.update(sourceChapters).set(written).where(eq(sourceChapters.id, chapter.id));
         }
         summarized += batch.length;
         await updateReading(db, trackId, { summarized });
       }
-      // Read: the first chapter is the one to read first (design §4.6).
+      // Read: the first chapter of the book's text is the one to read first (design §4.6).
       await updateReading(db, trackId, {
         status: "ready",
         chapters: total,
         failure: null,
-        assigned: total > 0 ? 1 : null,
+        assigned: await firstTextChapter(db, trackId, 1),
         readThrough: 0,
       });
     }),

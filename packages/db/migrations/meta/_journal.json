@@ -281,6 +281,13 @@
       "when": 1791190130981,
       "tag": "0039_source_chapters",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1791200500552,
+      "tag": "0040_chapter_kind",
+      "breakpoints": true
     }
   ]
 }

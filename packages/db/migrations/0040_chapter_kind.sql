@@ -1,0 +1,1 @@
+ALTER TABLE "source_chapters" ADD COLUMN "kind" text DEFAULT 'text' NOT NULL;

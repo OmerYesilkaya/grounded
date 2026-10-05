@@ -210,6 +210,7 @@ const STATUSES: readonly SourceChapterView["status"][] = [
   "read",
   "assigned",
   "ahead",
+  "skipped",
 ];
 
 /** Above this many chapters, the list opens on request. */
@@ -255,7 +256,8 @@ export function SourceProgressView({ trackId }: { trackId: string }) {
                 "font-medium text-primary",
               chapter.status === "assigned" && "font-medium text-foreground",
               chapter.status === "read" && "text-foreground",
-              chapter.status === "ahead" && "text-subtle-foreground",
+              (chapter.status === "ahead" || chapter.status === "skipped") &&
+                "text-subtle-foreground",
             )}
           >
             {t.status[chapter.status]}
@@ -267,7 +269,10 @@ export function SourceProgressView({ trackId }: { trackId: string }) {
   return (
     <section className="mt-12">
       <h2 className="text-xs tracking-widest text-subtle-foreground uppercase">{t.progress}</h2>
-      <p className="mt-1.5 text-[13px] text-muted-foreground">{t.progressNote}</p>
+      <p className="mt-1.5 text-[13px] text-muted-foreground">
+        {t.progressNote}
+        {chapters.some((c) => c.status === "skipped") && ` ${t.skippedNote}`}
+      </p>
       <p className="mt-3 text-sm">
         {counts.map((c) => `${format.number(c.count)} ${t.counts[c.status]}`).join(" · ")}
       </p>
