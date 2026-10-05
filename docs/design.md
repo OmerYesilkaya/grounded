@@ -2004,9 +2004,9 @@ every other page usable (tried at 360–430px wide, in both themes).
   the name. Anything longer gets a stand-in at once, the first line cut at a word, and a job
   (`name-track`, the cheap model, purpose `track-name`) asks for a short name in the learner's
   language ("Backend interviews", not "I want to pass backend interviews"). The track list checks
-  again every second while a track is being named (`naming` in `GET /api/tracks`). If the call fails,
-  the stand-in stays. Naming is a job, not part of the request (§4.2), so creating a track never waits
-  on a model.
+  again every three seconds while a track is being named (`naming` in `GET /api/tracks`). If the call
+  fails, the stand-in stays. Naming is a job, not part of the request (§4.2), so creating a track
+  never waits on a model.
 - **Files come with the words** (§4.5): a paperclip button, files dropped on the box, or a picture
   pasted into it (text pastes as text). Each file shows as a chip with its name and size (a thumbnail
   for images) and a remove button; a file that can't go says why in place of its size, and holds

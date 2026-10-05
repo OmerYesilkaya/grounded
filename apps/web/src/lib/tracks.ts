@@ -117,16 +117,16 @@ export const readingSource = (track: Pick<TrackSummary, "source">) =>
   track.source?.status === "surveying" || track.source?.status === "reading";
 
 /**
- * The learner's tracks; checked again every second while the tutor is naming one, and every two
- * while it is reading one's source.
+ * The learner's tracks; checked again every three seconds while the tutor is naming one, and every
+ * ten while it is reading one's source, which takes minutes.
  */
 export const tracksQuery = queryOptions({
   queryKey: ["tracks"],
   queryFn: () => api<TrackSummary[]>("/api/tracks"),
   refetchInterval: (query) => {
     const tracks = query.state.data ?? [];
-    if (tracks.some((t) => t.naming)) return 1000;
-    return tracks.some(readingSource) ? 2000 : false;
+    if (tracks.some((t) => t.naming)) return 3000;
+    return tracks.some(readingSource) ? 10_000 : false;
   },
 });
 
