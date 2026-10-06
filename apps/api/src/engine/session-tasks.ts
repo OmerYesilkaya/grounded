@@ -506,12 +506,22 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       .where(eq(checkMessages.sessionId, sessionId))
       .orderBy(asc(checkMessages.createdAt), asc(checkMessages.id));
 
-  /** The prompt for grading or re-asking a step: the check phase's method plus the step and its thread. */
-  const checkPrompt = async (sessionId: string, stepId: string, state: SessionState) => {
+  /**
+   * The prompt for grading or re-asking a step: the check phase's method plus the step and its
+   * thread. When grading, the thread's last message is the answer being graded, which the call
+   * sends as its user turn, so the system prompt's thread stops before it; re-asking shows it whole.
+   */
+  const checkPrompt = async (
+    sessionId: string,
+    stepId: string,
+    state: SessionState,
+    { grading = false }: { grading?: boolean } = {},
+  ) => {
     const session = await loadSession(db, sessionId);
     const track = await loadTrackContext(db, session.trackId, { sessionId, phase: "check" });
     const lesson = await lessonRow(sessionId);
     const thread = (await threadsOf(sessionId)).filter((m) => m.stepId === stepId);
+    const shown = grading ? thread.slice(0, -1) : thread;
     const held = alreadyHeldSoFar(
       Object.fromEntries(Object.entries(lesson.alreadyHeld).filter(([id]) => id !== stepId)),
     );
@@ -539,7 +549,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         {
           heading: "Its check thread so far",
           body:
-            thread
+            shown
               .map((m) => `${m.role === "learner" ? "Learner" : "Tutor"}: ${m.text ?? ""}`)
               .join("\n") || "(none)",
         },
@@ -1216,6 +1226,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           sessionId,
           stepId,
           state,
+          { grading: true },
         );
         // Only an answer still waiting is graded: recovery may have answered it already (recovery.ts).
         const answer = thread.at(-1);

@@ -500,6 +500,32 @@ describe("checks", () => {
     expect(JSON.stringify(first?.[3])).toContain("The step being checked");
   });
 
+  it("sends the answer being graded once, as the turn, and the step's earlier exchanges in the thread", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script(
+      "check",
+      verdict({ verdict: "missed", reply: "Not yet.", freshQuestion: "Try this one?" }),
+      verdict({ verdict: "landed", reply: "Yes." }),
+    );
+    await answer(cookie, sessionId, "s1", { text: "the new value" });
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
+    await answer(cookie, sessionId, "s1", { text: "the old value, until it is put back" });
+    await until(cookie, sessionId, (s) => s.state.steps.s1?.status === "passed");
+
+    const [first, second] = models.used
+      .filter((u) => u.purpose === "check")
+      .map((u) => JSON.stringify(u.model.doGenerateCalls[0]?.prompt));
+    const occurrences = (text: string | undefined, part: string) =>
+      (text?.split(part).length ?? 1) - 1;
+    expect(occurrences(first, "the new value")).toBe(1);
+    expect(first).toContain("Its check thread so far");
+    expect(first).toContain("(none)");
+    expect(occurrences(second, "the old value, until it is put back")).toBe(1);
+    expect(second).toContain("Learner: the new value");
+    expect(second).toContain("Tutor: Not yet.");
+    expect(second).not.toContain("Learner: the old value");
+  });
+
   it("checks at the point of need: a step nothing rests on yet opens with the next, whose check covers both", async () => {
     const session = await planned();
     const outline = {
