@@ -74,7 +74,7 @@ const LESSON = [
 ].join("\n\n");
 
 const verdict = (v: {
-  verdict: "landed" | "missed";
+  verdict: "landed" | "unproven" | "missed";
   reply: string;
   freshQuestion?: string;
   note?: string;
@@ -307,6 +307,58 @@ describe("checks", () => {
     expect(s.state.steps.s1).toEqual({ status: "open", misses: 1, offerGate: false });
     expect(s.lesson?.notes.s1).toBe(
       "The value in memory doesn't change until the copy is put back.",
+    );
+  });
+
+  it("asks a fresh question, without a repair, when the answer showed nothing, and decides the next", async () => {
+    const { cookie, sessionId } = await inLesson();
+    models.script(
+      "check",
+      verdict({
+        verdict: "unproven",
+        reply: "That names the step, not what happens.",
+        freshQuestion:
+          "A worker copies 5 and is interrupted before putting 6 back. What does memory hold?",
+      }),
+      verdict({ verdict: "landed", reply: "Yes: still 5." }),
+    );
+    await answer(cookie, sessionId, "s1", { text: "the working copy" });
+    await until(cookie, sessionId, (s) => tutorReplies(s, "s1").length === 1);
+
+    let s = await snapshot(cookie, sessionId);
+    expect(tutorReplies(s, "s1").map((m) => [m.verdict, m.text])).toEqual([
+      [
+        "unproven",
+        "That names the step, not what happens.\n\nA worker copies 5 and is interrupted before putting 6 back. What does memory hold?",
+      ],
+    ]);
+    expect(s.state.steps.s1).toEqual({
+      status: "open",
+      misses: 0,
+      offerGate: false,
+      pressed: true,
+    });
+    expect(s.lesson?.notes.s1).toBeUndefined();
+
+    await answer(cookie, sessionId, "s1", { text: "5" });
+    await until(cookie, sessionId, (s) => s.state.steps.s1?.status === "passed");
+    s = await snapshot(cookie, sessionId);
+    expect(s.state.currentStep).toBe("s2");
+    // The second grading could only decide: the schema offered landed or missed, and the prompt said so.
+    const calls = models.used
+      .filter((u) => u.purpose === "check")
+      .flatMap((u) => u.model.doGenerateCalls);
+    expect(calls).toHaveLength(2);
+    const offered = (call: (typeof calls)[number] | undefined) =>
+      (
+        call?.responseFormat as
+          { schema?: { properties?: { verdict?: { enum?: string[] } } } } | undefined
+      )?.schema?.properties?.verdict?.enum;
+    expect(offered(calls[0])).toEqual(["landed", "unproven", "missed"]);
+    expect(offered(calls[1])).toEqual(["landed", "missed"]);
+    expect(JSON.stringify(calls[1]?.responseFormat)).not.toContain("Unproven");
+    expect(JSON.stringify(calls[1]?.prompt)).toContain(
+      "The learner was already asked once on this step to show the idea rather than name it",
     );
   });
 

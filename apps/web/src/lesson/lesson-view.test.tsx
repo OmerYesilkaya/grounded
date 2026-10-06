@@ -1,4 +1,5 @@
 import { parseBlocks, parseLesson, type LessonStep } from "@grounded/content";
+import type { CheckOutcome } from "@grounded/core/check";
 import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -19,7 +20,7 @@ function steps(): LessonStep[] {
   return result.steps;
 }
 
-const tutor = (markdown: string, verdict?: "landed" | "missed") => ({
+const tutor = (markdown: string, verdict?: CheckOutcome) => ({
   from: "tutor" as const,
   blocks: parseBlocks(markdown).blocks,
   ...(verdict ? { verdict } : {}),

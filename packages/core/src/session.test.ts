@@ -139,6 +139,22 @@ describe("checks and the gate", () => {
     expect(state.currentStep).toBe("s1");
   });
 
+  it("keeps the step open, with no miss, when the answer showed nothing; once", () => {
+    const state = run(inLesson(), { type: "check-verdict", stepId: "s1", verdict: "unproven" });
+    expect(state.steps.s1).toEqual({ status: "open", misses: 0, offerGate: false, pressed: true });
+    expect(state.currentStep).toBe("s1");
+    expect(rejected(state, { type: "check-verdict", stepId: "s1", verdict: "unproven" })).toBe(
+      "pressed-already",
+    );
+    // The next answer is decided either way, and a miss counts from zero.
+    expect(run(state, { type: "check-verdict", stepId: "s1", verdict: "landed" }).steps.s1).toEqual(
+      { status: "passed", misses: 0, offerGate: false, pressed: true },
+    );
+    expect(run(state, { type: "check-verdict", stepId: "s1", verdict: "missed" }).steps.s1).toEqual(
+      { status: "open", misses: 1, offerGate: false, pressed: true },
+    );
+  });
+
   it("offers pause or continue after a second miss when the next step rests on this one", () => {
     const state = run(
       inLesson(),

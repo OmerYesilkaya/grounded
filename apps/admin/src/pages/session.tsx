@@ -239,7 +239,9 @@ function Item({
                   "rounded-full px-2 py-0.5 text-xs",
                   item.verdict === "landed"
                     ? "bg-success/15 text-success"
-                    : "bg-destructive/15 text-destructive",
+                    : item.verdict === "unproven"
+                      ? "bg-muted text-muted-foreground"
+                      : "bg-destructive/15 text-destructive",
                 )}
               >
                 {item.verdict}

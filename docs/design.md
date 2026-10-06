@@ -1315,6 +1315,18 @@ HTML/SVG). To be measured, then adjusted.
   with no glide. (Until 2026-10-01 the steps appeared with the verdict and the page glided to the
   new heading 1.4 s later, which took the verdict off screen; and the new step's answer box took
   focus at once, which scrolled the page to it instantly, so the glide was never seen: §9.4.)
+- **Unproven** (decided 2026-10-06): an answer that repeats the question or the step's words, or
+  names the idea without using it, showed nothing either way, so it is neither landed (it would
+  confirm a term on nothing) nor missed (there is no leak to repair). The grader says in a few
+  words what it hasn't shown and asks a fresh question, shown as one turn under "Say more"; the step
+  stays open, its misses unchanged, and the state records that it was asked once
+  (`StepState.pressed`). The next answer is decided: the grading call then gets a schema whose
+  verdict is landed or missed alone (`decidedCheckVerdictSchema`), so the model cannot press twice,
+  and the state machine refuses a second press (`pressed-already`) should one arrive anyway. Two
+  shape rules are fed back once like the others: an unproven verdict without a fresh question, and
+  one that sets a term `confirmed`. Prompted by a prod check (Backend Development, s4) where "creates
+  a user" landed and confirmed `request handler`: the only honest verdicts were landed or missed, and
+  it wasn't a miss.
 - **Miss or "I don't know"** → a repair thread opens under the check (the one place explanation
   happens outside the lesson), then a **fresh** question on the same idea — never the same one again.
   The repair and the fresh question are **one tutor turn**, under "Not quite there yet" (decided

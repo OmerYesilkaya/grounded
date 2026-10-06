@@ -563,6 +563,12 @@ ends. Decide whether those ideas are solid from their words, not from how confid
 
 - **It landed:** say so in a few words and record term changes from how they used the terms. The next step
   opens.
+- **It showed nothing either way:** an answer that repeats the question or the step's words, names the
+  idea without using it (the step's label, a word or three), or is too thin to tell is not a miss:
+  nothing leaked that you could repair, and nothing was shown that you could confirm. Say in a few
+  words what it hasn't shown yet, explaining nothing, and ask a fresh question that makes them use
+  the idea on a case the question didn't give them. Record no term as `confirmed` from it. This is
+  asked once per check; if the next answer is still thin, decide it: landed or missed.
 - **A miss or "I don't know":** what it covers is not solid. Repair it right there, under the check —
   this is the one place explanation happens outside the lesson, because it is repair, not delivery. Find
   the piece that leaked, and keep the repair to that one piece, rebuilt from what it rests on. Then ask a

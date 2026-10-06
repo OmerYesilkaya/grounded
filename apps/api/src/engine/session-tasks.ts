@@ -17,6 +17,7 @@ import {
   breakDemotions,
   checkVerdictIssues,
   checkVerdictSchema,
+  decidedCheckVerdictSchema,
   generateLesson,
   LessonOutlineError,
   openingReviewDecisionSchema,
@@ -519,6 +520,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
     // A check covers every step whose ideas it asks about, not only the one it ends.
     const covered = placed?.steps ?? [stepId];
     const misses = state.steps[stepId]?.misses ?? 0;
+    const pressed = state.steps[stepId]?.pressed === true;
     const introduced = (lesson.outline?.steps ?? [])
       .slice(0, index + 1)
       .flatMap((s) => s.introduces);
@@ -563,6 +565,9 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
             misses >= 1
               ? "If this answer misses too, the idea is still settling: say so kindly, stop repairing, and give no fresh question."
               : "If this answer misses, repair the piece that leaked, rebuilt from what it rests on, and give a fresh question on the same ideas.",
+            pressed
+              ? "The learner was already asked once on this step to show the idea rather than name it: this answer is decided, landed or missed."
+              : "An answer that only repeats the question or the step's words, or names the idea without using it, shows nothing yet: it is unproven, not landed or missed; say in a few words what it hasn't shown and ask a fresh question that makes them use it.",
           ]
             .filter(Boolean)
             .join(" "),
@@ -570,7 +575,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       ],
     });
     const terms: TrackTerm[] = track.current;
-    return { session, system, thread, terms, introduced };
+    return { session, system, thread, terms, introduced, pressed };
   };
 
   /**
@@ -1207,7 +1212,7 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
       if (!stepId) throw new Error("check job without a step");
       try {
         const { state } = await loadSession(db, sessionId);
-        const { session, system, thread, terms, introduced } = await checkPrompt(
+        const { session, system, thread, terms, introduced, pressed } = await checkPrompt(
           sessionId,
           stepId,
           state,
@@ -1229,10 +1234,13 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
         const grade = (feedback: string) =>
           traced(() =>
             withActivity(db, sessionId, { code: "checking-answer" }, async () => {
+              // Asked once already to show more on this step: the answer is decided, by the schema.
               const { output } = await generateText({
                 model,
                 system,
-                output: Output.object({ schema: checkVerdictSchema }),
+                output: Output.object({
+                  schema: pressed ? decidedCheckVerdictSchema : checkVerdictSchema,
+                }),
                 prompt: request(feedback),
               });
               return output;
@@ -1327,12 +1335,12 @@ export function createSessionTasks(deps: SessionTaskDependencies): TaskList {
           verdict: verdict.verdict,
         });
         await markCardsTaught(db, sessionId, next);
-        // A miss still being repaired is one tutor turn, the repair then the fresh question; the
-        // app, not the model, withholds the question when the learner is offered pause or continue
-        // (design §7.3).
+        // A miss still being repaired is one tutor turn, the repair then the fresh question, as is
+        // an unproven answer's reply; the app, not the model, withholds the question when the
+        // learner is offered pause or continue (design §7.3).
         const step = next.steps[stepId];
         const asking =
-          verdict.verdict === "missed" && step?.status === "open" && !step.offerGate
+          verdict.verdict !== "landed" && step?.status === "open" && !step.offerGate
             ? verdict.freshQuestion
             : null;
         await recordCheckMessage(

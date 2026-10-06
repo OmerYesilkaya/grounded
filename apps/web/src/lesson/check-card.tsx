@@ -1,4 +1,5 @@
 import type { CheckBlock } from "@grounded/content";
+import type { CheckOutcome } from "@grounded/core/check";
 import { useState } from "react";
 import { Composer } from "@/components/composer";
 import { LearnerText } from "@/content/learner-text";
@@ -18,6 +19,13 @@ export interface CheckCardProps {
   onPause: () => void;
   onContinue: () => void;
 }
+
+/** How each verdict's label reads: unproven is neither a pass nor a miss (design §7.3). */
+const VERDICT_TONE: Record<CheckOutcome, string> = {
+  landed: "text-success",
+  unproven: "text-muted-foreground",
+  missed: "text-destructive",
+};
 
 /** A button of the card, stacked full width below the small breakpoint: a finger tall, and wrapping. */
 const STACKED =
@@ -76,13 +84,8 @@ export function CheckCard({
                   {t.tutor}
                 </div>
                 {message.verdict && (
-                  <div
-                    className={cn(
-                      "text-[12.5px] font-semibold",
-                      message.verdict === "landed" ? "text-success" : "text-destructive",
-                    )}
-                  >
-                    {message.verdict === "landed" ? t.landed : t.missed}
+                  <div className={cn("text-[12.5px] font-semibold", VERDICT_TONE[message.verdict])}>
+                    {t[message.verdict]}
                   </div>
                 )}
                 <div className="font-serif text-[16.5px] [&_p]:mb-2 [&_p:last-child]:mb-0">

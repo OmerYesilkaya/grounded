@@ -1,4 +1,5 @@
 import type { Block } from "@grounded/content";
+import type { CheckOutcome } from "@grounded/core/check";
 import type { AsideAnchor } from "@grounded/core/aside-anchor";
 import type { FailureNotice } from "@grounded/core/notices";
 
@@ -45,7 +46,7 @@ export type CheckMessage =
   | {
       from: "tutor";
       blocks: Block[];
-      verdict?: "landed" | "missed";
+      verdict?: CheckOutcome;
       /** The app's reply in place of the tutor's (design §9.3), shown in its place. */
       failure?: FailureNotice;
     };

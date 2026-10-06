@@ -23,6 +23,8 @@ export const lesson = defineMessages({
       you: "You",
       tutor: "Tutor",
       landed: "That's it",
+      /** The answer showed nothing either way; a fresh question follows (design §7.3). */
+      unproven: "Say more",
       missed: "Not quite there yet",
       checking: "Checking your answer…",
       settling: "This idea is still settling, and the next step rests on it.",
@@ -97,6 +99,7 @@ export const lesson = defineMessages({
       you: "Sen",
       tutor: "Öğretmen",
       landed: "İşte bu",
+      unproven: "Biraz daha anlat",
       missed: "Henüz tam değil",
       checking: "Cevabın kontrol ediliyor…",
       settling: "Bu fikir henüz oturuyor ve sonraki adım ona dayanıyor.",

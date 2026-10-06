@@ -1,3 +1,4 @@
+import type { CheckOutcome } from "./check.js";
 import { bare, type BareRefusalCode, type RefusalNotice } from "./notices.js";
 
 /**
@@ -19,6 +20,11 @@ export interface StepState {
   misses: number;
   /** Still shaky after a repair, and the next step rests on what its check covers. */
   offerGate: boolean;
+  /**
+   * Asked once, since the step was last opened, to show the idea rather than name it (an unproven
+   * verdict, design §7.3); the next verdict decides. Absent: not yet.
+   */
+  pressed?: true;
 }
 
 /**
@@ -85,7 +91,7 @@ export type SessionEvent =
   | { type: "lesson-resumed"; from: string | null }
   /** A failed lesson written again from the start: a new outline, and every step with it. */
   | { type: "lesson-restarted" }
-  | { type: "check-verdict"; stepId: string; verdict: "landed" | "missed" }
+  | { type: "check-verdict"; stepId: string; verdict: CheckOutcome }
   | { type: "pause"; stepId: string }
   | { type: "continue"; stepId: string }
   | { type: "resume" }
@@ -260,6 +266,11 @@ export function transition(state: SessionState, event: SessionEvent): Transition
       if (step.offerGate) return no("pause-or-continue-first");
       if (event.verdict === "landed")
         return advance(state, event.stepId, { ...step, status: "passed" });
+      // Showed nothing either way: no miss to repair, a fresh question; once per opening.
+      if (event.verdict === "unproven") {
+        if (step.pressed) return no("pressed-already");
+        return ok({ steps: { ...state.steps, [event.stepId]: { ...step, pressed: true } } });
+      }
       const misses = step.misses + 1;
       if (misses < MISSES_BEFORE_GATE)
         return ok({ steps: { ...state.steps, [event.stepId]: { ...step, misses } } });

@@ -91,7 +91,14 @@ export {
   type ReviewUnit,
   type WordingReview,
 } from "./review.js";
-export { checkVerdictIssues, checkVerdictSchema, type CheckVerdict } from "./check.js";
+export {
+  CHECK_VERDICTS,
+  checkVerdictIssues,
+  checkVerdictSchema,
+  decidedCheckVerdictSchema,
+  type CheckOutcome,
+  type CheckVerdict,
+} from "./check.js";
 export {
   auditDecisionSchema,
   openingReviewDecisionSchema,

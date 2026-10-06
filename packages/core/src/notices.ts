@@ -116,6 +116,7 @@ export type RefusalNotice =
   | { code: "step-paused" }
   | { code: "step-not-checked" }
   | { code: "pause-or-continue-first" }
+  | { code: "pressed-already" }
   | { code: "pause-not-offered" }
   | { code: "continue-not-offered" }
   | { code: "nothing-paused" }

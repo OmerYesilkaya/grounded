@@ -599,7 +599,7 @@ export const checkMessages = pgTable("check_messages", {
   role: text("role").$type<"learner" | "tutor">().notNull(),
   text: text("text"),
   blocks: jsonb("blocks").$type<Block[]>(),
-  verdict: text("verdict").$type<"landed" | "missed">(),
+  verdict: text("verdict").$type<"landed" | "unproven" | "missed">(),
   /**
    * The app's own message in place of the tutor's reply, when it couldn't be given: a notice the
    * web words (design §9.3). `text` says it in English for the tutor's later calls.

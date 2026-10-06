@@ -4,6 +4,7 @@
  * may import them.
  */
 
+import type { CheckOutcome } from "./check.js";
 import type { CallVerdict } from "./verdict.js";
 
 /** A JSON value, as a model call's content is stored. */
@@ -167,7 +168,7 @@ export type TimelineItem = { at: string } & (
       stepId: string;
       role: "learner" | "tutor";
       text: string;
-      verdict: "landed" | "missed" | null;
+      verdict: CheckOutcome | null;
       failure: string | null;
     }
   | {

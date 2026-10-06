@@ -10,6 +10,7 @@
     "./assignment-review": "./src/assignment-review.ts",
     "./attachments": "./src/attachments.ts",
     "./aside-anchor": "./src/aside-anchor.ts",
+    "./check": "./src/check.ts",
     "./probe-verdict": "./src/probe-verdict.ts",
     "./session": "./src/session.ts",
     "./notices": "./src/notices.ts",

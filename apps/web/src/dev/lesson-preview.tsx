@@ -1,4 +1,5 @@
 import { parseBlocks, parseLesson } from "@grounded/content";
+import type { CheckOutcome } from "@grounded/core/check";
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ContentProvider } from "@/content/environment";
@@ -7,7 +8,7 @@ import { setThemeChoice, useTheme } from "@/lib/theme";
 import { FIXTURE_LESSON } from "./fixture-lesson";
 
 const lesson = parseLesson(FIXTURE_LESSON);
-const tutor = (markdown: string, verdict?: "landed" | "missed") => ({
+const tutor = (markdown: string, verdict?: CheckOutcome) => ({
   from: "tutor" as const,
   blocks: parseBlocks(markdown).blocks,
   ...(verdict ? { verdict } : {}),

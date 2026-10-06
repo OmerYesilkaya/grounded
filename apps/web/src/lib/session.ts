@@ -1,6 +1,7 @@
 import type { Block, LessonStep } from "@grounded/content";
 import type { SessionState } from "@grounded/core";
 import type { Cause, FailureNotice } from "@grounded/core/notices";
+import type { CheckOutcome } from "@grounded/core/check";
 import type { ProbeVerdict } from "@grounded/core/probe-verdict";
 import type { Said } from "@/i18n/notice";
 import { useQuery } from "@tanstack/react-query";
@@ -31,7 +32,7 @@ export interface CheckEntry {
   role: "learner" | "tutor";
   text: string | null;
   blocks: Block[] | null;
-  verdict: "landed" | "missed" | null;
+  verdict: CheckOutcome | null;
   /** The app's reply in place of the tutor's, when the answer couldn't be checked (design §9.3). */
   failure?: FailureNotice | null;
 }
