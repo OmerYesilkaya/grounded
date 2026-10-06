@@ -61,6 +61,8 @@ export interface LearnerWords {
   goal: string;
   /** What they brought (their files), summarized; null without any. */
   brief: string | null;
+  /** What they wrote about themselves (design §8); null until they do. */
+  about: string | null;
   /** Their messages in this session, oldest first. */
   said: readonly string[];
 }
@@ -73,7 +75,7 @@ const HELD = new Set(["confirmed", "assumed", "borrowed"]);
 export const REVIEW_RULES = [
   "You check a tutor's text before a learner reads it. The tutor keeps private bookkeeping the learner must never see: a list of terms with statuses (planned, taught, confirmed, assumed), a map or graph of what rests on what (roots, nodes, edges, frontiers), and the session's phases. The same words have everyday and domain senses, which are fine.",
   "Judge each listed word where it stands. Then list any domain term the text uses that the learner doesn't hold and that isn't explained right there; most texts have none. Names in the learner's list count as held in any spelling or form.",
-  "The learner's own words count too. A term they used themselves, or one the background they describe plainly covers, is held: a working web developer knows React, a nurse knows blood pressure. Explaining it to them tells them the tutor wasn't listening. Judge against this learner, not a newcomer.",
+  "The learner's own words count too. A term they used themselves, or one that the background they describe, in the session or in what they wrote about themselves, plainly covers, is held: a working web developer knows React, a nurse knows blood pressure. Explaining it to them tells them the tutor wasn't listening. Judge against this learner, not a newcomer.",
 ].join("\n\n");
 
 /** The part of the review's prompt that holds while a session lasts: the rules and the terms. */
@@ -137,13 +139,18 @@ export const LEARNER_WORDS_LIMIT = 6_000;
 
 export function learnerWords(learner: LearnerWords): string {
   const said: string[] = [];
-  let room = LEARNER_WORDS_LIMIT - learner.goal.length - (learner.brief?.length ?? 0);
+  let room =
+    LEARNER_WORDS_LIMIT -
+    learner.goal.length -
+    (learner.brief?.length ?? 0) -
+    (learner.about?.length ?? 0);
   for (const message of [...learner.said].reverse()) {
     if (message.length > room) break;
     said.unshift(message);
     room -= message.length;
   }
   return [
+    ...(learner.about ? [`What the learner wrote about themselves: ${learner.about}`] : []),
     `What the learner wrote they want to learn: ${learner.goal}`,
     ...(learner.brief ? [`What they brought, summarized: ${learner.brief}`] : []),
     said.length

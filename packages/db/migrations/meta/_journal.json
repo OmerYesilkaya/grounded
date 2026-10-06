@@ -288,6 +288,13 @@
       "when": 1791200500552,
       "tag": "0040_chapter_kind",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791308246763,
+      "tag": "0041_learner_about",
+      "breakpoints": true
     }
   ]
 }

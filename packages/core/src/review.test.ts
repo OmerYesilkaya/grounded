@@ -107,6 +107,7 @@ describe("the wording review", () => {
     await reviewWording(model, unit(LONG), {
       goal: "Prepare for a senior front-end interview",
       brief: null,
+      about: "Backend developer by day; Node and Postgres.",
       said: ["I've shipped React apps for six years."],
     });
     const call = JSON.stringify(model.doGenerateCalls[0]?.prompt);
@@ -114,12 +115,20 @@ describe("the wording review", () => {
       "What the learner wrote they want to learn: Prepare for a senior front-end interview",
     );
     expect(call).toContain("- I've shipped React apps for six years.");
+    expect(call).toContain(
+      "What the learner wrote about themselves: Backend developer by day; Node and Postgres.",
+    );
     expect(call).toContain("Judge against this learner, not a newcomer.");
   });
 
   it("keeps the learner's newest words when they have said a lot", () => {
     const old = "o".repeat(LEARNER_WORDS_LIMIT);
-    const text = learnerWords({ goal: "Geometry", brief: "A syllabus.", said: [old, "newest"] });
+    const text = learnerWords({
+      goal: "Geometry",
+      brief: "A syllabus.",
+      about: null,
+      said: [old, "newest"],
+    });
     expect(text).toContain("What they brought, summarized: A syllabus.");
     expect(text).toContain("- newest");
     expect(text).not.toContain(old);

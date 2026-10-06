@@ -1,5 +1,5 @@
 import { reviewWording, type LearnerWords, type Reviewer } from "@grounded/core";
-import { and, asc, eq, isNotNull, sessionMessages, tracks, type Db } from "@grounded/db";
+import { and, asc, eq, isNotNull, sessionMessages, tracks, users, type Db } from "@grounded/db";
 import { log } from "../log.js";
 import type { ModelAccess } from "./model-call.js";
 
@@ -37,8 +37,9 @@ async function learnerWordsOf(
   ids: { trackId: string; sessionId: string },
 ): Promise<LearnerWords | undefined> {
   const [track] = await db
-    .select({ goal: tracks.goal, brief: tracks.brief })
+    .select({ goal: tracks.goal, brief: tracks.brief, about: users.about })
     .from(tracks)
+    .innerJoin(users, eq(users.id, tracks.userId))
     .where(eq(tracks.id, ids.trackId));
   if (!track) return undefined;
   const said = await db

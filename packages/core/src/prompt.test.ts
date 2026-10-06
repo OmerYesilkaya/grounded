@@ -43,6 +43,7 @@ const context: PromptContext = {
   },
   fixList: [{ text: "Thinks adding one is a single step", status: "open" }],
   teachingNotes: ["Abstract ideas land after one concrete example first."],
+  about: "Backend developer, eight years; Node and Postgres daily.",
 };
 
 const SOURCE: NonNullable<PromptContext["source"]> = {
@@ -188,6 +189,7 @@ describe("assemblePrompt", () => {
     const order = [
       "Always on.",
       "# What the app gives you in this call",
+      "## What the learner wrote about themselves",
       "## Track",
       "## Plan",
       "## Term list",
@@ -346,6 +348,7 @@ describe("assemblePrompt", () => {
     expect(prompt).toContain("Teaching language: Turkish");
     expect(prompt).not.toContain("## Term list");
     expect(prompt).not.toContain("## Teaching notes");
+    expect(prompt).not.toContain("## What the learner wrote about themselves");
   });
 
   it("rejects a method with an unknown phase in a tag", () => {

@@ -229,6 +229,7 @@ const en: Words = {
   "homework-closed": () => "This homework is closed.",
   "write-note": () => "Write the note first.",
   "notes-limit": (n) => `Keep it to ${enNumber(n.max)} notes.`,
+  "about-length": (n) => `Keep it to ${enNumber(n.max)} characters.`,
   // Why a job failed
   "provider-failed": enCause,
   "no-credential": enCause,
@@ -406,6 +407,7 @@ export const notices = defineMessages({
     "homework-closed": () => "Bu ödev kapandı.",
     "write-note": () => "Önce notu yaz.",
     "notes-limit": (n) => `En fazla ${trNumber(n.max)} not olabilir.`,
+    "about-length": (n) => `En fazla ${trNumber(n.max)} karakter olabilir.`,
     "provider-failed": trCause,
     "no-credential": trCause,
     "empty-reply": trCause,

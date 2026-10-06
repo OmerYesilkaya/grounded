@@ -21,7 +21,8 @@ config value.
   inline checks → homework → close).
 - Lessons rendered by our own block renderer (no HTML), with asides as margin cards.
 - Homework (typed kinds, image upload, review on submit), arc exams, the final.
-- Learner profile (teaching notes, used in every call; visible and editable) and simple per-track stats.
+- Learner profile (what the learner wrote about themselves, and teaching notes, used in every call;
+  visible and editable) and simple per-track stats.
 - Usage logging on every model call, with a simple display.
 - Responsive web: on a phone, reading, checks and asides work well.
 
@@ -1709,6 +1710,20 @@ How it is built (#37, decided 2026-09-29):
 
 ## 8. Learner profile and stats
 
+- **About you** (decided 2026-10-06): a few lines the learner writes about themselves (their work,
+  what they know, what they are after), theirs alone: the tutor never writes or revises it, and it is
+  not a teaching note. One text per learner (`users.about`, at most 2,000 characters; `GET` and
+  `PUT /api/profile/about`, an empty text clears it), edited at the top of "How you learn". In every
+  call: first in the track's part of the prompt ("What the learner wrote about themselves"), since it
+  is the learner's and changes slower than any track; the teaching-notes refresh reads it too, and
+  writes no note that repeats it; the wording review (§3.3) reads it with the learner's words, so a
+  term it plainly covers is held, and the plan's record names it among what a term may be assumed
+  on. The method reads it as the background a learner states in the probe: a term it plainly covers
+  is assumed from the first message, with the learner's words as evidence, and the probe never asks
+  for what it says. It is a claim, not a check's finding: nothing is confirmed on its strength, and a
+  term it covers that a check or review then shows isn't held goes back to taught and is re-taught
+  like any other. The probe doesn't spot-check it: a wrong claim costs part of a lesson before the
+  tutor adjusts, and that is intended (Omer, 2026-10-06).
 - **Teaching notes** about how this person learns ("abstract ideas land after a concrete example
   first"; "prefers predict-then-verify"). Every note is phrased as teaching guidance, never a judgment
   of ability; cites its evidence (sessions, checks, asides); is revised or removed at each refresh, not

@@ -15,6 +15,28 @@ export interface TeachingNote {
   }[];
 }
 
+/** What the learner wrote about themselves (api: routes/profile.ts); null until they do. */
+export interface About {
+  text: string | null;
+}
+
+export const aboutQuery = queryOptions({
+  queryKey: ["about"],
+  queryFn: () => api<About>("/api/profile/about"),
+});
+
+/** Writing what the learner says about themselves; an empty text clears it. */
+export function useAboutChange() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) =>
+      api<About>("/api/profile/about", { method: "PUT", body: JSON.stringify({ text }) }),
+    onSuccess: (about) => {
+      queryClient.setQueryData(aboutQuery.queryKey, about);
+    },
+  });
+}
+
 export const teachingNotesQuery = queryOptions({
   queryKey: ["teaching-notes"],
   queryFn: () => api<TeachingNote[]>("/api/profile/notes"),

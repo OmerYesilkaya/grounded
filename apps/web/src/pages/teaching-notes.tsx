@@ -7,11 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useT } from "@/i18n";
 import { ApiError } from "@/lib/api";
-import { teachingNotesQuery, useNoteChange, type TeachingNote } from "@/lib/teaching-notes";
+import {
+  aboutQuery,
+  teachingNotesQuery,
+  useAboutChange,
+  useNoteChange,
+  type TeachingNote,
+} from "@/lib/teaching-notes";
+
+/** What the learner may write about themselves, in characters (api: ABOUT_MAX). */
+const ABOUT_MAX = 2000;
 
 /**
- * The learner's teaching notes (design §8): what the tutor has noticed about how they learn, which
- * every call reads. The learner can change or remove any note, and add their own.
+ * The learner's profile (design §8): what they wrote about themselves, theirs alone, and their
+ * teaching notes, what the tutor has noticed about how they learn. Every call reads both. The
+ * learner can change or remove any note, and add their own.
  */
 export function TeachingNotesPage() {
   const notes = useQuery(teachingNotesQuery);
@@ -24,15 +34,18 @@ export function TeachingNotesPage() {
         <p className="text-xs tracking-widest text-subtle-foreground uppercase">{t.eyebrow}</p>
         <h1 className="mt-1 font-serif text-3xl font-semibold tracking-tight">{t.title}</h1>
         <p className="mt-2 max-w-prose text-sm text-muted-foreground">{t.intro}</p>
+        <AboutYou />
+        <h2 className="mt-12 font-serif text-xl font-semibold tracking-tight">{t.notesTitle}</h2>
+        <p className="mt-1 max-w-prose text-sm text-muted-foreground">{t.notesIntro}</p>
         {notes.data && (
           <>
             {notes.data.length === 0 && !adding && (
-              <p className="mt-10 rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
+              <p className="mt-6 rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
                 {t.none}
               </p>
             )}
             {notes.data.length > 0 && (
-              <ul className="mt-10 divide-y border-y">
+              <ul className="mt-6 divide-y border-y">
                 {notes.data.map((note) => (
                   <Note key={note.id} note={note} />
                 ))}
@@ -61,9 +74,116 @@ export function TeachingNotesPage() {
             </div>
           </>
         )}
-        {notes.error && <p className="mt-10 text-sm text-destructive">{t.failed}</p>}
+        {notes.error && <p className="mt-6 text-sm text-destructive">{t.failed}</p>}
       </main>
     </>
+  );
+}
+
+/** What the learner wrote about themselves: shown as typed, with a box to write or change it. */
+function AboutYou() {
+  const about = useQuery(aboutQuery);
+  const [editing, setEditing] = useState(false);
+  const t = useT().account.notes.about;
+  return (
+    <section className="mt-10">
+      <h2 className="font-serif text-xl font-semibold tracking-tight">{t.title}</h2>
+      <p className="mt-1 max-w-prose text-sm text-muted-foreground">{t.intro}</p>
+      {about.data &&
+        (editing ? (
+          <AboutEditor
+            initial={about.data.text ?? ""}
+            onDone={() => {
+              setEditing(false);
+            }}
+          />
+        ) : about.data.text ? (
+          <div className="group mt-6 flex items-start gap-3">
+            <p className="min-w-0 flex-1 font-serif text-[16.5px] leading-relaxed whitespace-pre-wrap">
+              {about.data.text}
+            </p>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t.edit}
+              className="shrink-0 opacity-60 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100 pointer-coarse:opacity-100"
+              onClick={() => {
+                setEditing(true);
+              }}
+            >
+              <Pencil />
+            </Button>
+          </div>
+        ) : (
+          <div className="mt-6">
+            <p className="rounded-lg border border-dashed px-5 py-4 text-sm text-muted-foreground">
+              {t.none}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4"
+              onClick={() => {
+                setEditing(true);
+              }}
+            >
+              <Pencil />
+              {t.write}
+            </Button>
+          </div>
+        ))}
+      {about.error && <p className="mt-6 text-sm text-destructive">{t.failed}</p>}
+    </section>
+  );
+}
+
+/** Writing what the learner says about themselves; saving it empty clears it. */
+function AboutEditor({ initial, onDone }: { initial: string; onDone: () => void }) {
+  const [text, setText] = useState(initial);
+  const save = useAboutChange();
+  const { account, common } = useT();
+  const t = account.notes.about;
+  const submit = () => {
+    save.mutate(text, { onSuccess: onDone });
+  };
+  return (
+    <form
+      className="mt-6"
+      onSubmit={(event) => {
+        event.preventDefault();
+        submit();
+      }}
+    >
+      <Textarea
+        autoFocus
+        aria-label={t.title}
+        value={text}
+        maxLength={ABOUT_MAX}
+        rows={6}
+        placeholder={t.placeholder}
+        onChange={(event) => {
+          setText(event.target.value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Escape") onDone();
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit();
+        }}
+        className="font-serif text-[16.5px] leading-relaxed md:text-[16.5px]"
+      />
+      <div className="mt-2 flex items-center gap-2">
+        <Button type="submit" size="sm" disabled={save.isPending}>
+          {common.save}
+        </Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onDone}>
+          {common.cancel}
+        </Button>
+        {save.error && (
+          <p className="text-sm text-destructive">
+            {save.error instanceof ApiError ? save.error.message : t.saveFailed}
+          </p>
+        )}
+      </div>
+    </form>
   );
 }
 

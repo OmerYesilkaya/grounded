@@ -146,6 +146,8 @@ export interface PromptContext {
   plan?: { arcs: readonly PlanArc[]; notes?: string; leftOff?: string };
   fixList?: readonly FixItem[];
   teachingNotes?: readonly string[];
+  /** What the learner wrote about themselves (design §8), as typed; theirs alone. */
+  about?: string;
   /**
    * In a session, the term list and fix-list above are as the session began, so the track's part
    * stays the same all session (design §4.4); what changed since comes here, in the call's part.
@@ -225,7 +227,9 @@ function renderTrack(context: PromptContext): string {
   const parts: string[] = [];
   const { track, brought, source, terms, termsNotListed, borrowed, heldElsewhere, plan, fixList } =
     context;
-  const { teachingNotes } = context;
+  const { teachingNotes, about } = context;
+  // First: it is the learner's, not the track's, so it changes slower than anything below.
+  if (about) parts.push(`## What the learner wrote about themselves\n\n${about}`);
   if (track) {
     const language =
       track.language ??

@@ -7,12 +7,13 @@ import {
   learningSessions,
   sql,
   tracks,
+  users,
   type Db,
 } from "@grounded/db";
 import type { Hono } from "hono";
 import { z } from "zod";
 import type { SignedInUser } from "../auth.js";
-import { TEACHING_NOTES_MAX } from "../engine/profile.js";
+import { ABOUT_MAX, TEACHING_NOTES_MAX } from "../engine/profile.js";
 import { notFound, refuse } from "../refusals.js";
 import { refusal } from "@grounded/core";
 
@@ -36,6 +37,20 @@ export interface TeachingNote {
 
 /** A note's text: a line or two of plain words. */
 const noteText = z.object({ text: z.string().trim().min(1).max(500) });
+
+/** What the learner writes about themselves: a few paragraphs at most; empty clears it. */
+const aboutText = z.object({ text: z.string().trim().max(ABOUT_MAX) });
+
+/** What the learner wrote about themselves (design §8), as the page shows it. */
+export interface About {
+  /** As typed; null until they write it. */
+  text: string | null;
+}
+
+async function about(db: Db, userId: string): Promise<About> {
+  const [row] = await db.select({ about: users.about }).from(users).where(eq(users.id, userId));
+  return { text: row?.about ?? null };
+}
 
 /** The learner's teaching notes, oldest first. */
 async function teachingNotes(db: Db, userId: string): Promise<TeachingNote[]> {
@@ -75,11 +90,27 @@ async function teachingNotes(db: Db, userId: string): Promise<TeachingNote[]> {
   }));
 }
 
-/** The learner's teaching notes (design §8): they read, add, edit and remove them. */
+/**
+ * The learner's profile (design §8): what they wrote about themselves, theirs alone, and their
+ * teaching notes, which they read, add, edit and remove.
+ */
 export function registerProfileRoutes(app: Hono<Env>, deps: { db: Db }) {
   const { db } = deps;
   const owned = (userId: string, id: string) =>
     and(eq(learnerProfileNotes.id, id), eq(learnerProfileNotes.userId, userId));
+
+  app.get("/api/profile/about", async (c) => c.json(await about(db, c.get("user").id)));
+
+  app.put("/api/profile/about", async (c) => {
+    const parsed = aboutText.safeParse(await c.req.json().catch(() => null));
+    if (!parsed.success) return c.json(refusal({ code: "about-length", max: ABOUT_MAX }), 400);
+    const userId = c.get("user").id;
+    await db
+      .update(users)
+      .set({ about: parsed.data.text || null })
+      .where(eq(users.id, userId));
+    return c.json(await about(db, userId));
+  });
 
   app.get("/api/profile/notes", async (c) => c.json(await teachingNotes(db, c.get("user").id)));
 

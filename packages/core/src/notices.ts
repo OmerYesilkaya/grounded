@@ -161,7 +161,9 @@ export type RefusalNotice =
   | { code: "homework-closed" }
   // Teaching notes (design §8)
   | { code: "write-note" }
-  | { code: "notes-limit"; max: number };
+  | { code: "notes-limit"; max: number }
+  /** What the learner wrote about themselves (design §8) is longer than it may be. */
+  | { code: "about-length"; max: number };
 
 /** A failure the app says in place of what the learner waited for (a job's `error` event). */
 export type FailureNotice =

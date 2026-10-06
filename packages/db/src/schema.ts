@@ -68,6 +68,11 @@ export const users = pgTable("users", {
    * signed in, never reused.
    */
   learnerNumber: integer("learner_number").notNull().unique().generatedAlwaysAsIdentity(),
+  /**
+   * What they wrote about themselves (design §8): their work, what they know, what they are after.
+   * Theirs alone, in every call; null until they write it.
+   */
+  about: text("about"),
   createdAt: createdAt(),
   updatedAt: updatedAt(),
 });

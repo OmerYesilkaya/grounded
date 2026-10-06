@@ -14,6 +14,7 @@ import {
   sessionMessages,
   sql,
   tracks,
+  users,
   type Db,
   type NoteEvidence,
 } from "@grounded/db";
@@ -21,6 +22,7 @@ import {
   assembleSystemPrompt,
   teachingNotesSchema,
   type Method,
+  type PromptContext,
   type TeachingNotesRefresh,
 } from "@grounded/core";
 import { generateText, Output } from "ai";
@@ -46,6 +48,17 @@ export const FIRST_REFRESH_AFTER = 6;
 export const REFRESH_EVERY = 5;
 /** About a dozen notes at most: they are in every call. */
 export const TEACHING_NOTES_MAX = 12;
+/** What the learner writes about themselves is in every call too: a few paragraphs at most. */
+export const ABOUT_MAX = 2_000;
+
+/**
+ * What the learner wrote about themselves (design §8), as typed, as a prompt's context carries it:
+ * nothing until they write it.
+ */
+export async function loadAbout(db: Db, userId: string): Promise<Pick<PromptContext, "about">> {
+  const [row] = await db.select({ about: users.about }).from(users).where(eq(users.id, userId));
+  return row?.about ? { about: row.about } : {};
+}
 
 /** The learner's teaching notes, oldest first, as the prompt carries them. */
 export async function loadTeachingNotes(db: Db, userId: string): Promise<string[]> {
@@ -269,6 +282,8 @@ export async function refreshTeachingNotes(options: {
   );
   const system = systemMessages(
     assembleSystemPrompt(method, "profile", {
+      // The refresh reads it so it writes no note repeating it (method.md).
+      ...(await loadAbout(db, userId)),
       extra: [
         { heading: "The learner's current teaching notes", body: currentNotesText(current) },
         { heading: "The evidence since the last refresh", body: evidence.text },

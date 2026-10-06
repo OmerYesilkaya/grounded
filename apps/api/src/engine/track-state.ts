@@ -30,7 +30,7 @@ import {
 } from "@grounded/db";
 import type { TrackTerm } from "@grounded/content";
 import { content, log } from "../log.js";
-import { loadTeachingNotes } from "./profile.js";
+import { loadAbout, loadTeachingNotes } from "./profile.js";
 
 export type ApplyResult =
   { ok: true } | { ok: false; errors: string[]; rejected: RejectedAction[] };
@@ -640,7 +640,7 @@ export interface TrackContext
     Required<Pick<PromptContext, "track" | "terms" | "plan" | "fixList">>,
     Pick<
       PromptContext,
-      "termsNotListed" | "brought" | "source" | "heldElsewhere" | "teachingNotes"
+      "termsNotListed" | "brought" | "source" | "heldElsewhere" | "teachingNotes" | "about"
     > {
   /** In a session: what changed since it began (the term list and fix-list are as it began). */
   changes?: NonNullable<PromptContext["changes"]>;
@@ -828,7 +828,8 @@ export async function loadTrackContext(
     fixList: fixItems,
     current,
     borrowed,
-    // How this learner learns, across their tracks (design §8): in every call.
+    // Who this learner is and how they learn, across their tracks (design §8): in every call.
+    ...(await loadAbout(db, track.userId)),
     teachingNotes: await loadTeachingNotes(db, track.userId),
   };
   if (!options.sessionId) return { ...whole, ...(await sourceFor()) };

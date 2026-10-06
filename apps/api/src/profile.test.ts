@@ -8,6 +8,7 @@ import {
   reviews,
   sessionMessages,
   tracks,
+  users,
 } from "@grounded/db";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -19,7 +20,7 @@ import {
   type CurrentNote,
 } from "./engine/profile.js";
 import { loadTrackContext } from "./engine/track-state.js";
-import type { TeachingNote } from "./routes/profile.js";
+import type { About, TeachingNote } from "./routes/profile.js";
 import { createFlows } from "./test/flows.js";
 import { createTestHarness } from "./test/harness.js";
 import { scriptedModels } from "./test/scripted-models.js";
@@ -144,6 +145,10 @@ describe("the learner's teaching notes (#44)", () => {
       { userId, text: "Prefers long lessons." },
       { userId, text: "Examples first.", byLearner: true },
     ]);
+    await t.db
+      .update(users)
+      .set({ about: "Backend developer, eight years." })
+      .where(eq(users.id, userId));
     const refresh = {
       notes: [
         { keeps: "N2", text: "One concrete example before the rule.", evidence: cite("S4") },
@@ -165,6 +170,9 @@ describe("the learner's teaching notes (#44)", () => {
     // It read the notes as they stood and each session's evidence, labelled for citing.
     const prompt = JSON.stringify(models.used[0]?.model.doGenerateCalls[0]?.prompt);
     expect(prompt).toContain("N2: Examples first. (the learner wrote or edited it)");
+    expect(prompt).toContain(
+      "## What the learner wrote about themselves\\n\\nBackend developer, eight years.",
+    );
     expect(prompt).toContain("## S6: Concurrency");
     expect(prompt).toContain("Recap 6: the example came first");
 
@@ -183,6 +191,7 @@ describe("the learner's teaching notes (#44)", () => {
       "One concrete example before the rule.",
       "Predict what happens, then run it.",
     ]);
+    expect(context.about).toBe("Backend developer, eight years.");
   });
 
   it("hear the reviews of what was handed in, a session's reviewed after the last refresh too", async () => {
@@ -259,5 +268,35 @@ describe("the learner's teaching notes (#44)", () => {
     expect(await (await t.request("/api/profile/notes", { cookie: eve })).json()).toEqual([]);
 
     expect(await (await send(`/api/profile/notes/${id}`, "DELETE")).json()).toEqual([]);
+  });
+
+  it("carry what the learner wrote about themselves, theirs alone, in every call", async () => {
+    const { cookie, trackId } = await learner();
+    const read = async () =>
+      (await (await t.request("/api/profile/about", { cookie })).json()) as About;
+    const write = (text: string) =>
+      t.request("/api/profile/about", { method: "PUT", cookie, body: JSON.stringify({ text }) });
+    expect(await read()).toEqual({ text: null });
+    expect((await loadTrackContext(t.db, trackId)).about).toBeUndefined();
+
+    const written = await write("  Backend developer, eight years; Node and Postgres daily.  ");
+    expect(await written.json()).toEqual({
+      text: "Backend developer, eight years; Node and Postgres daily.",
+    });
+    expect((await loadTrackContext(t.db, trackId)).about).toBe(
+      "Backend developer, eight years; Node and Postgres daily.",
+    );
+
+    const long = await write("a".repeat(2_001));
+    expect(long.status).toBe(400);
+    expect(((await long.json()) as { error: { code: string } }).error.code).toBe("about-length");
+
+    const eve = await t.signIn("eve@example.com");
+    expect(await (await t.request("/api/profile/about", { cookie: eve })).json()).toEqual({
+      text: null,
+    });
+
+    expect(await (await write("   ")).json()).toEqual({ text: null });
+    expect(await read()).toEqual({ text: null });
   });
 });

@@ -68,10 +68,25 @@ export const account = defineMessages({
       unpriced: (calls: string) => `Not counted: ${calls} on a model without a listed price.`,
     },
     notes: {
-      eyebrow: "Teaching notes",
+      eyebrow: "Your profile",
       title: "How you learn",
       intro:
-        "What the tutor has noticed helps you learn, across your tracks. It reads these before every lesson and check. Change anything that doesn't sound like you.",
+        "Who you are, in your words, and what the tutor has noticed helps you learn. It reads both before every lesson and check.",
+      about: {
+        title: "About you",
+        intro:
+          "Your work, what you already know, what you're after. The tutor takes it as read: it won't explain what you say you know, and it will teach it after all if a check shows otherwise.",
+        none: "Nothing yet. Until you write something here, the tutor learns about you from each track's first questions.",
+        write: "Write about yourself",
+        edit: "Change what you wrote",
+        placeholder:
+          "For example: backend developer, eight years, Node and Postgres daily. Never did much maths past school.",
+        failed: "It couldn't be loaded.",
+        saveFailed: "It couldn't be saved.",
+      },
+      notesTitle: "What helps you learn",
+      notesIntro:
+        "Noticed by the tutor across your tracks. Change anything that doesn't sound like you.",
       none: "Nothing yet. After about six sessions the tutor starts noting what helps you, each note resting on at least three of them.",
       add: "Add a note",
       failed: "Your notes couldn't be loaded.",
@@ -153,10 +168,24 @@ export const account = defineMessages({
       unpriced: (calls: string) => `Sayılmadı: liste fiyatı olmayan bir modelde ${calls}.`,
     },
     notes: {
-      eyebrow: "Öğretme notları",
+      eyebrow: "Profilin",
       title: "Nasıl öğreniyorsun",
       intro:
-        "Öğretmenin, tüm konularında öğrenmene neyin yardım ettiğine dair fark ettikleri. Her dersten ve her sorudan önce bunları okur. Sana uymayan bir şey varsa değiştir.",
+        "Kendi sözlerinle kim olduğun ve öğretmenin öğrenmene neyin yardım ettiğine dair fark ettikleri. Her dersten ve her sorudan önce ikisini de okur.",
+      about: {
+        title: "Senin hakkında",
+        intro:
+          "İşin, zaten bildiklerin, peşinde olduğun. Öğretmen bunu doğru kabul eder: bildiğini söylediğini açıklamaz; bir soru aksini gösterirse yine de öğretir.",
+        none: "Henüz bir şey yok. Buraya bir şey yazana kadar öğretmen seni her konunun ilk sorularından tanır.",
+        write: "Kendini anlat",
+        edit: "Yazdığını değiştir",
+        placeholder:
+          "Örneğin: sekiz yıldır backend geliştiricisiyim, her gün Node ve Postgres. Okuldan sonra pek matematik yapmadım.",
+        failed: "Yüklenemedi.",
+        saveFailed: "Kaydedilemedi.",
+      },
+      notesTitle: "Öğrenmene ne yardım ediyor",
+      notesIntro: "Öğretmenin tüm konularında fark ettikleri. Sana uymayan bir şey varsa değiştir.",
       none: "Henüz bir şey yok. Yaklaşık altı oturumdan sonra öğretmen sana neyin yardım ettiğini not etmeye başlar; her not en az üç oturuma dayanır.",
       add: "Not ekle",
       failed: "Notların yüklenemedi.",
