@@ -120,7 +120,7 @@ describe("generateLesson", () => {
     ]);
     const writing = promptText(model.doStreamCalls[0]);
     expect(writing).toContain(
-      'it ends with a check: on "working copy" (taught in step 1), because the next step rests on it',
+      'it ends with a check: on "working copy" (taught in step 1), because the next step rests on it; it asks about a case the step didn\'t work through, and its scenario never states what it asks for',
     );
     expect(writing).toContain("it ends without a check (nothing ahead rests on it yet");
     expect(writing).toContain(
@@ -326,7 +326,7 @@ describe("generateLesson", () => {
     expect(result.steps[0]?.check?.children).toBeDefined();
     const regeneration = promptText(model.doGenerateCalls[1]);
     expect(regeneration).toContain(
-      'This step must end with a :::check block: on "working copy" (taught in step 1), because the next step rests on it.',
+      `This step must end with a :::check block: on "working copy" (taught in step 1), because the next step rests on it; it asks about a case the step didn't work through, and its scenario never states what it asks for.`,
     );
     expect(regeneration).toContain("Adding one is three moves");
   });

@@ -515,10 +515,12 @@ gets the same treatment:
    strongest check; otherwise one short question per idea. The question makes the learner _use_ the
    ideas, not repeat their words: apply them to a case the lesson didn't work through, predict what
    follows, or say why it had to be so ("one sentence: why does X follow from Y?"). Test it before you
-   keep it: if the answer is a sentence of the lesson, a caption of its drawing, or a sum it already
-   did, the check measures reading, not understanding. Ask about a case the lesson left for them
-   instead. A step that works out how long ago 3100 BC was is checked on a different date, not the same
-   one.
+   keep it: if the answer is a sentence of the lesson, a caption of its drawing, a sum it already
+   did, or a line of the question itself, the check measures reading, not understanding. Ask about a
+   case the lesson left for them instead. A step that works out how long ago 3100 BC was is checked on
+   a different date, not the same one; a step that says what the handler does, and whose check first
+   says what the handler does and then asks what the handler does, is answered by pointing back at
+   the question. The check's scenario sets up a case; it never states what the question asks for.
 
 New terms go through the same treatment: concept in plain words first, name second, checked before
 anything is built on them. In the lesson the name arrives on a **word card** (see "Format"): the

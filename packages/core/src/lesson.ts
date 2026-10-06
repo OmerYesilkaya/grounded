@@ -649,7 +649,8 @@ function checkBrief(placed: StepCheck): string {
     : "the lesson's last check, before the homework, covering what no check has yet";
   const many =
     placed.steps.length > 1 ? "; one question that needs them together where it can" : "";
-  return `${what}, because ${why}${many}`;
+  // The one failure the writer keeps making: a scenario that states what the question then asks.
+  return `${what}, because ${why}${many}; it asks about a case the step didn't work through, and its scenario never states what it asks for`;
 }
 
 /**
