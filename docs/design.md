@@ -2091,6 +2091,15 @@ every other page usable (tried at 360–430px wide, in both themes).
   would store; its test (`stages.test.ts`) keeps it working as the app changes. The learner gets a
   password and a placeholder key sealed with the development vault, so the app opens; going on from
   a stage needs the worker with `DEMO_MODELS=true` (or a real key, saved in settings).
+- Seeing a track's terms as stored, in development (`Alt+Shift+T` on any page of the app, built
+  2026-10-07): the method's statuses (planned, taught, confirmed, assumed) that the learner's pages
+  translate or hide (§8), each term's history of changes with its evidence and source, and on a
+  session page each step's check as the session state has it (open, passed, settling, paused,
+  unchecked; misses, gate, pressed). No model call: `GET /api/dev/tracks/:id/terms`
+  (`apps/api/src/routes/dev.ts`) reads the term tables, the modal (`apps/web/src/dev/term-states.tsx`)
+  reads the session as it is. Both are off in production: the route is registered only with
+  `devTools` (`NODE_ENV` other than production), so a learner never reads a planned term before it is
+  taught, and the modal is imported only in a DEV build, like the lesson preview (`/dev/lesson`).
 - Everything else through the database directly, with care.
 
 ### 10.1 The admin panel (decided 2026-10-03)

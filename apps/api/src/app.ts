@@ -22,6 +22,7 @@ import { registerAsideRoutes } from "./routes/asides.js";
 import { registerAssignmentRoutes } from "./routes/assignments.js";
 import { registerSessionRoutes } from "./routes/sessions.js";
 import { registerProfileRoutes } from "./routes/profile.js";
+import { registerDevRoutes } from "./routes/dev.js";
 import { registerProgressRoutes } from "./routes/progress.js";
 import { registerTrackRoutes } from "./routes/tracks.js";
 import { registerUsageRoutes } from "./routes/usage.js";
@@ -38,6 +39,11 @@ export interface AppDependencies {
   files: FileStore;
   /** Offer models the eval harness hasn't passed (development only). */
   includeUngatedModels: boolean;
+  /**
+   * The development-only routes (design §10): a track's raw term list, with the method's statuses
+   * the learner's pages never show. Off in production.
+   */
+  devTools: boolean;
   validateKey: (provider: ProviderId, apiKey: string) => Promise<KeyCheck>;
 }
 
@@ -236,6 +242,7 @@ export function createApp(deps: AppDependencies) {
   registerAssignmentRoutes(app, { db, queue: deps.queue, files: deps.files });
   registerUsageRoutes(app, { db });
   registerProgressRoutes(app, { db });
+  if (deps.devTools) registerDevRoutes(app, { db });
   registerProfileRoutes(app, { db });
   registerAdminRoutes(app, { db });
 

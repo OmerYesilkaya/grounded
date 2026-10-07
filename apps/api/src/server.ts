@@ -33,6 +33,7 @@ const app = createApp({
     activeKid: env.KEY_VAULT_ACTIVE_KID,
   }),
   includeUngatedModels: env.ALLOW_UNGATED_MODELS === "true",
+  devTools: env.NODE_ENV !== "production",
   validateKey: (provider, apiKey) => validateKey(provider, apiKey),
 });
 

@@ -88,6 +88,8 @@ export interface EmbeddedOptions {
   method?: Method;
   /** Offer models the eval harness hasn't passed (default true, as in development). */
   includeUngatedModels?: boolean;
+  /** The development-only routes (default true, as in development). */
+  devTools?: boolean;
   /** How stored keys are checked (default: every key is fine). */
   validateKey?: (provider: ProviderId, apiKey: string) => Promise<KeyCheck>;
   workerConcurrency?: number;
@@ -142,6 +144,7 @@ export function createEmbedded(options: EmbeddedOptions): Embedded {
     queue,
     files,
     includeUngatedModels: options.includeUngatedModels ?? true,
+    devTools: options.devTools ?? true,
     validateKey: options.validateKey ?? (() => Promise.resolve({ ok: true })),
   });
 
