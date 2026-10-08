@@ -51,7 +51,8 @@ describe("usage", () => {
     await t.db.insert(usageEvents).values([
       // $4 + $2 at Opus's prices, in August.
       call(userId, "2026-08-30T09:00:00Z", { trackId, sessionId: first?.id ?? null }),
-      // Half the input read from the cache and a model with no price, in September.
+      // Half the input read from the cache, and a model since taken off the list (no price), in
+      // September.
       call(userId, "2026-09-02T11:00:00Z", {
         trackId,
         sessionId: second?.id ?? null,
@@ -60,8 +61,7 @@ describe("usage", () => {
       call(userId, "2026-09-02T11:30:00Z", {
         trackId,
         sessionId: second?.id ?? null,
-        provider: "openai",
-        model: "gpt-6-luna",
+        model: "claude-sonnet-5",
       }),
       // Naming the track: no session. Late on 30 September in UTC, 1 October in Istanbul.
       call(userId, "2026-09-30T22:30:00Z", {

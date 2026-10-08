@@ -73,9 +73,15 @@ describe("model list", () => {
         outputTokens: 0,
       }),
     ).toBeCloseTo(0.5 * 4 + 0.2 * 0.2 + 0.3 * 8);
+    // Luna: $0.10 in, $0.01 cached read, $0.125 cache write, $0.50 out per million tokens.
     expect(
-      estimateCost("gpt-6-luna", { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 }),
-    ).toBeNull();
+      estimateCost("gpt-6-luna", {
+        inputTokens: 1_000_000,
+        cachedInputTokens: 200_000,
+        cacheWriteTokens: 300_000,
+        outputTokens: 100_000,
+      }),
+    ).toBeCloseTo(0.5 * 0.1 + 0.2 * 0.01 + 0.3 * 0.125 + 0.1 * 0.5);
     expect(
       estimateCost("no-such-model", { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1 }),
     ).toBeNull();

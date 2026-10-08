@@ -68,12 +68,13 @@ export const MODELS: readonly ModelEntry[] = [
     reads: READS_ALL,
   },
   {
-    // Tested by Omer with the chat-app method and costed as acceptable (2026-09-27).
+    // Tested by Omer with the chat-app method and costed as acceptable (2026-09-27). Prices: the
+    // standard tier (2026-10-08), a twentieth of Sol's; cache writes charged like Sol's.
     id: "gpt-6-luna",
     provider: "openai",
     label: "GPT-6 Luna",
     roles: ["strong", "cheap"],
-    price: null,
+    price: { input: 0.1, cachedInput: 0.01, cacheWrite: 0.125, output: 0.5 },
     gate: "manual",
     reads: READS_ALL,
   },
