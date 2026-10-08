@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { initialSession, joinSystemPrompt, type SystemPrompt } from "@grounded/core";
 import {
   credentials,
@@ -686,6 +687,11 @@ describe("provider cache hints", () => {
     track: "# What the app gives you in this call\n\n## Track\n\nSubject: Concurrency",
     call: "## The step being checked\n\nStep one.",
   };
+  /** The mark on a stable part, in each provider's form; a provider's SDK reads its own. */
+  const MARK = {
+    anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
+    openai: { promptCacheBreakpoint: { mode: "explicit" } },
+  };
   const streamed = () =>
     new MockLanguageModelV4({
       doStream: {
@@ -700,7 +706,7 @@ describe("provider cache hints", () => {
       },
     });
 
-  it("gives OpenAI the track as its cache key, and the system prompt as one message", async () => {
+  it("gives OpenAI the track as its cache key, and the system prompt's parts as separate messages with their marks", async () => {
     const userId = await userWithKey("openai", "gpt-6-luna");
     const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
     const { caller } = callerWith(mock);
@@ -712,8 +718,114 @@ describe("provider cache hints", () => {
     const [call] = mock.doGenerateCalls;
     expect(call?.providerOptions).toEqual({ openai: { promptCacheKey: trackId } });
     expect(call?.prompt.filter((m) => m.role === "system")).toEqual([
+      { role: "system", content: prompt.sharedMethod, providerOptions: MARK },
+      { role: "system", content: prompt.phaseMethod, providerOptions: MARK },
+      { role: "system", content: prompt.track, providerOptions: MARK },
+      { role: "system", content: prompt.call },
+    ]);
+  });
+
+  it("joins the system prompt's parts into one message for a provider that caches implicitly", async () => {
+    const userId = await userWithKey("deepseek", "deepseek-flash");
+    const mock = new MockLanguageModelV4({ doGenerate: reply("ok") });
+    const { caller } = callerWith(mock);
+    const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+    await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
+
+    expect(mock.doGenerateCalls[0]?.prompt.filter((m) => m.role === "system")).toEqual([
       { role: "system", content: joinSystemPrompt(prompt) },
     ]);
+  });
+
+  describe("as OpenAI receives them", () => {
+    /** The request bodies @ai-sdk/openai sends, through a fetch that answers in place of the API. */
+    function openaiRequests() {
+      const bodies: Record<string, unknown>[] = [];
+      const fetch = (_url: string | URL | Request, init?: RequestInit) => {
+        bodies.push(JSON.parse(init?.body as string) as Record<string, unknown>);
+        const response = {
+          id: "resp_1",
+          object: "response",
+          created_at: 0,
+          status: "completed",
+          model: "gpt-6-luna",
+          output: [
+            {
+              type: "message",
+              id: "msg_1",
+              status: "completed",
+              role: "assistant",
+              content: [{ type: "output_text", text: "ok", annotations: [] }],
+            },
+          ],
+          usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
+        };
+        return Promise.resolve(
+          new Response(JSON.stringify(response), {
+            headers: { "content-type": "application/json" },
+          }),
+        );
+      };
+      const caller = createModelCaller({
+        db: t.db,
+        vault: t.vault,
+        createLanguageModel: (_provider, modelId, apiKey) =>
+          createOpenAI({ apiKey, fetch })(modelId),
+      });
+      return { caller, bodies };
+    }
+
+    /** Each input message's text blocks with their breakpoint, or the message's plain text. */
+    const inputOf = (body: Record<string, unknown>) =>
+      (body.input as { role: string; content: unknown }[]).map(({ role, content }) => ({
+        role,
+        content,
+      }));
+
+    it("marks an explicit breakpoint after each stable part, none after the call's own, and keeps the implicit one", async () => {
+      const userId = await userWithKey("openai", "gpt-6-luna");
+      const { caller, bodies } = openaiRequests();
+      const trackId = await trackOf(userId);
+      const model = await caller.model({ userId, purpose: "check", role: "strong", trackId });
+
+      await generateText({ model, system: systemMessages(prompt), prompt: "grade" });
+
+      const breakpoint = { mode: "explicit" };
+      const block = (text: string) => [
+        { type: "input_text", text, prompt_cache_breakpoint: breakpoint },
+      ];
+      expect(inputOf(bodies[0] ?? {})).toEqual([
+        { role: "developer", content: block(prompt.sharedMethod) },
+        { role: "developer", content: block(prompt.phaseMethod) },
+        { role: "developer", content: block(prompt.track) },
+        { role: "developer", content: prompt.call },
+        { role: "user", content: [{ type: "input_text", text: "grade" }] },
+      ]);
+      expect(bodies[0]?.prompt_cache_key).toBe(trackId);
+      // The default mode: OpenAI adds its implicit breakpoint at the end, for the conversation's
+      // next call; with the 3 explicit ones that is its 4 cache writes per request at most.
+      expect(bodies[0]).not.toHaveProperty("prompt_cache_options");
+    });
+
+    it("marks no breakpoint for an empty part", async () => {
+      const userId = await userWithKey("openai", "gpt-6-luna");
+      const { caller, bodies } = openaiRequests();
+      const model = await caller.model({ userId, purpose: "check", role: "strong" });
+
+      await generateText({
+        model,
+        system: systemMessages({ ...prompt, track: "", call: "" }),
+        prompt: "grade",
+      });
+
+      expect(inputOf(bodies[0] ?? {}).map((m) => m.role)).toEqual([
+        "developer",
+        "developer",
+        "user",
+      ]);
+      expect(JSON.stringify(bodies[0]).match(/prompt_cache_breakpoint/g)).toHaveLength(2);
+    });
   });
 
   it("replaces a file the model doesn't read with a line saying so, and keeps the ones it does", async () => {
@@ -775,13 +887,12 @@ describe("provider cache hints", () => {
     await streamText({ model, system: systemMessages(prompt), prompt: "hi" }).text;
 
     const [call] = mock.doStreamCalls;
-    const breakpoint = { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } };
-    expect(call?.providerOptions).toEqual(breakpoint);
+    expect(call?.providerOptions).toEqual({ anthropic: MARK.anthropic });
     const system = call?.prompt.filter((m) => m.role === "system") ?? [];
     expect(system).toEqual([
-      { role: "system", content: `${prompt.sharedMethod}\n\n`, providerOptions: breakpoint },
-      { role: "system", content: `${prompt.phaseMethod}\n\n`, providerOptions: breakpoint },
-      { role: "system", content: `${prompt.track}\n\n`, providerOptions: breakpoint },
+      { role: "system", content: `${prompt.sharedMethod}\n\n`, providerOptions: MARK },
+      { role: "system", content: `${prompt.phaseMethod}\n\n`, providerOptions: MARK },
+      { role: "system", content: `${prompt.track}\n\n`, providerOptions: MARK },
       { role: "system", content: prompt.call },
     ]);
     // Read as one text, the blocks are exactly the assembled prompt.

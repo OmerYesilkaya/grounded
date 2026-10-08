@@ -8,13 +8,27 @@ import { fileKindOf, findModel, modelReads, type ProviderId } from "@grounded/pr
 import type { SystemModelMessage } from "ai";
 
 /**
- * Anthropic's mark for a cache breakpoint: the prompt up to here is cached for an hour (design
- * §4.4). A learner reads, answers and asks at their own pace, often more than the default five
- * minutes apart; a write then costs 2x base input instead of 1.25x. Every mark, the top-level one
- * included, has the same lifetime: Anthropic requires longer-lived breakpoints before shorter ones.
- * The 1-hour lifetime needs no beta header.
+ * The mark for a cache breakpoint on a stable part of the system prompt (design §4.4): the prompt
+ * up to here is cached, and a later call whose prefix matches reads it. One mark carries each
+ * provider's form, since the prompt is marked before the provider is known; a provider's SDK reads
+ * its own and ignores the other's.
+ * - Anthropic: cached for an hour. A learner reads, answers and asks at their own pace, often more
+ *   than the default five minutes apart; a write then costs 2x base input instead of 1.25x. Every
+ *   mark, the top-level one included, has the same lifetime: Anthropic requires longer-lived
+ *   breakpoints before shorter ones. The 1-hour lifetime needs no beta header.
+ * - OpenAI (GPT-5.6 and later): an explicit breakpoint, 30 minutes, the only lifetime. Without
+ *   explicit marks OpenAI places its one implicit breakpoint at the end of the prompt, so every
+ *   call writes its whole prompt (billed at 1.25x) and reads it back only when the whole earlier
+ *   prompt is a prefix of the new one: the stable method and track parts, byte-identical from call
+ *   to call, were never reused (2026-10-08: a cache hit rate of 10–20% on Sol and Luna). The
+ *   implicit end-of-prompt breakpoint stays, like Anthropic's top-level mark, so the conversation's
+ *   next call reuses it; 3 explicit marks and the implicit one are OpenAI's 4 cache writes per
+ *   request at most.
  */
-const CACHE_BREAKPOINT = { anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } } };
+const CACHE_BREAKPOINT = {
+  anthropic: { cacheControl: { type: "ephemeral", ttl: "1h" } },
+  openai: { promptCacheBreakpoint: { mode: "explicit" } },
+};
 
 /**
  * The most cache breakpoints Anthropic accepts in one request; more is an error. The top-level
@@ -29,9 +43,9 @@ export const MAX_CACHE_BREAKPOINTS = 4;
  * A system prompt as the calls send it: one message per part, with the stable parts (the method's
  * shared sections, the phase's own, the track's state) marked as cache breakpoints, so a call of
  * another phase still reuses the shared sections, and a call whose own part differs still reuses
- * the method and the track, from the cache. An empty part is left out, with its mark. Only
- * Anthropic reads the marks; for the others the model middleware joins the parts back into the one
- * text assemblePrompt gives (see shapeCall).
+ * the method and the track, from the cache. An empty part is left out, with its mark. Anthropic
+ * and OpenAI read the marks; for the others the model middleware joins the parts back into the
+ * one text assemblePrompt gives (see shapeCall).
  */
 export function systemMessages(prompt: SystemPrompt): SystemModelMessage[] {
   const parts = [
@@ -99,12 +113,14 @@ export interface CallFacts {
 /**
  * Shapes a call for the learner's provider (design §4.4), applied to every call in the model
  * middleware; what the caller set itself wins.
- * - The system prompt's parts are separated as assemblePrompt joins them: Anthropic keeps them as
- *   separate blocks (its breakpoints sit between them), the others get one system message.
- * - Caching. OpenAI: `promptCacheKey` is the track, so a track's calls reach the same cache.
- *   Anthropic: besides the breakpoints in the system prompt, the top-level `cacheControl` caches
- *   the whole prompt, so the next call of the conversation reuses it; it is left out when the
- *   prompt's own marks already fill MAX_CACHE_BREAKPOINTS. Google and DeepSeek cache implicitly.
+ * - The system prompt's parts: Anthropic gets them as separate blocks of one system prompt, joined
+ *   as assemblePrompt joins them (its breakpoints sit between them); OpenAI as separate system
+ *   messages, each with its mark; the others get one system message.
+ * - Caching. OpenAI: `promptCacheKey` is the track, so a track's calls reach the same cache, and
+ *   the marks on the stable parts are its explicit breakpoints (CACHE_BREAKPOINT). Anthropic:
+ *   besides the breakpoints in the system prompt, the top-level `cacheControl` caches the whole
+ *   prompt, so the next call of the conversation reuses it; it is left out when the prompt's own
+ *   marks already fill MAX_CACHE_BREAKPOINTS. Google and DeepSeek cache implicitly.
  * - Reasoning effort: the purpose's, from REASONING.
  * - Files the model doesn't read (design §4.5): an image or PDF a DeepSeek model can't take is
  *   replaced by a line naming it and saying so, so the tutor can ask for its text instead of the
@@ -122,10 +138,7 @@ export function shapeCall(
   const reasoning = params.reasoning ?? REASONING[facts.purpose];
   return {
     ...params,
-    prompt: separateSystemParts(
-      withoutUnreadFiles(params.prompt, facts.modelId),
-      facts.provider === "anthropic",
-    ),
+    prompt: separateSystemParts(withoutUnreadFiles(params.prompt, facts.modelId), facts.provider),
     providerOptions: mergeProviderOptions(hints, params.providerOptions),
     ...(reasoning ? { reasoning } : {}),
   };
@@ -155,19 +168,22 @@ function withoutUnreadFiles(prompt: LanguageModelV4Prompt, modelId: string): Lan
   });
 }
 
-/** The leading system messages, as blocks ending in the parts' separator, or joined into one. */
+/**
+ * The leading system messages as the provider takes them: blocks of one prompt, ending in the
+ * parts' separator (Anthropic); separate messages as they are (OpenAI); or joined into one.
+ */
 function separateSystemParts(
   prompt: LanguageModelV4Prompt,
-  asBlocks: boolean,
+  provider: ProviderId,
 ): LanguageModelV4Prompt {
   const system: SystemMessage[] = [];
   for (const message of prompt) {
     if (message.role !== "system") break;
     system.push(message);
   }
-  if (system.length < 2) return prompt;
+  if (system.length < 2 || provider === "openai") return prompt;
   const rest = prompt.slice(system.length);
-  if (asBlocks) {
+  if (provider === "anthropic") {
     const blocks = system.map((message, i) =>
       i < system.length - 1 ? { ...message, content: `${message.content}\n\n` } : message,
     );

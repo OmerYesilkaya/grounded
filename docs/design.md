@@ -559,23 +559,34 @@ about, test and debug.
   ~13,900, wording review ~6,200), so the budgets were reset about a fifth above: probe 14,000, plan
   22,000, lesson and homework 15,000, check 12,000, close 27,000, aside 17,000.
 - **Cache hints** are added in the model middleware (`shapeCall` in
-  `apps/api/src/engine/call-options.ts`), from the request's `trackId`. OpenAI: `promptCacheKey` is
-  the track id, so a track's calls reach the same cache. Anthropic: the system prompt is sent as one
-  block per part, with a cache breakpoint (`cacheControl: { type: "ephemeral", ttl: "1h" }`) after the
-  all-phase method sections (about 16 KB of the 18–24 KB, shared by every phase's calls: a check
-  reuses what the lesson before it cached), after the phase's own sections and after the track's
-  state, and the top-level `cacheControl` caches the whole prompt for the conversation's next call.
-  That is 4 breakpoints, Anthropic's maximum per request (more is an error); the top-level one
-  counts, though `@ai-sdk/anthropic` counts only the marks on blocks, so the limit is kept in
-  `call-options.ts` (`MAX_CACHE_BREAKPOINTS`): an empty part gets no block and no mark, and the
-  top-level mark is left out when a prompt already carries 4. Every breakpoint lives an hour
-  (decided 2026-09-28): a learner's calls are often more than the default 5 minutes apart (reading
-  a step, working out an answer), and each read renews the hour. A cache write then costs 2x base
-  input instead of 1.25x (a read stays about 0.1x), so a prefix pays off from its third use. All
-  breakpoints share the lifetime because Anthropic requires longer-lived ones before shorter ones;
-  the 1-hour TTL needs no beta header. Google and DeepSeek cache implicitly. For the providers other
-  than Anthropic the parts are joined back into one system message, so every provider reads exactly
-  the assembled prompt.
+  `apps/api/src/engine/call-options.ts`), from the request's `trackId`. The system prompt's stable
+  parts carry a cache breakpoint each (`systemMessages`, one mark in every provider's form, since
+  the prompt is marked before the provider is known): after the all-phase method sections (about
+  16 KB of the 18–24 KB, shared by every phase's calls: a check reuses what the lesson before it
+  cached), after the phase's own sections and after the track's state; an empty part gets no
+  message and no mark. Anthropic: the parts go as the blocks of one system prompt, with
+  `cacheControl: { type: "ephemeral", ttl: "1h" }` on the stable ones, and the top-level
+  `cacheControl` caches the whole prompt for the conversation's next call. That is 4 breakpoints,
+  Anthropic's maximum per request (more is an error); the top-level one counts, though
+  `@ai-sdk/anthropic` counts only the marks on blocks, so the limit is kept in `call-options.ts`
+  (`MAX_CACHE_BREAKPOINTS`), and the top-level mark is left out when a prompt already carries 4.
+  Every breakpoint lives an hour (decided 2026-09-28): a learner's calls are often more than the
+  default 5 minutes apart (reading a step, working out an answer), and each read renews the hour.
+  A cache write then costs 2x base input instead of 1.25x (a read stays about 0.1x), so a prefix
+  pays off from its third use. All breakpoints share the lifetime because Anthropic requires
+  longer-lived ones before shorter ones; the 1-hour TTL needs no beta header. OpenAI:
+  `promptCacheKey` is the track id, so a track's calls reach the same cache, and the parts go as
+  separate system messages, the stable ones with an explicit breakpoint
+  (`promptCacheBreakpoint: { mode: "explicit" }`, 30 minutes, the only lifetime; decided
+  2026-10-08). On GPT-5.6 and later OpenAI charges cache writes at 1.25x, and without explicit
+  marks places its one implicit breakpoint at the end of the prompt: every call then writes its
+  whole prompt and reads it back only when the whole earlier prompt is a prefix of the new one,
+  which the stable parts never were between a probe, its decision and the next probe (the hit
+  rate on Sol and Luna was 10–20%, and cache writes were four fifths of Sol's cost). The implicit
+  end-of-prompt breakpoint is kept, like Anthropic's top-level mark, for the conversation's next
+  call; with the 3 explicit marks that is OpenAI's 4 cache writes per request at most. Google and
+  DeepSeek cache implicitly, and get the parts joined back into one system message, exactly the
+  assembled prompt.
 - **Reasoning effort per purpose** (`REASONING` in `apps/api/src/engine/call-options.ts`), set in
   the same middleware through the AI SDK's provider-neutral `reasoning` option (OpenAI's reasoning
   effort, Anthropic's thinking effort or budget, Gemini's thinking level, DeepSeek's reasoning
